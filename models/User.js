@@ -11,6 +11,14 @@ const userSchema = new mongoose.Schema({
   },
   otpExpiresAt: {
     type: Date
+  },
+   role: {
+    type: String,
+    default: null
+  },
+  token: {
+    type: String,
+    default: null
   }
 });
 

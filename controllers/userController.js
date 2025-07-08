@@ -9,32 +9,41 @@ exports.sendOtp = async (req, res) => {
   const { mobile } = req.body;
 
   if (!mobile) {
-    return res.status(400).json({ error: 'Mobile number is required.' });
+    return res.status(400).json({
+      otp: null,
+      status: false,
+      error: 'Mobile number is required.'
+    });
   }
 
   if (!isValidPhone(mobile)) {
-    return res.status(400).json({ error: 'Invalid mobile number format. Must be 10 digits.' });
+    return res.status(400).json({
+      otp: null,
+      status: false,
+      error: 'Invalid mobile number format. Must be 10 digits.'
+    });
   }
 
   try {
-    // Use static OTP for now
-    const otp = '1111';
-    // OTP expiry time (5 mins from now)
+   
+    const otp = '1111'; 
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
     let user = await User.findOne({ mobile });
 
     if (!user) {
-      // Create new user with OTP
+      
       user = new User({
         mobile,
         otp,
-        otpExpiresAt: expiresAt
+        otpExpiresAt: expiresAt,
+        role: null,
+        token: null
       });
       await user.save();
       console.log(`New user created with OTP.`);
     } else {
-      // Update OTP and expiry for existing user
+     
       user.otp = otp;
       user.otpExpiresAt = expiresAt;
       await user.save();
@@ -43,14 +52,19 @@ exports.sendOtp = async (req, res) => {
 
     console.log(`OTP for ${mobile}: ${otp}, expires at: ${expiresAt.toISOString()}`);
 
-    // Respond with only OTP
-    return res.json({ otp });
+    return res.json({
+      otp,
+      status: true
+    });
   } catch (error) {
     console.error('Error sending OTP:', error);
-    return res.status(500).json({ error: 'Internal server error.' });
+    return res.status(500).json({
+      otp: null,
+      status: false,
+      error: 'Internal server error. Please try again.'
+    });
   }
 };
-
 
 
 exports.verifyOtp = async (req, res) => {
