@@ -67,6 +67,66 @@ exports.sendOtp = async (req, res) => {
 };
 
 
+
+exports.selectRole = async (req, res) => {
+  const { mobile, role } = req.body;
+
+  if (!mobile || !role) {
+    return res.status(400).json({
+      status: false,
+      error: "Mobile number and role are required."
+    });
+  }
+
+  if (!['job_seeker', 'employer'].includes(role)) {
+    return res.status(400).json({
+      status: false,
+      error: "Invalid role selected. Must be 'job_seeker' or 'employer'."
+    });
+  }
+
+  try {
+    const user = await User.findOne({ mobile });
+
+    if (!user) {
+      return res.status(404).json({
+        status: false,
+        error: "User not found."
+      });
+    }
+
+  
+    user.role = role;
+
+    
+    const token = jwt.sign(
+      { userId: user._id, mobile: user.mobile, role: role },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+   
+    user.token = token;
+
+   
+    await user.save();
+
+    return res.json({
+      status: true,
+      message: `Role updated to ${role}.`,
+      token
+    });
+  } catch (error) {
+    console.error("Error updating role:", error);
+    return res.status(500).json({
+      status: false,
+      error: "Internal server error."
+    });
+  }
+};
+
+
+
 exports.verifyOtp = async (req, res) => {
   const { mobile, otp } = req.body;
 
