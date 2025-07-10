@@ -1,26 +1,28 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
+const CompanyProfile = require('../models/CompanyProfile');
+const JobSeekerProfile = require("../models/JobSeekerProfile");
 
 
 const isValidPhone = (phone) => /^\d{10}$/.test(phone);
 
 
 exports.sendOtp = async (req, res) => {
-  const { mobile } = req.body;
+  const { phoneNumber } = req.body;
 
-  if (!mobile) {
+  if (!phoneNumber) {
     return res.status(400).json({
       otp: null,
       status: false,
-      error: 'Mobile number is required.'
+      error: 'phoneNumber number is required.'
     });
   }
 
-  if (!isValidPhone(mobile)) {
+  if (!isValidPhone(phoneNumber)) {
     return res.status(400).json({
       otp: null,
       status: false,
-      error: 'Invalid mobile number format. Must be 10 digits.'
+      error: 'Invalid phoneNumber number format. Must be 10 digits.'
     });
   }
 
@@ -29,12 +31,12 @@ exports.sendOtp = async (req, res) => {
     const otp = '1111'; 
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
-    let user = await User.findOne({ mobile });
+    let user = await User.findOne({ phoneNumber });
 
     if (!user) {
       
       user = new User({
-        mobile,
+        phoneNumber,
         otp,
         otpExpiresAt: expiresAt,
         role: null,
@@ -50,7 +52,7 @@ exports.sendOtp = async (req, res) => {
       console.log(`OTP updated for existing user.`);
     }
 
-    console.log(`OTP for ${mobile}: ${otp}, expires at: ${expiresAt.toISOString()}`);
+    console.log(`OTP for ${phoneNumber}: ${otp}, expires at: ${expiresAt.toISOString()}`);
 
     return res.json({
       otp,
@@ -67,14 +69,21 @@ exports.sendOtp = async (req, res) => {
 };
 
 
-
 exports.selectRole = async (req, res) => {
-  const { mobile, role } = req.body;
+  const { phoneNumber, role } = req.body;
 
-  if (!mobile || !role) {
+  if (!phoneNumber || !role) {
     return res.status(400).json({
       status: false,
-      error: "Mobile number and role are required."
+      error: "phoneNumber number and role are required."
+    });
+  }
+
+   if (!isValidPhone(phoneNumber)) {
+    return res.status(400).json({
+      otp: null,
+      status: false,
+      error: 'Invalid phoneNumber number format. Must be 10 digits.'
     });
   }
 
@@ -86,31 +95,53 @@ exports.selectRole = async (req, res) => {
   }
 
   try {
-    const user = await User.findOne({ mobile });
+    const user = await User.findOne({ phoneNumber });
 
     if (!user) {
       return res.status(404).json({
         status: false,
         error: "User not found",
-         "role": null
+        role: null
       });
     }
 
-  
     user.role = role;
 
-    
     const token = jwt.sign(
-      { userId: user._id, mobile: user.mobile, role: role },
+      { userId: user._id, phoneNumber: user.phoneNumber, role: role },
       process.env.JWT_SECRET,
       { expiresIn: '1h' }
     );
 
-   
     user.token = token;
-
-   
     await user.save();
+
+    
+
+    if (role === "employer") {
+  const existingProfile = await CompanyProfile.findOne({ userId: user._id });
+
+  if (!existingProfile) {
+    await CompanyProfile.create({
+      userId: user._id,
+      phoneNumber: user.phoneNumber
+      
+    });
+  }
+}
+
+  if (role === "job_seeker") {
+  const existingJobSeekerProfile = await JobSeekerProfile.findOne({ userId: user._id });
+
+  if (!existingJobSeekerProfile) {
+    await JobSeekerProfile.create({
+      userId: user._id,
+      phoneNumber: user.phoneNumber
+      
+    });
+  }
+}
+
 
     return res.json({
       status: true,
@@ -127,24 +158,31 @@ exports.selectRole = async (req, res) => {
 };
 
 
-
 exports.verifyOtp = async (req, res) => {
-  const { mobile, otp } = req.body;
+  const { phoneNumber, otp } = req.body;
 
-  if (!mobile || !otp) {
+  if (!phoneNumber || !otp) {
     return res.status(400).json({
       status: false,
-      message: 'Mobile number and OTP are required.'
+      message: 'phoneNumber number and OTP are required.'
+    });
+  }
+
+   if (!isValidPhone(phoneNumber)) {
+    return res.status(400).json({
+      otp: null,
+      status: false,
+      error: 'Invalid phoneNumber number format. Must be 10 digits.'
     });
   }
 
   try {
-    let user = await User.findOne({ mobile });
+    let user = await User.findOne({ phoneNumber });
 
     if (!user) {
      
       const newUser = new User({
-        mobile,
+        phoneNumber,
         otp: null,
         otpExpiresAt: null
       });
@@ -152,7 +190,7 @@ exports.verifyOtp = async (req, res) => {
 
       return res.status(400).json({
         status: false,
-        message: 'Mobile number not found. New mobile number saved. Please request OTP again.'
+        message: 'phoneNumber number not found. New phoneNumber number saved. Please request OTP again.'
       });
     }
 
@@ -188,6 +226,4 @@ exports.verifyOtp = async (req, res) => {
     });
   }
 };
-
-
 
