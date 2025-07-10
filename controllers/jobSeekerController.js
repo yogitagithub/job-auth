@@ -1,5 +1,6 @@
 const JobSeekerProfile = require("../models/JobSeekerProfile");
 
+
 exports.saveProfile = async (req, res) => {
   try {
     const { phoneNumber, ...updateFields } = req.body;
@@ -37,7 +38,7 @@ exports.saveProfile = async (req, res) => {
 
     return res.json({
       status: true,
-      message: "Job Seeker profile updated successfully",
+      message: "Job seeker profile updated successfully",
       data: profile
     });
   } catch (error) {
@@ -45,6 +46,41 @@ exports.saveProfile = async (req, res) => {
     res.status(500).json({
       status: false,
       message: "Server error",
+      error: error.message
+    });
+  }
+};
+
+exports.getProfile = async (req, res) => {
+  try {
+    const { userId, role } = req.user;
+
+    if (role !== "job_seeker") {
+      return res.status(403).json({
+        status: false,
+        message: "Only job seekers can view their profiles."
+      });
+    }
+
+    const profile = await JobSeekerProfile.findOne({ userId });
+
+    if (!profile) {
+      return res.status(404).json({
+        status: false,
+        message: "Job seeker profile not found."
+      });
+    }
+
+    return res.json({
+      status: true,
+      message: "Job seeker profile fetched successfully.",
+      data: profile
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      status: false,
+      message: "Server error.",
       error: error.message
     });
   }

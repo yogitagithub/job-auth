@@ -4,6 +4,7 @@ const companyProfileSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
+     unique: true,
     required: true
   },
   phoneNumber: {
@@ -16,7 +17,8 @@ const companyProfileSchema = new mongoose.Schema({
   panCardNumber: { type: String, trim: true },
   gstNumber: { type: String, trim: true },
   alternatePhoneNumber: { type: String },
-  email: { type: String },
+  email: { type: String,  lowercase: true,
+      trim: true },
   companyAddress: { type: String },
   state: { type: String },
   city: { type: String },

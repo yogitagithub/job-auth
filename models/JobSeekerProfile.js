@@ -5,6 +5,7 @@ const profileSchema = new mongoose.Schema(
      userId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
+         unique: true,
         required: true
       },
       phoneNumber: {
@@ -29,7 +30,7 @@ const profileSchema = new mongoose.Schema(
     email: {
       type: String,
      
-      unique: true,
+     
       lowercase: true,
       trim: true,
     },

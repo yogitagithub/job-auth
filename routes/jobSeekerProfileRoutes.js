@@ -1,8 +1,11 @@
 const express = require("express");
 const router = express.Router();
-const { saveProfile } = require('../controllers/jobSeekerController');
+const { saveProfile, getProfile } = require('../controllers/jobSeekerController');
+const { verifyToken } = require('../middleware/authMiddleware');
 
-// POST or PUT profile
-router.post('/jobSeeker-profile', saveProfile);
+
+router.post('/jobSeeker-profile', verifyToken, saveProfile);
+router.get('/jobSeeker-profile', verifyToken, getProfile);
+
 
 module.exports = router;

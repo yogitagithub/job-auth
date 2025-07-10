@@ -1,8 +1,11 @@
 const express = require("express");
 const router = express.Router();
-const { saveProfile } = require('../controllers/companyProfileController');
+const { saveProfile, getProfile } = require('../controllers/companyProfileController');
+const { verifyToken } = require('../middleware/authMiddleware');
 
-// POST or PUT profile
-router.post('/company-profile', saveProfile);
+
+router.post('/company-profile', verifyToken, saveProfile);
+router.get('/company-profile', verifyToken, getProfile);
+
 
 module.exports = router;

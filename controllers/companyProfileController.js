@@ -49,3 +49,42 @@ exports.saveProfile = async (req, res) => {
     });
   }
 };
+
+exports.getProfile = async (req, res) => {
+  try {
+    const { userId, role } = req.user;
+
+    if (role !== "employer") {
+      return res.status(403).json({
+        status: false,
+        message: "Only employers can view company profiles."
+      });
+    }
+
+    const profile = await CompanyProfile.findOne({ userId });
+
+    if (!profile) {
+      return res.status(404).json({
+        status: false,
+        message: "Company profile not found."
+      });
+    }
+
+    return res.json({
+      status: true,
+      message: "Company profile fetched successfully.",
+      data: profile
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: error.message
+    });
+  }
+};
+
+
+
+
