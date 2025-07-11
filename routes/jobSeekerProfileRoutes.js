@@ -4,8 +4,8 @@ const { saveProfile, getProfile } = require('../controllers/jobSeekerController'
 const { verifyToken } = require('../middleware/authMiddleware');
 
 
-router.post('/jobSeeker-profile', verifyToken, saveProfile);
-router.get('/jobSeeker-profile', verifyToken, getProfile);
+router.post('/create-jobSeeker-profile', verifyToken, saveProfile);
+router.get('/get-jobSeeker-profile', verifyToken, getProfile);
 
 
 module.exports = router;

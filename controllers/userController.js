@@ -123,6 +123,7 @@ exports.selectRole = async (req, res) => {
 
   if (!existingProfile) {
     await CompanyProfile.create({
+
       userId: user._id,
       phoneNumber: user.phoneNumber
       
@@ -146,6 +147,7 @@ exports.selectRole = async (req, res) => {
     return res.json({
       status: true,
       message: `Role updated to ${role}.`,
+        role,
       token
     });
   } catch (error) {
