@@ -1,51 +1,60 @@
 const CompanyProfile = require("../models/CompanyProfile");
-const JobPost = require("../models/JobPost");
+
 
 exports.saveProfile = async (req, res) => {
   try {
-    const { phoneNumber, ...updateFields } = req.body;
+    const { userId, role, phoneNumber } = req.user;
 
-    if (!phoneNumber) {
-      return res.status(400).json({
+    if (role !== "employer") {
+      return res.status(403).json({
         status: false,
-        message: "phoneNumber is required to find the profile"
+        message: "Only employers can create or update company profiles."
       });
     }
 
-    if (Object.keys(updateFields).length === 0) {
+    if (!req.body || Object.keys(req.body).length === 0) {
       return res.status(400).json({
         status: false,
-        message: "No fields to update"
+        message: "No fields provided to create or update."
       });
     }
 
-   
-    let profile = await CompanyProfile.findOne({ phoneNumber });
+    let profile = await CompanyProfile.findOne({ userId });
 
     if (!profile) {
-      return res.status(404).json({
-        status: false,
-        message: "From this phoneNumber number, role has not been selected."
+      profile = new CompanyProfile({
+        userId,
+        phoneNumber,
+        ...req.body
+      });
+
+      await profile.save();
+
+      return res.status(201).json({
+        status: true,
+        message: "Company profile created successfully.",
+        data: profile
       });
     }
 
-    
-    Object.keys(updateFields).forEach(field => {
-      profile[field] = updateFields[field];
+    const restrictedFields = ["_id", "userId", "phoneNumber", "__v"];
+    Object.keys(req.body).forEach((field) => {
+      if (restrictedFields.includes(field)) return;
+      profile[field] = req.body[field];
     });
 
     await profile.save();
 
-    return res.json({
+    return res.status(200).json({
       status: true,
-      message: "Company profile updated successfully",
+      message: "Company profile updated successfully.",
       data: profile
     });
   } catch (error) {
-    console.error(error);
+    console.error("Error creating/updating company profile:", error);
     res.status(500).json({
       status: false,
-      message: "Server error",
+      message: "Server error.",
       error: error.message
     });
   }

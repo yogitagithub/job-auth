@@ -75,19 +75,19 @@ exports.selectRole = async (req, res) => {
   if (!phoneNumber || !role) {
     return res.status(400).json({
       status: false,
-      error: "phoneNumber number and role are required."
+      error: "phoneNumber and role are required."
     });
   }
 
-   if (!isValidPhone(phoneNumber)) {
+  if (!isValidPhone(phoneNumber)) {
     return res.status(400).json({
       otp: null,
       status: false,
-      error: 'Invalid phoneNumber number format. Must be 10 digits.'
+      error: "Invalid phoneNumber format. Must be 10 digits."
     });
   }
 
-  if (!['job_seeker', 'employer'].includes(role)) {
+  if (!["job_seeker", "employer"].includes(role)) {
     return res.status(400).json({
       status: false,
       error: "Invalid role selected. Must be 'job_seeker' or 'employer'."
@@ -108,47 +108,67 @@ exports.selectRole = async (req, res) => {
     user.role = role;
 
     const token = jwt.sign(
-      { userId: user._id, phoneNumber: user.phoneNumber, role: role },
+      { userId: user._id, phoneNumber: user.phoneNumber, role },
       process.env.JWT_SECRET,
-      { expiresIn: '1h' }
+      { expiresIn: "1h" }
     );
 
     user.token = token;
     await user.save();
 
-    
-
     if (role === "employer") {
-  const existingProfile = await CompanyProfile.findOne({ userId: user._id });
+      const existingProfile = await CompanyProfile.findOne({ userId: user._id });
 
-  if (!existingProfile) {
-    await CompanyProfile.create({
+      if (!existingProfile) {
+        await CompanyProfile.create({
+          userId: user._id,
+          phoneNumber: user.phoneNumber,
+          companyName: null,
+          industryType: null,
+          contactPersonName: null,
+          panCardNumber: null,
+          gstNumber: null,
+          alternatePhoneNumber: null,
+          email: null,
+          companyAddress: null,
+          state: null,
+          city: null,
+          pincode: null
+        });
+      }
+    }
 
-      userId: user._id,
-      phoneNumber: user.phoneNumber
-      
-    });
-  }
-}
+    if (role === "job_seeker") {
+      const existingJobSeekerProfile = await JobSeekerProfile.findOne({ userId: user._id });
 
-  if (role === "job_seeker") {
-  const existingJobSeekerProfile = await JobSeekerProfile.findOne({ userId: user._id });
-
-  if (!existingJobSeekerProfile) {
-    await JobSeekerProfile.create({
-      userId: user._id,
-      phoneNumber: user.phoneNumber
-      
-    });
-  }
-}
-
+      if (!existingJobSeekerProfile) {
+        await JobSeekerProfile.create({
+          userId: user._id,
+          phoneNumber: user.phoneNumber
+        });
+      }
+    }
 
     return res.json({
       status: true,
       message: `Role updated to ${role}.`,
-        role,
-      token
+      role,
+      token,
+       "companyProfile": {
+   
+    "companyName": null,
+    "industryType": null,
+    "contactPersonName": null,
+    "panCardNumber": null,
+    "gstNumber": null,
+    "alternatePhoneNumber": null,
+    "email": null,
+    "companyAddress": null,
+    "state": null,
+    "city": null,
+    "pincode": null,
+   
+  }
     });
   } catch (error) {
     console.error("Error updating role:", error);
@@ -158,8 +178,6 @@ exports.selectRole = async (req, res) => {
     });
   }
 };
-
-
 
 
 exports.verifyOtp = async (req, res) => {
