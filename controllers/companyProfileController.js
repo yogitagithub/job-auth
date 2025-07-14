@@ -60,6 +60,7 @@ exports.saveProfile = async (req, res) => {
   }
 };
 
+
 exports.getProfile = async (req, res) => {
   try {
     const { userId, role } = req.user;
@@ -80,10 +81,31 @@ exports.getProfile = async (req, res) => {
       });
     }
 
+   
+    const profileObj = profile.toObject();
+
+    
+    const responseData = {
+      id: profileObj._id,
+      userId: profileObj.userId,
+      phoneNumber: profileObj.phoneNumber,
+      companyName: profileObj.companyName,
+      industryType: profileObj.industryType,
+      contactPersonName: profileObj.contactPersonName,
+      panCardNumber: profileObj.panCardNumber,
+      gstNumber: profileObj.gstNumber,
+      alternatePhoneNumber: profileObj.alternatePhoneNumber,
+      email: profileObj.email,
+      companyAddress: profileObj.companyAddress,
+      state: profileObj.state,
+      city: profileObj.city,
+      pincode: profileObj.pincode
+    };
+
     return res.json({
       status: true,
       message: "Company profile fetched successfully.",
-      data: profile
+      data: responseData
     });
   } catch (error) {
     console.error(error);
@@ -94,6 +116,7 @@ exports.getProfile = async (req, res) => {
     });
   }
 };
+
 
 
 
