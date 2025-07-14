@@ -160,21 +160,23 @@ exports.selectRole = async (req, res) => {
 };
 
 
+
+
 exports.verifyOtp = async (req, res) => {
   const { phoneNumber, otp } = req.body;
 
   if (!phoneNumber || !otp) {
     return res.status(400).json({
       status: false,
-      message: 'phoneNumber number and OTP are required.'
+      message: 'phoneNumber and OTP are required.'
     });
   }
 
-   if (!isValidPhone(phoneNumber)) {
+  if (!isValidPhone(phoneNumber)) {
     return res.status(400).json({
       otp: null,
       status: false,
-      error: 'Invalid phoneNumber number format. Must be 10 digits.'
+      error: 'Invalid phoneNumber format. Must be 10 digits.'
     });
   }
 
@@ -182,7 +184,6 @@ exports.verifyOtp = async (req, res) => {
     let user = await User.findOne({ phoneNumber });
 
     if (!user) {
-     
       const newUser = new User({
         phoneNumber,
         otp: null,
@@ -192,11 +193,10 @@ exports.verifyOtp = async (req, res) => {
 
       return res.status(400).json({
         status: false,
-        message: 'phoneNumber number not found. New phoneNumber number saved. Please request OTP again.'
+        message: 'phoneNumber not found. New phoneNumber saved. Please request OTP again.'
       });
     }
 
-   
     if (user.otp !== otp) {
       return res.status(400).json({
         status: false,
@@ -204,7 +204,6 @@ exports.verifyOtp = async (req, res) => {
       });
     }
 
-  
     if (user.otpExpiresAt && user.otpExpiresAt < new Date()) {
       return res.status(400).json({
         status: false,
@@ -212,13 +211,28 @@ exports.verifyOtp = async (req, res) => {
       });
     }
 
-   
-    return res.json({
+    // Prepare response object
+    const response = {
       status: true,
       message: 'OTP verified',
-      token: user.token,
       role: user.role
-    });
+    };
+
+    // If role already selected, generate a fresh token
+    if (user.role) {
+      const token = jwt.sign(
+        { userId: user._id, phoneNumber: user.phoneNumber, role: user.role },
+        process.env.JWT_SECRET,
+        { expiresIn: '1h' }
+      );
+
+      user.token = token;
+      await user.save();
+
+      response.token = token;
+    }
+
+    return res.json(response);
 
   } catch (error) {
     console.error('Error verifying OTP:', error);
@@ -228,4 +242,6 @@ exports.verifyOtp = async (req, res) => {
     });
   }
 };
+
+
 
