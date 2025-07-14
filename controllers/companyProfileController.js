@@ -87,63 +87,7 @@ exports.getProfile = async (req, res) => {
 };
 
 
-exports.createJobPost = async (req, res) => {
-  try {
-    // 1️⃣ Get the company profile for this user
-    const company = await CompanyProfile.findOne({ userId: req.user.userId });
 
-    if (!company) {
-      return res.status(400).json({
-        success: false,
-        message: "Company profile not found for this user. Please create a company profile first."
-      });
-    }
-
-    // 2️⃣ Create a new JobPost document
-    const jobPost = new JobPost({
-      ...req.body,
-      companyId: company._id, // link to company
-      userId: req.user.userId // link to user
-    });
-
-    await jobPost.save();
-
-    res.status(201).json({
-      success: true,
-      message: "Job post created successfully.",
-      data: jobPost
-    });
-  } catch (error) {
-    console.error("Error creating job post:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to create job post.",
-      error: error.message
-    });
-  }
-};
-
-exports.getAllJobPosts = async (req, res) => {
-  try {
-    const jobPosts = await JobPost.find()
-      .populate("companyId")   // Get linked company profile
-      .populate("userId", "mobile role") // Optionally get user details (only mobile & role)
-      .sort({ createdAt: -1 }); // Most recent first
-
-    res.json({
-      success: true,
-      count: jobPosts.length,
-      data: jobPosts
-    });
-  } catch (error) {
-    console.error("Error fetching job posts:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch job posts.",
-      error: error.message
-    });
-  }
-};
 
 
 
