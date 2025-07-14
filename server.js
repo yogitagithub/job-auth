@@ -1,9 +1,12 @@
 const express = require("express");
 const cors = require("cors");
 const connectDB = require("./config/db");
+
 const userRoutes = require('./routes/userRoutes');
 const companyProfileRoutes = require("./routes/companyProfileRoutes");
 const jobSeekerProfileRoutes = require("./routes/jobSeekerProfileRoutes");
+const jobPostRoutes = require("./routes/jobPostRoutes");
+
 const dotenv = require("dotenv");
 dotenv.config();
 
@@ -21,6 +24,7 @@ app.use(express.urlencoded({
 app.use('/api/auth', userRoutes);
 app.use('/api/auth', companyProfileRoutes);
 app.use('/api/auth', jobSeekerProfileRoutes);
+app.use('/api/auth', jobPostRoutes);
 
 const PORT = process.env.PORT || 8001;
 app.listen(PORT, () => {

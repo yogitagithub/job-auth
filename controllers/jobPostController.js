@@ -1,8 +1,9 @@
 const JobPost = require("../models/JobPost");
+const CompanyProfile = require("../models/CompanyProfile");
 
 exports.createJobPost = async (req, res) => {
   try {
-    // 1️⃣ Get the company profile for this user
+   
     const company = await CompanyProfile.findOne({ userId: req.user.userId });
 
     if (!company) {
@@ -12,11 +13,11 @@ exports.createJobPost = async (req, res) => {
       });
     }
 
-    // 2️⃣ Create a new JobPost document
+ 
     const jobPost = new JobPost({
       ...req.body,
-      companyId: company._id, // link to company
-      userId: req.user.userId // link to user
+      companyId: company._id, 
+      userId: req.user.userId 
     });
 
     await jobPost.save();
@@ -39,9 +40,9 @@ exports.createJobPost = async (req, res) => {
 exports.getAllJobPosts = async (req, res) => {
   try {
     const jobPosts = await JobPost.find()
-      .populate("companyId")   // Get linked company profile
-      .populate("userId", "mobile role") // Optionally get user details (only mobile & role)
-      .sort({ createdAt: -1 }); // Most recent first
+      .populate("companyId")  
+      .populate("userId", "mobile role") 
+      .sort({ createdAt: -1 }); 
 
     res.json({
       success: true,
@@ -58,31 +59,31 @@ exports.getAllJobPosts = async (req, res) => {
   }
 };
 
-// exports.getJobPostById = async (req, res) => {
-//   try {
-//     const { id } = req.params;
+exports.getJobPostById = async (req, res) => {
+  try {
+    const { id } = req.params;
 
-//     const jobPost = await JobPost.findById(id)
-//       .populate("companyId")
-//       .populate("userId", "mobile role");
+    const jobPost = await JobPost.findById(id)
+      .populate("companyId")
+      .populate("userId", "mobile role");
 
-//     if (!jobPost) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Job post not found."
-//       });
-//     }
+    if (!jobPost) {
+      return res.status(404).json({
+        success: false,
+        message: "Job post not found."
+      });
+    }
 
-//     res.json({
-//       success: true,
-//       data: jobPost
-//     });
-//   } catch (error) {
-//     console.error("Error fetching job post by ID:", error);
-//     res.status(500).json({
-//       success: false,
-//       message: "Failed to fetch job post.",
-//       error: error.message
-//     });
-//   }
-// };
+    res.json({
+      success: true,
+      data: jobPost
+    });
+  } catch (error) {
+    console.error("Error fetching job post by ID:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch job post.",
+      error: error.message
+    });
+  }
+};
