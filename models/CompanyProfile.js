@@ -22,7 +22,11 @@ const companyProfileSchema = new mongoose.Schema({
   companyAddress: { type: String },
   state: { type: String },
   city: { type: String },
-  pincode: { type: String }
+  pincode: { type: String },
+   image: {
+    type: String,
+    trim: true
+   }
 }, {
   timestamps: true
 });

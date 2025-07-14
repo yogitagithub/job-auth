@@ -1,6 +1,5 @@
 const JobSeekerProfile = require("../models/JobSeekerProfile");
 
-
 exports.saveProfile = async (req, res) => {
   try {
     const { phoneNumber, ...updateFields } = req.body;
@@ -71,11 +70,32 @@ exports.getProfile = async (req, res) => {
       });
     }
 
-    return res.json({
+     const profileObj = profile.toObject();
+
+       const responseData = {
+      id: profileObj._id,
+      userId: profileObj.userId,
+      phoneNumber: profileObj.phoneNumber,
+      name: profileObj.name,
+      dateOfBirth: profileObj.dateOfBirth,
+      gender: profileObj.gender,
+      email: profileObj.email,
+      industry: profileObj.industry,
+      jobProfile: profileObj.jobProfile,
+      address: profileObj.address,
+      state: profileObj.state,
+      state: profileObj.state,
+      city: profileObj.city,
+      pincode: profileObj.pincode
+    };
+
+     return res.json({
       status: true,
       message: "Job seeker profile fetched successfully.",
-      data: profile
+      data: responseData
     });
+
+   
   } catch (error) {
     console.error(error);
     res.status(500).json({
@@ -85,3 +105,6 @@ exports.getProfile = async (req, res) => {
     });
   }
 };
+
+
+

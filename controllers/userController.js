@@ -116,6 +116,9 @@ exports.selectRole = async (req, res) => {
     user.token = token;
     await user.save();
 
+    let companyProfileData = null;
+    let jobSeekerProfileData = null;
+
     if (role === "employer") {
       const existingProfile = await CompanyProfile.findOne({ userId: user._id });
 
@@ -136,6 +139,21 @@ exports.selectRole = async (req, res) => {
           pincode: null
         });
       }
+
+      // Return default company profile fields
+      companyProfileData = {
+        companyName: null,
+        industryType: null,
+        contactPersonName: null,
+        panCardNumber: null,
+        gstNumber: null,
+        alternatePhoneNumber: null,
+        email: null,
+        companyAddress: null,
+        state: null,
+        city: null,
+        pincode: null
+      };
     }
 
     if (role === "job_seeker") {
@@ -144,9 +162,33 @@ exports.selectRole = async (req, res) => {
       if (!existingJobSeekerProfile) {
         await JobSeekerProfile.create({
           userId: user._id,
-          phoneNumber: user.phoneNumber
+          phoneNumber: user.phoneNumber,
+          name: null,
+          dateOfBirth: null,
+          gender: null,
+          email: null,
+          industry: null,
+          jobProfile: null,
+          address: null,
+          state: null,
+          city: null,
+          pincode: null
         });
       }
+
+      // Return default job seeker profile fields
+      jobSeekerProfileData = {
+        name: null,
+        dateOfBirth: null,
+        gender: null,
+        email: null,
+        industry: null,
+        jobProfile: null,
+        address: null,
+        state: null,
+        city: null,
+        pincode: null
+      };
     }
 
     return res.json({
@@ -154,21 +196,8 @@ exports.selectRole = async (req, res) => {
       message: `Role updated to ${role}.`,
       role,
       token,
-       "companyProfile": {
-   
-    "companyName": null,
-    "industryType": null,
-    "contactPersonName": null,
-    "panCardNumber": null,
-    "gstNumber": null,
-    "alternatePhoneNumber": null,
-    "email": null,
-    "companyAddress": null,
-    "state": null,
-    "city": null,
-    "pincode": null,
-   
-  }
+      ...(companyProfileData && { companyProfile: companyProfileData }),
+      ...(jobSeekerProfileData && { jobSeekerProfile: jobSeekerProfileData })
     });
   } catch (error) {
     console.error("Error updating role:", error);
@@ -178,7 +207,6 @@ exports.selectRole = async (req, res) => {
     });
   }
 };
-
 
 exports.verifyOtp = async (req, res) => {
   const { phoneNumber, otp } = req.body;

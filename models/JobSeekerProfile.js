@@ -14,7 +14,6 @@ const profileSchema = new mongoose.Schema(
       },
     name: {
       type: String,
-     
       trim: true,
     },
     dateOfBirth: {
@@ -29,7 +28,6 @@ const profileSchema = new mongoose.Schema(
    
     email: {
       type: String,
-     
      
       lowercase: true,
       trim: true,

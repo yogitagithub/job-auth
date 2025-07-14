@@ -87,3 +87,50 @@ exports.getJobPostById = async (req, res) => {
     });
   }
 };
+
+exports.updateJobPostById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId } = req.user;
+
+  
+    const jobPost = await JobPost.findById(id);
+
+    if (!jobPost) {
+      return res.status(404).json({
+        success: false,
+        message: "Job post not found."
+      });
+    }
+
+   
+    if (jobPost.userId.toString() !== userId.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to update this job post."
+      });
+    }
+
+    
+    const restrictedFields = ["_id", "userId", "companyId", "__v"];
+    Object.keys(req.body).forEach((field) => {
+      if (restrictedFields.includes(field)) return;
+      jobPost[field] = req.body[field];
+    });
+
+    await jobPost.save();
+
+    res.json({
+      success: true,
+      message: "Job post updated successfully.",
+      data: jobPost
+    });
+  } catch (error) {
+    console.error("Error updating job post:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update job post.",
+      error: error.message
+    });
+  }
+};

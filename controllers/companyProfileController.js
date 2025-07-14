@@ -1,6 +1,5 @@
 const CompanyProfile = require("../models/CompanyProfile");
 
-
 exports.saveProfile = async (req, res) => {
   try {
     const { userId, role, phoneNumber } = req.user;
@@ -116,6 +115,9 @@ exports.getProfile = async (req, res) => {
     });
   }
 };
+
+
+
 
 
 
