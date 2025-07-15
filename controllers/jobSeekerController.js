@@ -1,7 +1,5 @@
 const JobSeekerProfile = require("../models/JobSeekerProfile");
 
-
-
 exports.saveProfile = async (req, res) => {
   try {
     const { userId, role, phoneNumber } = req.user;
@@ -21,6 +19,20 @@ exports.saveProfile = async (req, res) => {
     }
 
     let profile = await JobSeekerProfile.findOne({ userId });
+
+   
+if (req.body.dateOfBirth) {
+  const regex = /^\d{2}-\d{2}-\d{4}$/;
+  if (!regex.test(req.body.dateOfBirth)) {
+    return res.status(400).json({
+      status: false,
+      message: "dateOfBirth must be in DD-MM-YYYY format."
+    });
+  }
+  const [day, month, year] = req.body.dateOfBirth.split("-");
+  req.body.dateOfBirth = new Date(`${year}-${month}-${day}`);
+}
+
 
     if (!profile) {
       profile = new JobSeekerProfile({
@@ -81,6 +93,16 @@ exports.getProfile = async (req, res) => {
       });
     }
 
+    
+    function formatDate(date) {
+      if (!date) return null;
+      const d = new Date(date);
+      const day = String(d.getUTCDate()).padStart(2, '0');
+      const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const year = d.getUTCFullYear();
+      return `${day}-${month}-${year}`;
+    }
+
      const profileObj = profile.toObject();
 
        const responseData = {
@@ -88,7 +110,8 @@ exports.getProfile = async (req, res) => {
       userId: profileObj.userId,
       phoneNumber: profileObj.phoneNumber,
       name: profileObj.name,
-      dateOfBirth: profileObj.dateOfBirth,
+        dateOfBirth: formatDate(profileObj.dateOfBirth), 
+      
       gender: profileObj.gender,
       email: profileObj.email,
       industry: profileObj.industry,
@@ -97,7 +120,9 @@ exports.getProfile = async (req, res) => {
       state: profileObj.state,
       state: profileObj.state,
       city: profileObj.city,
-      pincode: profileObj.pincode
+      pincode: profileObj.pincode,
+      panCardNumber: profileObj.panCardNumber,
+      alternatePhoneNumber: profileObj.alternatePhoneNumber
     };
 
      return res.json({

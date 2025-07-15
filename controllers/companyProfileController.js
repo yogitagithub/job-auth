@@ -98,7 +98,8 @@ exports.getProfile = async (req, res) => {
       companyAddress: profileObj.companyAddress,
       state: profileObj.state,
       city: profileObj.city,
-      pincode: profileObj.pincode
+      pincode: profileObj.pincode,
+      image: profileObj.image
     };
 
     return res.json({

@@ -36,6 +36,8 @@ const profileSchema = new mongoose.Schema(
       type: String,
     
     },
+     panCardNumber: { type: String, trim: true },
+      alternatePhoneNumber: { type: String },
     jobProfile: {
       type: String,
      
