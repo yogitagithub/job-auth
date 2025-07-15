@@ -7,7 +7,7 @@ exports.saveProfile = async (req, res) => {
     if (role !== "job_seeker") {
       return res.status(403).json({
         status: false,
-        message: "Only job seekers can create or update company profiles."
+        message: "Only job seekers can create or update their profiles."
       });
     }
 
@@ -20,37 +20,40 @@ exports.saveProfile = async (req, res) => {
 
     let profile = await JobSeekerProfile.findOne({ userId });
 
-   
-if (req.body.dateOfBirth) {
-  const regex = /^\d{2}-\d{2}-\d{4}$/;
-  if (!regex.test(req.body.dateOfBirth)) {
-    return res.status(400).json({
-      status: false,
-      message: "dateOfBirth must be in DD-MM-YYYY format."
-    });
-  }
-  const [day, month, year] = req.body.dateOfBirth.split("-");
-  req.body.dateOfBirth = new Date(`${year}-${month}-${day}`);
-}
-
+    // Validate and convert dateOfBirth if present
+    if (req.body.dateOfBirth) {
+      const regex = /^\d{2}-\d{2}-\d{4}$/;
+      if (!regex.test(req.body.dateOfBirth)) {
+        return res.status(400).json({
+          status: false,
+          message: "dateOfBirth must be in DD-MM-YYYY format."
+        });
+      }
+      const [day, month, year] = req.body.dateOfBirth.split("-");
+      req.body.dateOfBirth = new Date(`${year}-${month}-${day}`);
+    }
 
     if (!profile) {
+      // Remove image from body if present
+      const { image, ...restFields } = req.body;
+
       profile = new JobSeekerProfile({
         userId,
         phoneNumber,
-        ...req.body
+        ...restFields
       });
 
       await profile.save();
 
       return res.status(201).json({
         status: true,
-        message: "Job Seeker profile created successfully.",
+        message: "Job seeker profile created successfully.",
         data: profile
       });
     }
 
-    const restrictedFields = ["_id", "userId", "phoneNumber", "__v"];
+    // When updating, ignore restricted fields and image
+    const restrictedFields = ["_id", "userId", "phoneNumber", "__v", "image"];
     Object.keys(req.body).forEach((field) => {
       if (restrictedFields.includes(field)) return;
       profile[field] = req.body[field];
@@ -60,11 +63,11 @@ if (req.body.dateOfBirth) {
 
     return res.status(200).json({
       status: true,
-      message: "Job Seeker profile updated successfully.",
+      message: "Job seeker profile updated successfully.",
       data: profile
     });
   } catch (error) {
-    console.error("Error creating/updating company profile:", error);
+    console.error("Error creating/updating job seeker profile:", error);
     res.status(500).json({
       status: false,
       message: "Server error.",
@@ -72,6 +75,7 @@ if (req.body.dateOfBirth) {
     });
   }
 };
+
 
 exports.getProfile = async (req, res) => {
   try {
@@ -135,6 +139,61 @@ exports.getProfile = async (req, res) => {
    
   } catch (error) {
     console.error(error);
+    res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: error.message
+    });
+  }
+};
+
+
+exports.updateProfileImage = async (req, res) => {
+  try {
+    const { userId, role } = req.user;
+
+   
+    if (role !== "job_seeker") {
+      return res.status(403).json({
+        status: false,
+        message: "Only job seekers can update the company image."
+      });
+    }
+
+    const { image } = req.body;
+
+    
+    if (!image || typeof image !== "string") {
+      return res.status(400).json({
+        status: false,
+        message: "Image URL is required and must be a string."
+      });
+    }
+
+  
+    const profile = await JobSeekerProfile.findOne({ userId });
+
+    if (!profile) {
+      return res.status(404).json({
+        status: false,
+        message: "Job seeker profile not found."
+      });
+    }
+
+   
+    profile.image = image;
+
+    await profile.save();
+
+    return res.status(200).json({
+      status: true,
+      message: "Job seeker profile image updated successfully.",
+      data: {
+        image: profile.image
+      }
+    });
+  } catch (error) {
+    console.error("Error updating job seeker profile image:", error);
     res.status(500).json({
       status: false,
       message: "Server error.",

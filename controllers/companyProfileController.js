@@ -21,10 +21,13 @@ exports.saveProfile = async (req, res) => {
     let profile = await CompanyProfile.findOne({ userId });
 
     if (!profile) {
+      // Remove image if present
+      const { image, ...restFields } = req.body;
+
       profile = new CompanyProfile({
         userId,
         phoneNumber,
-        ...req.body
+        ...restFields
       });
 
       await profile.save();
@@ -36,7 +39,8 @@ exports.saveProfile = async (req, res) => {
       });
     }
 
-    const restrictedFields = ["_id", "userId", "phoneNumber", "__v"];
+    // When updating, ignore restricted fields and image
+    const restrictedFields = ["_id", "userId", "phoneNumber", "__v", "image"];
     Object.keys(req.body).forEach((field) => {
       if (restrictedFields.includes(field)) return;
       profile[field] = req.body[field];
@@ -116,6 +120,61 @@ exports.getProfile = async (req, res) => {
     });
   }
 };
+
+exports.updateProfileImage = async (req, res) => {
+  try {
+    const { userId, role } = req.user;
+
+   
+    if (role !== "employer") {
+      return res.status(403).json({
+        status: false,
+        message: "Only employers can update the company image."
+      });
+    }
+
+    const { image } = req.body;
+
+    
+    if (!image || typeof image !== "string") {
+      return res.status(400).json({
+        status: false,
+        message: "Image URL is required and must be a string."
+      });
+    }
+
+  
+    const profile = await CompanyProfile.findOne({ userId });
+
+    if (!profile) {
+      return res.status(404).json({
+        status: false,
+        message: "Company profile not found."
+      });
+    }
+
+   
+    profile.image = image;
+
+    await profile.save();
+
+    return res.status(200).json({
+      status: true,
+      message: "Company profile image updated successfully.",
+      data: {
+        image: profile.image
+      }
+    });
+  } catch (error) {
+    console.error("Error updating company profile image:", error);
+    res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: error.message
+    });
+  }
+};
+
 
 
 
