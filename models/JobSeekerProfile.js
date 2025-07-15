@@ -12,6 +12,10 @@ const profileSchema = new mongoose.Schema(
         type: String,
         required: true
       },
+       image: {
+    type: String,
+    trim: true
+   },
     name: {
       type: String,
       trim: true,
@@ -42,6 +46,7 @@ const profileSchema = new mongoose.Schema(
       type: String,
      
     },
+
     address: {
       type: String,
      

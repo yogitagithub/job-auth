@@ -122,7 +122,8 @@ exports.getProfile = async (req, res) => {
       city: profileObj.city,
       pincode: profileObj.pincode,
       panCardNumber: profileObj.panCardNumber,
-      alternatePhoneNumber: profileObj.alternatePhoneNumber
+      alternatePhoneNumber: profileObj.alternatePhoneNumber,
+       image: profileObj.image
     };
 
      return res.json({
