@@ -20,7 +20,7 @@ exports.saveProfile = async (req, res) => {
 
     let profile = await JobSeekerProfile.findOne({ userId });
 
-    // Validate and convert dateOfBirth if present
+   
     if (req.body.dateOfBirth) {
       const regex = /^\d{2}-\d{2}-\d{4}$/;
       if (!regex.test(req.body.dateOfBirth)) {
@@ -34,7 +34,7 @@ exports.saveProfile = async (req, res) => {
     }
 
     if (!profile) {
-      // Remove image from body if present
+     
       const { image, ...restFields } = req.body;
 
       profile = new JobSeekerProfile({
@@ -52,7 +52,7 @@ exports.saveProfile = async (req, res) => {
       });
     }
 
-    // When updating, ignore restricted fields and image
+   
     const restrictedFields = ["_id", "userId", "phoneNumber", "__v", "image"];
     Object.keys(req.body).forEach((field) => {
       if (restrictedFields.includes(field)) return;

@@ -21,7 +21,7 @@ exports.saveProfile = async (req, res) => {
     let profile = await CompanyProfile.findOne({ userId });
 
     if (!profile) {
-      // Remove image if present
+      
       const { image, ...restFields } = req.body;
 
       profile = new CompanyProfile({
@@ -39,7 +39,7 @@ exports.saveProfile = async (req, res) => {
       });
     }
 
-    // When updating, ignore restricted fields and image
+   
     const restrictedFields = ["_id", "userId", "phoneNumber", "__v", "image"];
     Object.keys(req.body).forEach((field) => {
       if (restrictedFields.includes(field)) return;
