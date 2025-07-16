@@ -7,6 +7,8 @@ const companyProfileRoutes = require("./routes/companyProfileRoutes");
 const jobSeekerProfileRoutes = require("./routes/jobSeekerProfileRoutes");
 const jobPostRoutes = require("./routes/jobPostRoutes");
 
+const educationRoutes = require("./routes/educationRoutes");
+
 const dotenv = require("dotenv");
 dotenv.config();
 
@@ -25,6 +27,8 @@ app.use('/api/auth', userRoutes);
 app.use('/api/auth', companyProfileRoutes);
 app.use('/api/auth', jobSeekerProfileRoutes);
 app.use('/api/auth', jobPostRoutes);
+
+app.use('/api/auth', educationRoutes);
 
 const PORT = process.env.PORT || 8001;
 app.listen(PORT, () => {

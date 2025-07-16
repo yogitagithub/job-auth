@@ -25,7 +25,7 @@ const jobPostSchema = new mongoose.Schema(
       
     },
 
-    // Step 2 fields
+   
     jobTitle: {
       type: String,
      
@@ -43,7 +43,7 @@ const jobPostSchema = new mongoose.Schema(
     },
     displayPhoneNumber: {
       type: String,
-      match: /^[0-9]{8,15}$/, // adjust regex as per your region
+      match: /^[0-9]{8,15}$/, 
     
     },
     displayEmail: {

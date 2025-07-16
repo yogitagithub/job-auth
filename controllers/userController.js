@@ -176,7 +176,7 @@ exports.selectRole = async (req, res) => {
         });
       }
 
-      // Return default job seeker profile fields
+     
       jobSeekerProfileData = {
         name: null,
         dateOfBirth: null,
