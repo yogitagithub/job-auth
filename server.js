@@ -11,6 +11,7 @@ const educationRoutes = require("./routes/educationRoutes");
 const workRoutes = require("./routes/workExpRoutes");
 const resumeRoutes = require("./routes/resumeRoutes");
 const skillsRoutes = require("./routes/skillsRoutes");
+const applyJobRoutes = require("./routes/applyJobRoutes");
 
 const dotenv = require("dotenv");
 dotenv.config();
@@ -35,6 +36,7 @@ app.use('/api/auth', educationRoutes);
 app.use('/api/auth', workRoutes);
 app.use('/api/auth', resumeRoutes);
 app.use('/api/auth', skillsRoutes);
+app.use('/api/auth', applyJobRoutes);
 
 const PORT = process.env.PORT || 8001;
 app.listen(PORT, () => {

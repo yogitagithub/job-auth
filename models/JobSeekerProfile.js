@@ -5,7 +5,7 @@ const profileSchema = new mongoose.Schema(
      userId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
-         unique: true,
+        //  unique: true,
         required: true
       },
       phoneNumber: {

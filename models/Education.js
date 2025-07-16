@@ -20,7 +20,7 @@ const jobSeekerEducationSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-      unique: true,
+      // unique: true,
     },
     jobSeekerId: {
       type: mongoose.Schema.Types.ObjectId,
