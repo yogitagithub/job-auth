@@ -62,6 +62,7 @@ exports.createEducation = async (req, res) => {
   }
 };
 
+
 exports.getMyEducation = async (req, res) => {
   try {
     const { userId } = req.user;
@@ -69,10 +70,10 @@ exports.getMyEducation = async (req, res) => {
     const educationRecord = await JobSeekerEducation.findOne({ userId })
       .populate({
         path: "userId",
-        select: "phoneNumber role" 
+        select: "phoneNumber role"
       })
       .populate("jobSeekerId")
-      .lean(); 
+      .lean();
 
     if (!educationRecord) {
       return res.status(404).json({
@@ -81,44 +82,48 @@ exports.getMyEducation = async (req, res) => {
       });
     }
 
-    
+    // Remove __v and timestamps
     delete educationRecord.__v;
     delete educationRecord.createdAt;
     delete educationRecord.updatedAt;
 
-   
+    // Replace _id with id
     educationRecord.id = educationRecord._id;
     delete educationRecord._id;
 
-   
+    // Format nested educations array
     if (educationRecord.educations && Array.isArray(educationRecord.educations)) {
       educationRecord.educations = educationRecord.educations.map((edu) => {
         edu.id = edu._id;
         delete edu._id;
 
-           if (edu.sessionFrom) {
+        // Format sessionFrom
+        if (edu.sessionFrom) {
           edu.sessionFrom = new Date(edu.sessionFrom)
             .toLocaleDateString("en-GB")
             .split("/")
             .join("-");
         }
+
+        // Format sessionTo
         if (edu.sessionTo) {
           edu.sessionTo = new Date(edu.sessionTo)
             .toLocaleDateString("en-GB")
             .split("/")
             .join("-");
         }
+
         return edu;
       });
     }
 
-   
+    // Format userId _id to id
     if (educationRecord.userId && educationRecord.userId._id) {
       educationRecord.userId.id = educationRecord.userId._id;
       delete educationRecord.userId._id;
     }
 
-   
+    // Format jobSeekerId fields
     if (educationRecord.jobSeekerId && educationRecord.jobSeekerId._id) {
       educationRecord.jobSeekerId.id = educationRecord.jobSeekerId._id;
       delete educationRecord.jobSeekerId._id;
@@ -126,6 +131,15 @@ exports.getMyEducation = async (req, res) => {
       delete educationRecord.jobSeekerId.__v;
       delete educationRecord.jobSeekerId.createdAt;
       delete educationRecord.jobSeekerId.updatedAt;
+
+      // Format dateOfBirth to DD-MM-YYYY
+      if (educationRecord.jobSeekerId.dateOfBirth) {
+        const dob = new Date(educationRecord.jobSeekerId.dateOfBirth);
+        const day = String(dob.getDate()).padStart(2, "0");
+        const month = String(dob.getMonth() + 1).padStart(2, "0");
+        const year = dob.getFullYear();
+        educationRecord.jobSeekerId.dateOfBirth = `${day}-${month}-${year}`;
+      }
     }
 
     res.json({
@@ -141,6 +155,7 @@ exports.getMyEducation = async (req, res) => {
     });
   }
 };
+
 
 exports.updateEducation = async (req, res) => {
   try {
