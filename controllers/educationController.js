@@ -50,7 +50,7 @@ exports.createEducation = async (req, res) => {
     res.status(201).json({
       status: true,
       message: "Education record saved successfully.",
-      data: updatedRecord,
+      // data: updatedRecord,
     });
   } catch (error) {
     console.error("Error saving education:", error);
@@ -82,12 +82,14 @@ exports.getMyEducation = async (req, res) => {
       });
     }
 
-    // Remove __v and timestamps
+    // Remove __v, timestamps, and IDs you don't want
     delete educationRecord.__v;
     delete educationRecord.createdAt;
     delete educationRecord.updatedAt;
+    delete educationRecord.userId;
+    delete educationRecord.jobSeekerId;
 
-    // Replace _id with id
+    // Replace top-level _id with id
     educationRecord.id = educationRecord._id;
     delete educationRecord._id;
 
@@ -97,49 +99,26 @@ exports.getMyEducation = async (req, res) => {
         edu.id = edu._id;
         delete edu._id;
 
-        // Format sessionFrom
+        // Format sessionFrom (DD-MM-YYYY)
         if (edu.sessionFrom) {
-          edu.sessionFrom = new Date(edu.sessionFrom)
-            .toLocaleDateString("en-GB")
-            .split("/")
-            .join("-");
+          const fromDate = new Date(edu.sessionFrom);
+          const day = String(fromDate.getDate()).padStart(2, "0");
+          const month = String(fromDate.getMonth() + 1).padStart(2, "0");
+          const year = fromDate.getFullYear();
+          edu.sessionFrom = `${day}-${month}-${year}`;
         }
 
-        // Format sessionTo
+        // Format sessionTo (DD-MM-YYYY)
         if (edu.sessionTo) {
-          edu.sessionTo = new Date(edu.sessionTo)
-            .toLocaleDateString("en-GB")
-            .split("/")
-            .join("-");
+          const toDate = new Date(edu.sessionTo);
+          const day = String(toDate.getDate()).padStart(2, "0");
+          const month = String(toDate.getMonth() + 1).padStart(2, "0");
+          const year = toDate.getFullYear();
+          edu.sessionTo = `${day}-${month}-${year}`;
         }
 
         return edu;
       });
-    }
-
-    // Format userId _id to id
-    if (educationRecord.userId && educationRecord.userId._id) {
-      educationRecord.userId.id = educationRecord.userId._id;
-      delete educationRecord.userId._id;
-    }
-
-    // Format jobSeekerId fields
-    if (educationRecord.jobSeekerId && educationRecord.jobSeekerId._id) {
-      educationRecord.jobSeekerId.id = educationRecord.jobSeekerId._id;
-      delete educationRecord.jobSeekerId._id;
-
-      delete educationRecord.jobSeekerId.__v;
-      delete educationRecord.jobSeekerId.createdAt;
-      delete educationRecord.jobSeekerId.updatedAt;
-
-      // Format dateOfBirth to DD-MM-YYYY
-      if (educationRecord.jobSeekerId.dateOfBirth) {
-        const dob = new Date(educationRecord.jobSeekerId.dateOfBirth);
-        const day = String(dob.getDate()).padStart(2, "0");
-        const month = String(dob.getMonth() + 1).padStart(2, "0");
-        const year = dob.getFullYear();
-        educationRecord.jobSeekerId.dateOfBirth = `${day}-${month}-${year}`;
-      }
     }
 
     res.json({
@@ -155,6 +134,101 @@ exports.getMyEducation = async (req, res) => {
     });
   }
 };
+
+
+// exports.getMyEducation = async (req, res) => {
+//   try {
+//     const { userId } = req.user;
+
+//     const educationRecord = await JobSeekerEducation.findOne({ userId })
+//       .populate({
+//         path: "userId",
+//         select: "phoneNumber role"
+//       })
+//       .populate("jobSeekerId")
+//       .lean();
+
+//     if (!educationRecord) {
+//       return res.status(404).json({
+//         status: false,
+//         message: "Education record not found.",
+//       });
+//     }
+
+//     // Remove __v and timestamps
+//     delete educationRecord.__v;
+//     delete educationRecord.createdAt;
+//     delete educationRecord.updatedAt;
+    
+
+//     // Replace _id with id
+//     educationRecord.id = educationRecord._id;
+//     delete educationRecord._id;
+
+//     // Format nested educations array
+//     if (educationRecord.educations && Array.isArray(educationRecord.educations)) {
+//       educationRecord.educations = educationRecord.educations.map((edu) => {
+//         edu.id = edu._id;
+//         delete edu._id;
+
+//         // Format sessionFrom
+//         if (edu.sessionFrom) {
+//           edu.sessionFrom = new Date(edu.sessionFrom)
+//             .toLocaleDateString("en-GB")
+//             .split("/")
+//             .join("-");
+//         }
+
+//         // Format sessionTo
+//         if (edu.sessionTo) {
+//           edu.sessionTo = new Date(edu.sessionTo)
+//             .toLocaleDateString("en-GB")
+//             .split("/")
+//             .join("-");
+//         }
+
+//         return edu;
+//       });
+//     }
+
+//     // Format userId _id to id
+//     if (educationRecord.userId && educationRecord.userId._id) {
+//       educationRecord.userId.id = educationRecord.userId._id;
+//       delete educationRecord.userId._id;
+//     }
+
+//     // Format jobSeekerId fields
+//     if (educationRecord.jobSeekerId && educationRecord.jobSeekerId._id) {
+//       educationRecord.jobSeekerId.id = educationRecord.jobSeekerId._id;
+//       delete educationRecord.jobSeekerId._id;
+
+//       delete educationRecord.jobSeekerId.__v;
+//       delete educationRecord.jobSeekerId.createdAt;
+//       delete educationRecord.jobSeekerId.updatedAt;
+
+//       // Format dateOfBirth to DD-MM-YYYY
+//       if (educationRecord.jobSeekerId.dateOfBirth) {
+//         const dob = new Date(educationRecord.jobSeekerId.dateOfBirth);
+//         const day = String(dob.getDate()).padStart(2, "0");
+//         const month = String(dob.getMonth() + 1).padStart(2, "0");
+//         const year = dob.getFullYear();
+//         educationRecord.jobSeekerId.dateOfBirth = `${day}-${month}-${year}`;
+//       }
+//     }
+
+//     res.json({
+//       status: true,
+//       data: educationRecord,
+//     });
+//   } catch (error) {
+//     console.error("Error fetching education:", error);
+//     res.status(500).json({
+//       status: false,
+//       message: "Server error.",
+//       error: error.message,
+//     });
+//   }
+// };
 
 
 exports.updateEducation = async (req, res) => {
