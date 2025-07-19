@@ -4,7 +4,7 @@ const mongoose = require("mongoose");
 const educationEntrySchema = new mongoose.Schema(
   {
     degree: { type: String, required: true, trim: true },
-    boardOrUniversity: { type: String, required: true, trim: true },
+    boardOfUniversity: { type: String, required: true, trim: true },
     sessionFrom: { type: Date, required: true },
     sessionTo: { type: Date, required: true },
     marks: { type: String, trim: true },

@@ -13,6 +13,8 @@ const resumeRoutes = require("./routes/resumeRoutes");
 const skillsRoutes = require("./routes/skillsRoutes");
 const applyJobRoutes = require("./routes/applyJobRoutes");
 
+const adminRoutes = require("./routes/adminRoutes");
+
 const dotenv = require("dotenv");
 dotenv.config();
 
@@ -37,6 +39,8 @@ app.use('/api/auth', workRoutes);
 app.use('/api/auth', resumeRoutes);
 app.use('/api/auth', skillsRoutes);
 app.use('/api/auth', applyJobRoutes);
+
+app.use('/api/auth', adminRoutes);
 
 const PORT = process.env.PORT || 8001;
 app.listen(PORT, () => {

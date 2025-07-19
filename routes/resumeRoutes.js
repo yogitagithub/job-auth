@@ -6,6 +6,7 @@ const upload = require("../middleware/upload");
 
 
 router.post('/upload-resume', verifyToken,  upload.single("resume"), uploadResume);
+//  router.get('/get-resume/:id', verifyToken, getResumeById);
  router.delete('/delete-resume', verifyToken, deleteResume);
 
 

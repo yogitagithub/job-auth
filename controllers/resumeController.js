@@ -111,3 +111,39 @@ exports.deleteResume = async (req, res) => {
   }
 };
 
+// exports.getResumeByUserId = async (req, res) => {
+//   try {
+//     const { userId, role } = req.user; // Assuming JWT middleware adds req.user
+//     const { id } = req.params; // userId passed as param
+
+//     // Only job seekers or admins can access resumes
+//     if (!["job_seeker", "admin"].includes(role)) {
+//       return res.status(403).json({
+//         status: false,
+//         message: "Unauthorized access.",
+//       });
+//     }
+
+//     const resume = await Resume.findOne({ userId: id });
+
+//     if (!resume) {
+//       return res.status(404).json({
+//         status: false,
+//         message: "Resume not found for this user.",
+//       });
+//     }
+
+//     res.status(200).json({
+//       status: true,
+//       message: "Resume fetched successfully.",
+//       data: resume,
+//     });
+//   } catch (error) {
+//     console.error("Error fetching resume:", error);
+//     res.status(500).json({
+//       status: false,
+//       message: "Server error.",
+//       error: error.message,
+//     });
+//   }
+// };
