@@ -15,15 +15,21 @@ const jobPostSchema = new mongoose.Schema(
         // unique: true,
        required: true
     },
+   
+
     category: {
-      type: String,
-      required: true,
-      enum: ["Category A", "Category B", "Other"], // adjust categories as needed
-    },
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "Category",
+  required: true
+},
+
+
+
     industryType: {
-      type: String,
-      
-    },
+     type: mongoose.Schema.Types.ObjectId,
+  ref: "IndustryType",
+  required: true
+        },
 
    
     jobTitle: {

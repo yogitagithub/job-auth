@@ -1,5 +1,6 @@
 const JobPost = require("../models/JobPost");
 const CompanyProfile = require("../models/CompanyProfile");
+const Category = require("../models/AdminCategory");
 
 exports.createJobPost = async (req, res) => {
   try {
@@ -13,6 +14,13 @@ exports.createJobPost = async (req, res) => {
       });
     }
 
+     const categoryExists = await Category.findById(req.body.category);
+    if (!categoryExists) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid category. Please select a valid category.",
+      });
+    }
  
     const jobPost = new JobPost({
       ...req.body,
@@ -42,6 +50,8 @@ exports.getAllJobPosts = async (req, res) => {
     const jobPosts = await JobPost.find()
       .populate("companyId")  
       .populate("userId", "mobile role") 
+       .populate("category", "name")
+       .populate("industryType", "name")
       .sort({ createdAt: -1 }); 
 
     res.json({
@@ -65,7 +75,9 @@ exports.getJobPostById = async (req, res) => {
 
     const jobPost = await JobPost.findById(id)
       .populate("companyId")
-      .populate("userId", "mobile role");
+      .populate("userId", "mobile role")
+      .populate("category", "name")
+      .populate("industryType", "name");
 
     if (!jobPost) {
       return res.status(404).json({

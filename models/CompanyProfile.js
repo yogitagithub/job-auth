@@ -12,17 +12,29 @@ const companyProfileSchema = new mongoose.Schema({
     required: true
   },
   companyName: { type: String, trim: true },
-  industryType: { type: String },
+
+  industryType: {  
+    type: mongoose.Schema.Types.ObjectId,
+  ref: "IndustryType",
+  // required: true 
+},
+
   contactPersonName: { type: String, trim: true },
   panCardNumber: { type: String, trim: true },
   gstNumber: { type: String, trim: true },
   alternatePhoneNumber: { type: String },
-  email: { type: String,  lowercase: true,
-      trim: true },
+
+  email: 
+  { type: String,  
+    lowercase: true,
+      trim: true
+     },
+
   companyAddress: { type: String },
   state: { type: String },
   city: { type: String },
   pincode: { type: String },
+  
    image: {
     type: String,
     trim: true

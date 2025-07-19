@@ -216,7 +216,7 @@ exports.deleteIndustry = async (req, res) => {
   }
 };
 
-//get all employees
+//get all
 exports.getCategories = async (req, res) => {
   try {
     const categories = await Category.find().sort({ name: 1 });
@@ -235,8 +235,6 @@ exports.getCategories = async (req, res) => {
     });
   }
 };
-
-
 
 exports.getIndustry = async (req, res) => {
   try {

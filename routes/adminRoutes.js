@@ -7,9 +7,7 @@ const { sendAdminOtp, verifyAdminOtp, createCategory,
   createIndustry, getAdminIndustry,
   updateIndustry,
   deleteIndustry, getCategories, getIndustry } = require('../controllers/adminController');
-const { 
-     verifyToken, verifyAdmin 
- } = require('../middleware/authMiddleware');
+const { verifyToken, verifyAdmin, verifyEmployerOrAdmin } = require('../middleware/authMiddleware');
 
 
 router.post('/send-otp', sendAdminOtp);
@@ -17,20 +15,20 @@ router.post('/verify-otp', verifyAdminOtp);
 
 //category crud
 router.post("/create-categories", verifyToken, verifyAdmin, createCategory);
-router.get("/getAll-categories", verifyToken, getAdminCategory);
-router.put("/update-categories/:id", verifyToken, updateCategory);
-router.delete("/delete-categories/:id", verifyToken, deleteCategory);
+router.get("/getAll-categories", verifyToken, verifyAdmin, getAdminCategory);
+router.put("/update-categories/:id", verifyToken, verifyAdmin, updateCategory);
+router.delete("/delete-categories/:id", verifyToken, verifyAdmin, deleteCategory);
 
 
 //industry crud
-// router.post("/create-industry", verifyAdmin, createIndustry);
-// router.get("/getAll-industry", verifyAdmin, getAdminIndustry);
-// router.put("/update-industry/:id", verifyAdmin, updateIndustry);
-// router.delete("/delete-industry/:id", verifyAdmin, deleteIndustry);
+router.post("/create-industry", verifyToken, verifyAdmin, createIndustry);
+router.get("/getAll-industry", verifyToken, verifyAdmin, getAdminIndustry);
+router.put("/update-industry/:id", verifyToken, verifyAdmin, updateIndustry);
+router.delete("/delete-industry/:id", verifyToken, verifyAdmin, deleteIndustry);
 
 //get all employees
-router.get("/get-categories", verifyToken, getCategories);
-router.get("/get-industry", verifyToken, getIndustry);
+router.get("/get-categories", verifyToken, verifyEmployerOrAdmin, getCategories);
+router.get("/get-industry", verifyToken, verifyEmployerOrAdmin, getIndustry);
 
 
 module.exports = router;

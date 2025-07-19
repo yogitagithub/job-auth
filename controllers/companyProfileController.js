@@ -75,7 +75,8 @@ exports.getProfile = async (req, res) => {
       });
     }
 
-    const profile = await CompanyProfile.findOne({ userId });
+    
+  const profile = await CompanyProfile.findOne({ userId }).populate("industryType", "name");
 
     if (!profile) {
       return res.status(404).json({
