@@ -172,7 +172,9 @@ exports.selectRole = async (req, res) => {
           address: null,
           state: null,
           city: null,
-          pincode: null
+          pincode: null,
+          alternatePhoneNumber: null,
+          panCardNumber: null
         });
       }
 
@@ -187,7 +189,9 @@ exports.selectRole = async (req, res) => {
         address: null,
         state: null,
         city: null,
-        pincode: null
+        pincode: null,
+         alternatePhoneNumber: null,
+          panCardNumber: null
       };
     }
 

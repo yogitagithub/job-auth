@@ -32,7 +32,7 @@ const profileSchema = new mongoose.Schema(
    
     email: {
       type: String,
-     
+      sparse: true,
       lowercase: true,
       trim: true,
     },
