@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { adminLogin, createCategory,
+const { sendAdminOtp, verifyAdminOtp, createCategory,
   getAdminCategory,
   updateCategory,
   deleteCategory,
@@ -8,15 +8,15 @@ const { adminLogin, createCategory,
   updateIndustry,
   deleteIndustry, getCategories, getIndustry } = require('../controllers/adminController');
 const { 
-    // verifyAdmin
-     verifyToken
+     verifyToken, verifyAdmin 
  } = require('../middleware/authMiddleware');
 
 
-router.post('/login', adminLogin);
+router.post('/send-otp', sendAdminOtp);
+router.post('/verify-otp', verifyAdminOtp);
 
 //category crud
-router.post("/create-categories", verifyToken, createCategory);
+router.post("/create-categories", verifyToken, verifyAdmin, createCategory);
 router.get("/getAll-categories", verifyToken, getAdminCategory);
 router.put("/update-categories/:id", verifyToken, updateCategory);
 router.delete("/delete-categories/:id", verifyToken, deleteCategory);

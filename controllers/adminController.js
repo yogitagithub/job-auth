@@ -1,52 +1,117 @@
 const jwt = require("jsonwebtoken");
 const Category = require("../models/AdminCategory");
 const IndustryType = require("../models/AdminIndustry");
+const User = require('../models/User');
 
-// Static credentials (can be moved to env vars if preferred)
-const ADMIN_EMAIL = "admin@gmail.com";
-const ADMIN_PASSWORD = "admin123";
+const ADMIN_PHONE = '1234567809';
+const STATIC_OTP = '1111';
 
-// POST /api/admin/login
-exports.adminLogin = async (req, res) => {
-  try {
-    const { email, password } = req.body;
 
-    // Check if email and password are provided
-    if (!email || !password) {
-      return res.status(400).json({
-        status: false,
-        message: "Email and password are required.",
-      });
-    }
+//Authentication
+exports.sendAdminOtp = async (req, res) => {
+  const { phoneNumber } = req.body;
 
-    // Validate static credentials
-    if (email !== ADMIN_EMAIL || password !== ADMIN_PASSWORD) {
-      return res.status(401).json({
-        status: false,
-        message: "Invalid email or password.",
-      });
-    }
-
-    // Generate JWT token
-    const token = jwt.sign(
-      {
-        email,
-        role: "admin", // important for role-based access
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "1h" }
-    );
-
-    return res.status(200).json({
-      status: true,
-      message: "Admin logged in successfully.",
-      token,
+  if (phoneNumber !== ADMIN_PHONE) {
+    return res.status(403).json({
+      status: false,
+      message: "Only admin phone number allowed."
     });
+  }
+
+  try {
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+    let user = await User.findOne({ phoneNumber });
+
+    if (!user) {
+      user = new User({
+        phoneNumber,
+        otp: STATIC_OTP,
+        otpExpiresAt: expiresAt,
+        role: null,         // ✅ Keep it null initially
+        token: null
+      });
+    } else {
+      user.otp = STATIC_OTP;
+      user.otpExpiresAt = expiresAt;
+      // ❌ Don't update role here
+    }
+
+    await user.save();
+
+    return res.json({
+      otp: STATIC_OTP,
+      status: true
+    });
+
   } catch (error) {
-    console.error("Admin login error:", error);
+    console.error("Error in sendAdminOtp:", error);
     return res.status(500).json({
       status: false,
-      message: "Server error during login.",
+      message: "Internal server error."
+    });
+  }
+};
+
+exports.verifyAdminOtp = async (req, res) => {
+  const { phoneNumber, otp } = req.body;
+
+  if (phoneNumber !== ADMIN_PHONE || otp !== STATIC_OTP) {
+    return res.status(401).json({
+      status: false,
+      message: "Invalid admin credentials."
+    });
+  }
+
+  try {
+    let user = await User.findOne({ phoneNumber });
+
+    if (!user) {
+      return res.status(404).json({
+        status: false,
+        message: "Admin not found. Please send OTP first."
+      });
+    }
+
+    // Check OTP expiry
+    if (user.otpExpiresAt && user.otpExpiresAt < new Date()) {
+      return res.status(400).json({
+        status: false,
+        message: "OTP has expired."
+      });
+    }
+
+    // ✅ Set role to admin now
+    user.role = 'admin';
+
+    // ✅ Generate JWT
+    const token = jwt.sign(
+      {
+        userId: user._id,
+        phoneNumber: user.phoneNumber,
+        role: 'admin'
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    user.token = token;
+
+    // ✅ Save updated user
+    await user.save();
+
+    return res.json({
+      status: true,
+      message: 'Admin OTP verified',
+      role: 'admin',
+      token
+    });
+
+  } catch (error) {
+    console.error('Error in verifyAdminOtp:', error);
+    return res.status(500).json({
+      status: false,
+      message: 'Internal server error'
     });
   }
 };

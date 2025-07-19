@@ -40,7 +40,7 @@ app.use('/api/auth', resumeRoutes);
 app.use('/api/auth', skillsRoutes);
 app.use('/api/auth', applyJobRoutes);
 
-app.use('/api/auth', adminRoutes);
+app.use('/api/auth/admin', adminRoutes);
 
 const PORT = process.env.PORT || 8001;
 app.listen(PORT, () => {
