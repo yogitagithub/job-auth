@@ -92,7 +92,7 @@ exports.verifyAdminOtp = async (req, res) => {
         role: 'admin'
       },
       process.env.JWT_SECRET,
-      { expiresIn: '1h' }
+      { expiresIn: '1d' }
     );
 
     user.token = token;

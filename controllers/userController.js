@@ -110,7 +110,7 @@ exports.selectRole = async (req, res) => {
     const token = jwt.sign(
       { userId: user._id, phoneNumber: user.phoneNumber, role },
       process.env.JWT_SECRET,
-      { expiresIn: "1h" }
+      { expiresIn: "1d" }
     );
 
     user.token = token;
@@ -273,7 +273,7 @@ exports.verifyOtp = async (req, res) => {
       const token = jwt.sign(
         { userId: user._id, phoneNumber: user.phoneNumber, role: user.role },
         process.env.JWT_SECRET,
-        { expiresIn: '1h' }
+        { expiresIn: '1d' }
       );
 
       user.token = token;
