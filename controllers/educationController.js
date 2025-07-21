@@ -34,7 +34,7 @@ exports.createEducation = async (req, res) => {
 
     const educationsToAdd = Array.isArray(body) ? body : [body];
 
-    // Convert empty strings to null and prepare entries
+    
     const sanitizedEducations = educationsToAdd.map((edu) => ({
       userId,
       jobSeekerId: jobSeekerProfile._id,
@@ -113,8 +113,6 @@ exports.getMyEducation = async (req, res) => {
   }
 };
 
-
-
 exports.getEducationById = async (req, res) => {
   try {
     const { userId, role } = req.user;
@@ -146,7 +144,7 @@ exports.getEducationById = async (req, res) => {
       });
     }
 
-    // Format dates to DD-MM-YYYY
+   
     const formatDate = (date) =>
       date ? new Date(date).toLocaleDateString("en-GB").split("/").join("-") : null;
 
@@ -174,8 +172,6 @@ exports.getEducationById = async (req, res) => {
     });
   }
 };
-
-
 
 exports.updateEducationById = async (req, res) => {
   try {
@@ -208,7 +204,7 @@ exports.updateEducationById = async (req, res) => {
       });
     }
 
-    // Update only allowed fields
+   
     const allowedFields = [
       "degree",
       "boardOfUniversity",
@@ -226,7 +222,7 @@ exports.updateEducationById = async (req, res) => {
 
     await education.save();
 
-    // Format date as dd-mm-yyyy
+   
     const formatDate = (date) =>
       date ? new Date(date).toLocaleDateString("en-GB").split("/").join("-") : null;
 
@@ -252,8 +248,6 @@ exports.updateEducationById = async (req, res) => {
     });
   }
 };
-
-
 
 exports.deleteEducationById = async (req, res) => {
   try {

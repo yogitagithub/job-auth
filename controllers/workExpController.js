@@ -2,8 +2,6 @@ const WorkExperience = require("../models/WorkExperience");
 const JobSeekerProfile = require("../models/JobSeekerProfile");
 const mongoose = require("mongoose");
 
-
-
 exports.createWorkExp = async (req, res) => {
   try {
     const { userId, role } = req.user;
@@ -61,13 +59,10 @@ exports.createWorkExp = async (req, res) => {
   }
 };
 
-
-
 exports.getMyWorkExp = async (req, res) => {
   try {
     const { userId, role } = req.user;
 
-    // Allow only job_seekers
     if (role !== "job_seeker") {
       return res.status(403).json({
         status: false,
@@ -75,7 +70,6 @@ exports.getMyWorkExp = async (req, res) => {
       });
     }
 
-    // Fetch all experiences that belong to this user
     const experiences = await WorkExperience.find({ userId });
 
     if (experiences.length === 0) {
@@ -85,17 +79,22 @@ exports.getMyWorkExp = async (req, res) => {
       });
     }
 
-    // Format output (convert dates to YYYY-MM-DD)
+  
+    const formatDate = (date) => {
+      if (!date) return null;
+      const d = new Date(date);
+      const day = String(d.getUTCDate()).padStart(2, '0');
+      const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const year = d.getUTCFullYear();
+      return `${day}-${month}-${year}`;
+    };
+
     const formatted = experiences.map((exp) => ({
       id: exp._id,
       companyName: exp.companyName,
       jobTitle: exp.jobTitle,
-      sessionFrom: exp.sessionFrom
-        ? exp.sessionFrom.toISOString().split("T")[0]
-        : null,
-      sessionTo: exp.sessionTo
-        ? exp.sessionTo.toISOString().split("T")[0]
-        : null,
+      sessionFrom: formatDate(exp.sessionFrom),
+      sessionTo: formatDate(exp.sessionTo),
       roleDescription: exp.roleDescription,
     }));
 
@@ -113,7 +112,6 @@ exports.getMyWorkExp = async (req, res) => {
     });
   }
 };
-
 
 exports.getWorkExperienceById = async (req, res) => {
   try {
@@ -175,12 +173,10 @@ exports.getWorkExperienceById = async (req, res) => {
 };
 
 
-
 exports.updateWorkExperienceById = async (req, res) => {
   try {
     const { userId, role } = req.user;
-    const { experienceId } = req.params;
-    const updateFields = req.body;
+    const { experienceId, ...updateFields } = req.body;
 
     if (role !== "job_seeker") {
       return res.status(403).json({
@@ -189,10 +185,10 @@ exports.updateWorkExperienceById = async (req, res) => {
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(experienceId)) {
+    if (!experienceId || !mongoose.Types.ObjectId.isValid(experienceId)) {
       return res.status(400).json({
         status: false,
-        message: "Invalid experience ID.",
+        message: "Invalid or missing experience ID.",
       });
     }
 
@@ -208,7 +204,6 @@ exports.updateWorkExperienceById = async (req, res) => {
       });
     }
 
-    // Fields to update (convert empty strings to null)
     const allowedFields = [
       "companyName",
       "jobTitle",
@@ -227,16 +222,22 @@ exports.updateWorkExperienceById = async (req, res) => {
 
     await experience.save();
 
+   
+    const formatDate = (date) => {
+      if (!date) return null;
+      const d = new Date(date);
+      const day = String(d.getUTCDate()).padStart(2, '0');
+      const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const year = d.getUTCFullYear();
+      return `${day}-${month}-${year}`;
+    };
+
     const formatted = {
       id: experience._id,
       companyName: experience.companyName,
       jobTitle: experience.jobTitle,
-      sessionFrom: experience.sessionFrom
-        ? experience.sessionFrom.toISOString().split("T")[0]
-        : null,
-      sessionTo: experience.sessionTo
-        ? experience.sessionTo.toISOString().split("T")[0]
-        : null,
+      sessionFrom: formatDate(experience.sessionFrom),
+      sessionTo: formatDate(experience.sessionTo),
       roleDescription: experience.roleDescription,
     };
 
@@ -258,7 +259,7 @@ exports.updateWorkExperienceById = async (req, res) => {
 exports.deleteWorkExperienceById = async (req, res) => {
   try {
     const { userId, role } = req.user;
-    const { experienceId } = req.params;
+    const { experienceId } = req.body;
 
     if (role !== "job_seeker") {
       return res.status(403).json({
@@ -267,10 +268,10 @@ exports.deleteWorkExperienceById = async (req, res) => {
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(experienceId)) {
+    if (!experienceId || !mongoose.Types.ObjectId.isValid(experienceId)) {
       return res.status(400).json({
         status: false,
-        message: "Invalid experience ID.",
+        message: "Invalid or missing experience ID.",
       });
     }
 
@@ -299,4 +300,7 @@ exports.deleteWorkExperienceById = async (req, res) => {
     });
   }
 };
+
+
+
 

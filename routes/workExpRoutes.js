@@ -7,8 +7,8 @@ const { verifyToken } = require('../middleware/authMiddleware');
 router.post('/create-workExp', verifyToken, createWorkExp);
  router.get('/get-workExp', verifyToken, getMyWorkExp);
  router.get('/get-workExp/:experienceId', verifyToken, getWorkExperienceById);
- router.put('/update-workExp/:experienceId', verifyToken, updateWorkExperienceById);
- router.delete('/delete-workExp/:experienceId', verifyToken, deleteWorkExperienceById);
+ router.put('/update-workExp', verifyToken, updateWorkExperienceById);
+ router.delete('/delete-workExp', verifyToken, deleteWorkExperienceById);
 
 
 module.exports = router;
