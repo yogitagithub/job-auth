@@ -16,7 +16,7 @@ const companyProfileSchema = new mongoose.Schema({
   industryType: {  
     type: mongoose.Schema.Types.ObjectId,
   ref: "IndustryType",
-  // required: true 
+  
 },
 
   contactPersonName: { type: String, trim: true },

@@ -3,9 +3,7 @@ const jwt = require('jsonwebtoken');
 const CompanyProfile = require('../models/CompanyProfile');
 const JobSeekerProfile = require("../models/JobSeekerProfile");
 
-
 const isValidPhone = (phone) => /^\d{10}$/.test(phone);
-
 
 exports.sendOtp = async (req, res) => {
   const { phoneNumber } = req.body;
@@ -140,7 +138,7 @@ exports.selectRole = async (req, res) => {
         });
       }
 
-      // Return default company profile fields
+     
       companyProfileData = {
         companyName: null,
         industryType: null,
@@ -261,14 +259,14 @@ exports.verifyOtp = async (req, res) => {
       });
     }
 
-    // Prepare response object
+   
     const response = {
       status: true,
       message: 'OTP verified',
       role: user.role
     };
 
-    // If role already selected, generate a fresh token
+   
     if (user.role) {
       const token = jwt.sign(
         { userId: user._id, phoneNumber: user.phoneNumber, role: user.role },
