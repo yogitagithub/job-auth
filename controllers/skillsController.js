@@ -1,6 +1,7 @@
 const Skill = require("../models/Skills");
 const JobSeekerProfile = require("../models/JobSeekerProfile");
 
+
 exports.createSkills = async (req, res) => {
   try {
     const { userId, role } = req.user;
@@ -14,12 +15,8 @@ exports.createSkills = async (req, res) => {
 
     const { skills } = req.body;
 
-    if (!skills || !Array.isArray(skills) || skills.length < 4) {
-      return res.status(400).json({
-        status: false,
-        message: "Please provide at least 4 skills.",
-      });
-    }
+    // Convert empty string to null
+    const sanitizedSkill = skills?.trim() === "" ? null : skills?.trim();
 
     const jobSeekerProfile = await JobSeekerProfile.findOne({ userId });
     if (!jobSeekerProfile) {
@@ -29,23 +26,21 @@ exports.createSkills = async (req, res) => {
       });
     }
 
-    const updatedSkill = await Skill.findOneAndUpdate(
-      { userId },
-      {
-        userId,
-        jobSeekerId: jobSeekerProfile._id,
-        skills,
-      },
-      { new: true, upsert: true }
-    );
+    const newSkill = new Skill({
+      userId,
+      jobSeekerId: jobSeekerProfile._id,
+      skills: sanitizedSkill,  // will be null if empty
+    });
+
+    await newSkill.save();
 
     res.status(201).json({
       status: true,
-      message: "Skills saved successfully.",
-      data: updatedSkill,
+      message: "Skill saved successfully.",
+      // data: newSkill,
     });
   } catch (error) {
-    console.error("Error saving skills:", error);
+    console.error("Error saving skill:", error);
     res.status(500).json({
       status: false,
       message: "Server error.",
@@ -53,6 +48,115 @@ exports.createSkills = async (req, res) => {
     });
   }
 };
+
+
+// exports.createSkills = async (req, res) => {
+//   try {
+//     const { userId, role } = req.user;
+
+//     if (role !== "job_seeker") {
+//       return res.status(403).json({
+//         status: false,
+//         message: "Only job seekers can save skills.",
+//       });
+//     }
+
+//     const { skills } = req.body;
+
+//     if (!skills || typeof skills !== "string" || skills.trim() === "") {
+//       return res.status(400).json({
+//         status: false,
+//         message: "Please provide a valid skill.",
+//       });
+//     }
+
+//     const jobSeekerProfile = await JobSeekerProfile.findOne({ userId });
+//     if (!jobSeekerProfile) {
+//       return res.status(400).json({
+//         status: false,
+//         message: "Please complete your job seeker profile first.",
+//       });
+//     }
+
+//     const newSkill = new Skill({
+//       userId,
+//       jobSeekerId: jobSeekerProfile._id,
+//       skills: skills.trim(),  // ✅ match field name in your schema
+//     });
+
+//     await newSkill.save();
+
+//     res.status(201).json({
+//       status: true,
+//       message: "Skill saved successfully.",
+//       data: newSkill,
+//     });
+//   } catch (error) {
+//     console.error("Error saving skill:", error);
+//     res.status(500).json({
+//       status: false,
+//       message: "Server error.",
+//       error: error.message,
+//     });
+//   }
+// };
+
+
+
+
+
+// exports.createSkills = async (req, res) => {
+//   try {
+//     const { userId, role } = req.user;
+
+//     if (role !== "job_seeker") {
+//       return res.status(403).json({
+//         status: false,
+//         message: "Only job seekers can save skills.",
+//       });
+//     }
+
+//     const { skills } = req.body;
+
+//     if (!skills || !Array.isArray(skills) || skills.length < 4) {
+//       return res.status(400).json({
+//         status: false,
+//         message: "Please provide at least 4 skills.",
+//       });
+//     }
+
+//     const jobSeekerProfile = await JobSeekerProfile.findOne({ userId });
+//     if (!jobSeekerProfile) {
+//       return res.status(400).json({
+//         status: false,
+//         message: "Please complete your job seeker profile first.",
+//       });
+//     }
+
+//     const updatedSkill = await Skill.findOneAndUpdate(
+//       { userId },
+//       {
+//         userId,
+//         jobSeekerId: jobSeekerProfile._id,
+//         skills,
+//       },
+//       { new: true, upsert: true }
+//     );
+
+//     res.status(201).json({
+//       status: true,
+//       message: "Skills saved successfully.",
+//       data: updatedSkill,
+//     });
+//   } catch (error) {
+//     console.error("Error saving skills:", error);
+//     res.status(500).json({
+//       status: false,
+//       message: "Server error.",
+//       error: error.message,
+//     });
+//   }
+// };
 
 
 exports.getMySkills = async (req, res) => {
