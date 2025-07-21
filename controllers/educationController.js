@@ -114,60 +114,12 @@ exports.getMyEducation = async (req, res) => {
 };
 
 
-// exports.getMyEducation = async (req, res) => {
-//   try {
-//     const { userId, role } = req.user;
-
-//     if (role !== "job_seeker") {
-//       return res.status(403).json({
-//         status: false,
-//         message: "Only job seekers can view education records.",
-//       });
-//     }
-
-//     const educations = await JobSeekerEducation.find({ userId });
-
-//     if (educations.length === 0) {
-//       return res.status(404).json({
-//         status: false,
-//         message: "No education records found.",
-//       });
-//     }
-
-//     const formatted = educations.map((edu) => ({
-//       id: edu._id,
-//       degree: edu.degree,
-//       boardOfUniversity: edu.boardOfUniversity,
-//       sessionFrom: edu.sessionFrom ? edu.sessionFrom.toISOString().split("T")[0] : null,
-//       sessionTo: edu.sessionTo ? edu.sessionTo.toISOString().split("T")[0] : null,
-//       marks: edu.marks,
-//       gradeOrPercentage: edu.gradeOrPercentage,
-//     }));
-
-//     res.status(200).json({
-//       status: true,
-//       message: "Education list fetched successfully.",
-//       data: formatted,
-//     });
-
-//   } catch (err) {
-//     console.error("Error fetching educations:", err);
-//     res.status(500).json({
-//       status: false,
-//       message: "Server error.",
-//       error: err.message,
-//     });
-//   }
-// };
-
-
 
 exports.getEducationById = async (req, res) => {
   try {
     const { userId, role } = req.user;
     const { educationId } = req.params;
 
-    // Role check
     if (role !== "job_seeker") {
       return res.status(403).json({
         status: false,
@@ -175,7 +127,6 @@ exports.getEducationById = async (req, res) => {
       });
     }
 
-    // Validate ObjectId
     if (!mongoose.Types.ObjectId.isValid(educationId)) {
       return res.status(400).json({
         status: false,
@@ -183,7 +134,6 @@ exports.getEducationById = async (req, res) => {
       });
     }
 
-    // Find education belonging to the user
     const education = await JobSeekerEducation.findOne({
       userId,
       _id: educationId,
@@ -196,17 +146,16 @@ exports.getEducationById = async (req, res) => {
       });
     }
 
-    // Format response
+    // Format dates to DD-MM-YYYY
+    const formatDate = (date) =>
+      date ? new Date(date).toLocaleDateString("en-GB").split("/").join("-") : null;
+
     const formatted = {
       id: education._id,
       degree: education.degree,
       boardOfUniversity: education.boardOfUniversity,
-      sessionFrom: education.sessionFrom
-        ? education.sessionFrom.toISOString().split("T")[0]
-        : null,
-      sessionTo: education.sessionTo
-        ? education.sessionTo.toISOString().split("T")[0]
-        : null,
+      sessionFrom: formatDate(education.sessionFrom),
+      sessionTo: formatDate(education.sessionTo),
       marks: education.marks,
       gradeOrPercentage: education.gradeOrPercentage,
     };
@@ -231,8 +180,7 @@ exports.getEducationById = async (req, res) => {
 exports.updateEducationById = async (req, res) => {
   try {
     const { userId, role } = req.user;
-    const { educationId } = req.params;
-    const updateFields = req.body;
+    const { educationId, ...updateFields } = req.body;
 
     if (role !== "job_seeker") {
       return res.status(403).json({
@@ -241,10 +189,10 @@ exports.updateEducationById = async (req, res) => {
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(educationId)) {
+    if (!educationId || !mongoose.Types.ObjectId.isValid(educationId)) {
       return res.status(400).json({
         status: false,
-        message: "Invalid education ID.",
+        message: "Invalid or missing education ID.",
       });
     }
 
@@ -278,6 +226,10 @@ exports.updateEducationById = async (req, res) => {
 
     await education.save();
 
+    // Format date as dd-mm-yyyy
+    const formatDate = (date) =>
+      date ? new Date(date).toLocaleDateString("en-GB").split("/").join("-") : null;
+
     res.status(200).json({
       status: true,
       message: "Education record updated successfully.",
@@ -285,8 +237,8 @@ exports.updateEducationById = async (req, res) => {
         id: education._id,
         degree: education.degree,
         boardOfUniversity: education.boardOfUniversity,
-        sessionFrom: education.sessionFrom?.toISOString().split("T")[0],
-        sessionTo: education.sessionTo?.toISOString().split("T")[0],
+        sessionFrom: formatDate(education.sessionFrom),
+        sessionTo: formatDate(education.sessionTo),
         marks: education.marks,
         gradeOrPercentage: education.gradeOrPercentage,
       },
@@ -302,10 +254,11 @@ exports.updateEducationById = async (req, res) => {
 };
 
 
+
 exports.deleteEducationById = async (req, res) => {
   try {
     const { userId, role } = req.user;
-    const { educationId } = req.params;
+    const { educationId } = req.body;
 
     if (role !== "job_seeker") {
       return res.status(403).json({
@@ -314,10 +267,10 @@ exports.deleteEducationById = async (req, res) => {
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(educationId)) {
+    if (!educationId || !mongoose.Types.ObjectId.isValid(educationId)) {
       return res.status(400).json({
         status: false,
-        message: "Invalid education ID.",
+        message: "Invalid or missing education ID.",
       });
     }
 
