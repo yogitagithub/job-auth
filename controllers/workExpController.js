@@ -3,6 +3,7 @@ const JobSeekerProfile = require("../models/JobSeekerProfile");
 const mongoose = require("mongoose");
 
 
+
 exports.createWorkExp = async (req, res) => {
   try {
     const { userId, role } = req.user;
@@ -10,7 +11,7 @@ exports.createWorkExp = async (req, res) => {
     if (role !== "job_seeker") {
       return res.status(403).json({
         status: false,
-        message: "Only job seekers can add their work experience",
+        message: "Only job seekers can add their work experience.",
       });
     }
 
@@ -34,24 +35,21 @@ exports.createWorkExp = async (req, res) => {
 
     const experiencesToAdd = Array.isArray(body) ? body : [body];
 
-    const updatedRecord = await WorkExperience.findOneAndUpdate(
-      { userId },
-      {
-        $setOnInsert: {
-          userId,
-          jobSeekerId: jobSeekerProfile._id,
-        },
-        $push: {
-          workExperiences: { $each: experiencesToAdd },
-        },
-      },
-      { new: true, upsert: true }
-    );
+    const sanitizedExperiences = experiencesToAdd.map((exp) => ({
+      userId,
+      jobSeekerId: jobSeekerProfile._id,
+      companyName: exp.companyName?.trim() === "" ? null : exp.companyName ?? null,
+      jobTitle: exp.jobTitle?.trim() === "" ? null : exp.jobTitle ?? null,
+      sessionFrom: exp.sessionFrom?.trim?.() === "" ? null : exp.sessionFrom ?? null,
+      sessionTo: exp.sessionTo?.trim?.() === "" ? null : exp.sessionTo ?? null,
+      roleDescription: exp.roleDescription?.trim() === "" ? null : exp.roleDescription ?? null,
+    }));
+
+    await WorkExperience.insertMany(sanitizedExperiences);
 
     return res.status(201).json({
       status: true,
-      message: "Work experience saved successfully.",
-      data: updatedRecord,
+      message: "Work experience records saved successfully.",
     });
   } catch (error) {
     console.error("Error saving work experience:", error);
@@ -64,208 +62,241 @@ exports.createWorkExp = async (req, res) => {
 };
 
 
+
 exports.getMyWorkExp = async (req, res) => {
   try {
-    const { userId } = req.user;
+    const { userId, role } = req.user;
 
-    const experienceRecord = await WorkExperience.findOne({ userId })
-      .populate({
-        path: "userId",
-        select: "phoneNumber role"
-      })
-      .populate("jobSeekerId")
-      .lean();
+    // Allow only job_seekers
+    if (role !== "job_seeker") {
+      return res.status(403).json({
+        status: false,
+        message: "Only job seekers can view work-experience records.",
+      });
+    }
 
-    if (!experienceRecord) {
+    // Fetch all experiences that belong to this user
+    const experiences = await WorkExperience.find({ userId });
+
+    if (experiences.length === 0) {
       return res.status(404).json({
         status: false,
-        message: "Experience record not found.",
+        message: "No work-experience records found.",
       });
     }
 
-  
-    delete experienceRecord.__v;
-    delete experienceRecord.createdAt;
-    delete experienceRecord.updatedAt;
+    // Format output (convert dates to YYYY-MM-DD)
+    const formatted = experiences.map((exp) => ({
+      id: exp._id,
+      companyName: exp.companyName,
+      jobTitle: exp.jobTitle,
+      sessionFrom: exp.sessionFrom
+        ? exp.sessionFrom.toISOString().split("T")[0]
+        : null,
+      sessionTo: exp.sessionTo
+        ? exp.sessionTo.toISOString().split("T")[0]
+        : null,
+      roleDescription: exp.roleDescription,
+    }));
 
-    experienceRecord.id = experienceRecord._id;
-    delete experienceRecord._id;
-
-   
-    if (experienceRecord.workExperiences && Array.isArray(experienceRecord.workExperiences)) {
-      experienceRecord.workExperiences = experienceRecord.workExperiences.map((exp) => {
-        exp.id = exp._id;
-        delete exp._id;
-
-        if (exp.sessionFrom) {
-          exp.sessionFrom = new Date(exp.sessionFrom)
-            .toLocaleDateString("en-GB")
-            .split("/")
-            .join("-");
-        }
-
-        if (exp.sessionTo) {
-          exp.sessionTo = new Date(exp.sessionTo)
-            .toLocaleDateString("en-GB")
-            .split("/")
-            .join("-");
-        }
-
-        return exp;
-      });
-    }
-
-   
-    if (experienceRecord.userId && experienceRecord.userId._id) {
-      experienceRecord.userId.id = experienceRecord.userId._id;
-      delete experienceRecord.userId._id;
-    }
-
-   
-    if (experienceRecord.jobSeekerId && experienceRecord.jobSeekerId._id) {
-      experienceRecord.jobSeekerId.id = experienceRecord.jobSeekerId._id;
-      delete experienceRecord.jobSeekerId._id;
-
-      delete experienceRecord.jobSeekerId.__v;
-      delete experienceRecord.jobSeekerId.createdAt;
-      delete experienceRecord.jobSeekerId.updatedAt;
-
-     
-      if (experienceRecord.jobSeekerId.dateOfBirth) {
-        const dob = new Date(experienceRecord.jobSeekerId.dateOfBirth);
-        const day = String(dob.getDate()).padStart(2, "0");
-        const month = String(dob.getMonth() + 1).padStart(2, "0");
-        const year = dob.getFullYear();
-        experienceRecord.jobSeekerId.dateOfBirth = `${day}-${month}-${year}`;
-      }
-    }
-
-    res.json({
+    res.status(200).json({
       status: true,
-      data: experienceRecord,
+      message: "Work-experience list fetched successfully.",
+      data: formatted,
     });
-  } catch (error) {
-    console.error("Error fetching experiences:", error);
+  } catch (err) {
+    console.error("Error fetching work experiences:", err);
     res.status(500).json({
       status: false,
       message: "Server error.",
-      error: error.message,
+      error: err.message,
     });
   }
 };
 
 
-exports.updateWorkExp = async (req, res) => {
+exports.getWorkExperienceById = async (req, res) => {
   try {
     const { userId, role } = req.user;
+    const { experienceId } = req.params;
 
     if (role !== "job_seeker") {
       return res.status(403).json({
         status: false,
-        message: "Only job seekers can update experience.",
+        message: "Only job seekers can view work experience records.",
       });
     }
 
-    const { updates } = req.body;
-
-    if (!updates || !Array.isArray(updates) || updates.length === 0) {
+    if (!mongoose.Types.ObjectId.isValid(experienceId)) {
       return res.status(400).json({
         status: false,
-        message: "Provide an array of updates.",
+        message: "Invalid experience ID.",
       });
     }
 
-    let modifiedCount = 0;
+    const experience = await WorkExperience.findOne({
+      _id: experienceId,
+      userId,
+    });
 
-    for (const update of updates) {
-      const { experienceId, ...fields } = update;
-
-      if (!experienceId) continue;
-      if (Object.keys(fields).length === 0) continue;
-
-      
-      const experienceObjectId = new mongoose.Types.ObjectId(experienceId);
-
-      const setObj = {};
-      for (const [key, value] of Object.entries(fields)) {
-        setObj[`workExperiences.$.${key}`] = value;
-      }
-
-      const result = await WorkExperience.updateOne(
-        {
-          userId,
-          "workExperiences._id": experienceObjectId
-        },
-        { $set: setObj }
-      );
-
-      if (result.modifiedCount > 0) {
-        modifiedCount++;
-      }
+    if (!experience) {
+      return res.status(404).json({
+        status: false,
+        message: "Work experience not found or unauthorized access.",
+      });
     }
 
-    res.json({
+    const formatted = {
+      id: experience._id,
+      companyName: experience.companyName,
+      jobTitle: experience.jobTitle,
+      sessionFrom: experience.sessionFrom
+        ? experience.sessionFrom.toISOString().split("T")[0]
+        : null,
+      sessionTo: experience.sessionTo
+        ? experience.sessionTo.toISOString().split("T")[0]
+        : null,
+      roleDescription: experience.roleDescription,
+    };
+
+    res.status(200).json({
       status: true,
-      message: `${modifiedCount} experience record updated successfully.`,
+      message: "Work experience fetched successfully.",
+      data: formatted,
     });
-  } catch (error) {
-    console.error("Error updating experiences:", error);
+  } catch (err) {
+    console.error("Error fetching work experience:", err);
     res.status(500).json({
       status: false,
       message: "Server error.",
-      error: error.message,
+      error: err.message,
     });
   }
 };
 
 
 
-exports.deleteWorkExp = async (req, res) => {
+exports.updateWorkExperienceById = async (req, res) => {
   try {
     const { userId, role } = req.user;
+    const { experienceId } = req.params;
+    const updateFields = req.body;
 
     if (role !== "job_seeker") {
       return res.status(403).json({
         status: false,
-        message: "Only job seekers can delete experience.",
+        message: "Only job seekers can update work experience.",
       });
     }
 
-    let idsToDelete = [];
-
-    if (req.query.experienceId) {
-      idsToDelete = req.query.experienceId.split(",").map(id => id.trim());
-    } else {
+    if (!mongoose.Types.ObjectId.isValid(experienceId)) {
       return res.status(400).json({
         status: false,
-        message: "Provide experienceId query parameter (single or comma-separated).",
+        message: "Invalid experience ID.",
       });
     }
 
-    const result = await WorkExperience.updateOne(
-      { userId },
-      { $pull: { workExperiences: { _id: { $in: idsToDelete } } } }
-    );
+    const experience = await WorkExperience.findOne({
+      _id: experienceId,
+      userId,
+    });
 
-    if (result.modifiedCount === 0) {
+    if (!experience) {
       return res.status(404).json({
         status: false,
-        message: "No matching experience records found to delete.",
+        message: "Work experience not found or unauthorized access.",
       });
     }
 
-    res.json({
-      status: true,
-      message: `${idsToDelete.length} experience record deleted successfully.`,
+    // Fields to update (convert empty strings to null)
+    const allowedFields = [
+      "companyName",
+      "jobTitle",
+      "sessionFrom",
+      "sessionTo",
+      "roleDescription",
+    ];
+
+    allowedFields.forEach((field) => {
+      if (updateFields[field] !== undefined) {
+        const value = updateFields[field];
+        experience[field] =
+          typeof value === "string" && value.trim() === "" ? null : value;
+      }
     });
-  } catch (error) {
-    console.error("Error deleting experience:", error);
+
+    await experience.save();
+
+    const formatted = {
+      id: experience._id,
+      companyName: experience.companyName,
+      jobTitle: experience.jobTitle,
+      sessionFrom: experience.sessionFrom
+        ? experience.sessionFrom.toISOString().split("T")[0]
+        : null,
+      sessionTo: experience.sessionTo
+        ? experience.sessionTo.toISOString().split("T")[0]
+        : null,
+      roleDescription: experience.roleDescription,
+    };
+
+    res.status(200).json({
+      status: true,
+      message: "Work experience updated successfully.",
+      data: formatted,
+    });
+  } catch (err) {
+    console.error("Error updating work experience:", err);
     res.status(500).json({
       status: false,
       message: "Server error.",
-      error: error.message,
+      error: err.message,
     });
   }
 };
 
+exports.deleteWorkExperienceById = async (req, res) => {
+  try {
+    const { userId, role } = req.user;
+    const { experienceId } = req.params;
+
+    if (role !== "job_seeker") {
+      return res.status(403).json({
+        status: false,
+        message: "Only job seekers can delete work experience.",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(experienceId)) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid experience ID.",
+      });
+    }
+
+    const experience = await WorkExperience.findOneAndDelete({
+      _id: experienceId,
+      userId,
+    });
+
+    if (!experience) {
+      return res.status(404).json({
+        status: false,
+        message: "Work experience not found or unauthorized.",
+      });
+    }
+
+    res.status(200).json({
+      status: true,
+      message: "Work experience deleted successfully.",
+    });
+  } catch (err) {
+    console.error("Error deleting work experience:", err);
+    res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: err.message,
+    });
+  }
+};
 
