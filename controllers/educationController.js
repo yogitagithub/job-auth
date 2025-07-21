@@ -87,8 +87,12 @@ exports.getMyEducation = async (req, res) => {
       id: edu._id,
       degree: edu.degree,
       boardOfUniversity: edu.boardOfUniversity,
-      sessionFrom: edu.sessionFrom ? edu.sessionFrom.toISOString().split("T")[0] : null,
-      sessionTo: edu.sessionTo ? edu.sessionTo.toISOString().split("T")[0] : null,
+      sessionFrom: edu.sessionFrom
+        ? new Date(edu.sessionFrom).toLocaleDateString("en-GB").split("/").join("-")
+        : null,
+      sessionTo: edu.sessionTo
+        ? new Date(edu.sessionTo).toLocaleDateString("en-GB").split("/").join("-")
+        : null,
       marks: edu.marks,
       gradeOrPercentage: edu.gradeOrPercentage,
     }));
@@ -108,6 +112,53 @@ exports.getMyEducation = async (req, res) => {
     });
   }
 };
+
+
+// exports.getMyEducation = async (req, res) => {
+//   try {
+//     const { userId, role } = req.user;
+
+//     if (role !== "job_seeker") {
+//       return res.status(403).json({
+//         status: false,
+//         message: "Only job seekers can view education records.",
+//       });
+//     }
+
+//     const educations = await JobSeekerEducation.find({ userId });
+
+//     if (educations.length === 0) {
+//       return res.status(404).json({
+//         status: false,
+//         message: "No education records found.",
+//       });
+//     }
+
+//     const formatted = educations.map((edu) => ({
+//       id: edu._id,
+//       degree: edu.degree,
+//       boardOfUniversity: edu.boardOfUniversity,
+//       sessionFrom: edu.sessionFrom ? edu.sessionFrom.toISOString().split("T")[0] : null,
+//       sessionTo: edu.sessionTo ? edu.sessionTo.toISOString().split("T")[0] : null,
+//       marks: edu.marks,
+//       gradeOrPercentage: edu.gradeOrPercentage,
+//     }));
+
+//     res.status(200).json({
+//       status: true,
+//       message: "Education list fetched successfully.",
+//       data: formatted,
+//     });
+
+//   } catch (err) {
+//     console.error("Error fetching educations:", err);
+//     res.status(500).json({
+//       status: false,
+//       message: "Server error.",
+//       error: err.message,
+//     });
+//   }
+// };
 
 
 

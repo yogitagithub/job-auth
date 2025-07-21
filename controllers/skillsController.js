@@ -1,6 +1,6 @@
 const Skill = require("../models/Skills");
 const JobSeekerProfile = require("../models/JobSeekerProfile");
-
+const mongoose = require("mongoose");
 
 exports.createSkills = async (req, res) => {
   try {
@@ -50,115 +50,6 @@ exports.createSkills = async (req, res) => {
 };
 
 
-// exports.createSkills = async (req, res) => {
-//   try {
-//     const { userId, role } = req.user;
-
-//     if (role !== "job_seeker") {
-//       return res.status(403).json({
-//         status: false,
-//         message: "Only job seekers can save skills.",
-//       });
-//     }
-
-//     const { skills } = req.body;
-
-//     if (!skills || typeof skills !== "string" || skills.trim() === "") {
-//       return res.status(400).json({
-//         status: false,
-//         message: "Please provide a valid skill.",
-//       });
-//     }
-
-//     const jobSeekerProfile = await JobSeekerProfile.findOne({ userId });
-//     if (!jobSeekerProfile) {
-//       return res.status(400).json({
-//         status: false,
-//         message: "Please complete your job seeker profile first.",
-//       });
-//     }
-
-//     const newSkill = new Skill({
-//       userId,
-//       jobSeekerId: jobSeekerProfile._id,
-//       skills: skills.trim(),  // ✅ match field name in your schema
-//     });
-
-//     await newSkill.save();
-
-//     res.status(201).json({
-//       status: true,
-//       message: "Skill saved successfully.",
-//       data: newSkill,
-//     });
-//   } catch (error) {
-//     console.error("Error saving skill:", error);
-//     res.status(500).json({
-//       status: false,
-//       message: "Server error.",
-//       error: error.message,
-//     });
-//   }
-// };
-
-
-
-
-
-// exports.createSkills = async (req, res) => {
-//   try {
-//     const { userId, role } = req.user;
-
-//     if (role !== "job_seeker") {
-//       return res.status(403).json({
-//         status: false,
-//         message: "Only job seekers can save skills.",
-//       });
-//     }
-
-//     const { skills } = req.body;
-
-//     if (!skills || !Array.isArray(skills) || skills.length < 4) {
-//       return res.status(400).json({
-//         status: false,
-//         message: "Please provide at least 4 skills.",
-//       });
-//     }
-
-//     const jobSeekerProfile = await JobSeekerProfile.findOne({ userId });
-//     if (!jobSeekerProfile) {
-//       return res.status(400).json({
-//         status: false,
-//         message: "Please complete your job seeker profile first.",
-//       });
-//     }
-
-//     const updatedSkill = await Skill.findOneAndUpdate(
-//       { userId },
-//       {
-//         userId,
-//         jobSeekerId: jobSeekerProfile._id,
-//         skills,
-//       },
-//       { new: true, upsert: true }
-//     );
-
-//     res.status(201).json({
-//       status: true,
-//       message: "Skills saved successfully.",
-//       data: updatedSkill,
-//     });
-//   } catch (error) {
-//     console.error("Error saving skills:", error);
-//     res.status(500).json({
-//       status: false,
-//       message: "Server error.",
-//       error: error.message,
-//     });
-//   }
-// };
-
-
 exports.getMySkills = async (req, res) => {
   try {
     const { userId, role } = req.user;
@@ -166,30 +57,28 @@ exports.getMySkills = async (req, res) => {
     if (role !== "job_seeker") {
       return res.status(403).json({
         status: false,
-        message: "Only job seekers can get skills.",
+        message: "Only job seekers can view their skills.",
       });
     }
 
-    const skillRecord = await Skill.findOne({ userId }).lean();
+    const skills = await Skill.find({ userId });
 
-    if (!skillRecord) {
+    if (skills.length === 0) {
       return res.status(404).json({
         status: false,
         message: "No skills found.",
       });
     }
 
-  
-    const response = {
-      id: skillRecord._id,
-      userId: skillRecord.userId,
-      jobSeekerId: skillRecord.jobSeekerId,
-      skills: skillRecord.skills,
-    };
+    const formatted = skills.map((skill) => ({
+      id: skill._id,
+      skills: skill.skills ?? null,
+    }));
 
-    res.json({
+    res.status(200).json({
       status: true,
-      data: response,
+      message: "Skills fetched successfully.",
+      data: formatted,
     });
   } catch (error) {
     console.error("Error fetching skills:", error);
@@ -201,10 +90,64 @@ exports.getMySkills = async (req, res) => {
   }
 };
 
-
-exports.deleteSelectedSkills = async (req, res) => {
+exports.updateSkillById = async (req, res) => {
   try {
     const { userId, role } = req.user;
+    const { skillId } = req.params;
+    const { skills } = req.body;
+
+    if (role !== "job_seeker") {
+      return res.status(403).json({
+        status: false,
+        message: "Only job seekers can update skills.",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(skillId)) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid skill ID.",
+      });
+    }
+
+    // Convert empty string to null
+    const sanitizedSkill = skills?.trim() === "" ? null : skills?.trim();
+
+    const skill = await Skill.findOneAndUpdate(
+      { _id: skillId, userId },
+      { skills: sanitizedSkill },
+      { new: true }
+    );
+
+    if (!skill) {
+      return res.status(404).json({
+        status: false,
+        message: "Skill not found or unauthorized access.",
+      });
+    }
+
+    res.status(200).json({
+      status: true,
+      message: "Skill updated successfully.",
+      data: {
+        id: skill._id,
+        skills: skill.skills,
+      },
+    });
+  } catch (error) {
+    console.error("Error updating skill:", error);
+    res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: error.message,
+    });
+  }
+};
+
+exports.deleteSkillById = async (req, res) => {
+  try {
+    const { userId, role } = req.user;
+    const { skillId } = req.params;
 
     if (role !== "job_seeker") {
       return res.status(403).json({
@@ -213,34 +156,31 @@ exports.deleteSelectedSkills = async (req, res) => {
       });
     }
 
-    const { skills } = req.body;
-
-    if (!skills || !Array.isArray(skills) || skills.length === 0) {
+    if (!mongoose.Types.ObjectId.isValid(skillId)) {
       return res.status(400).json({
         status: false,
-        message: "Please provide an array of skills to delete.",
+        message: "Invalid skill ID.",
       });
     }
 
-    
-    const result = await Skill.updateOne(
-      { userId },
-      { $pull: { skills: { $in: skills } } }
-    );
+    const deletedSkill = await Skill.findOneAndDelete({
+      _id: skillId,
+      userId,
+    });
 
-    if (result.modifiedCount === 0) {
+    if (!deletedSkill) {
       return res.status(404).json({
         status: false,
-        message: "No matching skills found to delete.",
+        message: "Skill not found or unauthorized access.",
       });
     }
 
-    res.json({
+    res.status(200).json({
       status: true,
-      message: "Selected skills deleted successfully.",
+      message: "Skill deleted successfully.",
     });
   } catch (error) {
-    console.error("Error deleting selected skills:", error);
+    console.error("Error deleting skill:", error);
     res.status(500).json({
       status: false,
       message: "Server error.",
@@ -248,6 +188,8 @@ exports.deleteSelectedSkills = async (req, res) => {
     });
   }
 };
+
+
 
 
 
