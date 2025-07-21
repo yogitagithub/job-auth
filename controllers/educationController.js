@@ -1,5 +1,7 @@
 const JobSeekerEducation = require("../models/Education");
 const JobSeekerProfile = require("../models/JobSeekerProfile");
+const mongoose = require("mongoose");
+
 
 exports.createEducation = async (req, res) => {
   try {
@@ -32,8 +34,10 @@ exports.createEducation = async (req, res) => {
 
     const educationsToAdd = Array.isArray(body) ? body : [body];
 
-    // Convert empty strings to null
+    // Convert empty strings to null and prepare entries
     const sanitizedEducations = educationsToAdd.map((edu) => ({
+      userId,
+      jobSeekerId: jobSeekerProfile._id,
       degree: edu.degree?.trim() === "" ? null : edu.degree ?? null,
       boardOfUniversity: edu.boardOfUniversity?.trim() === "" ? null : edu.boardOfUniversity ?? null,
       sessionFrom: edu.sessionFrom?.trim?.() === "" ? null : edu.sessionFrom ?? null,
@@ -42,23 +46,11 @@ exports.createEducation = async (req, res) => {
       gradeOrPercentage: edu.gradeOrPercentage?.trim() === "" ? null : edu.gradeOrPercentage ?? null,
     }));
 
-    const updatedRecord = await JobSeekerEducation.findOneAndUpdate(
-      { userId },
-      {
-        $setOnInsert: {
-          userId,
-          jobSeekerId: jobSeekerProfile._id,
-        },
-        $push: {
-          educations: { $each: sanitizedEducations },
-        },
-      },
-      { new: true, upsert: true }
-    );
+    await JobSeekerEducation.insertMany(sanitizedEducations);
 
     res.status(201).json({
       status: true,
-      message: "Education record saved successfully.",
+      message: "Education records saved successfully.",
     });
   } catch (error) {
     console.error("Error saving education:", error);
@@ -71,341 +63,235 @@ exports.createEducation = async (req, res) => {
 };
 
 
-
-// exports.createEducation = async (req, res) => {
-//   try {
-//     const { userId, role } = req.user;
-
-//     if (role !== "job_seeker") {
-//       return res.status(403).json({
-//         status: false,
-//         message: "Only job seekers can add education.",
-//       });
-//     }
-
-//     const jobSeekerProfile = await JobSeekerProfile.findOne({ userId });
-
-//     if (!jobSeekerProfile) {
-//       return res.status(400).json({
-//         status: false,
-//         message: "Please complete your job seeker profile first.",
-//       });
-//     }
-
-//     const body = req.body;
-
-//     if (!body || (Array.isArray(body) && body.length === 0)) {
-//       return res.status(400).json({
-//         status: false,
-//         message: "No education data provided.",
-//       });
-//     }
-
-   
-//     const educationsToAdd = Array.isArray(body) ? body : [body];
-
-//     const updatedRecord = await JobSeekerEducation.findOneAndUpdate(
-//       { userId },
-//       {
-//         $setOnInsert: {
-//           userId,
-//           jobSeekerId: jobSeekerProfile._id,
-//         },
-//         $push: {
-//           educations: { $each: educationsToAdd },
-//         },
-//       },
-//       { new: true, upsert: true }
-//     );
-
-//     res.status(201).json({
-//       status: true,
-//       message: "Education record saved successfully.",
-//       // data: updatedRecord,
-//     });
-//   } catch (error) {
-//     console.error("Error saving education:", error);
-//     res.status(500).json({
-//       status: false,
-//       message: "Server error.",
-//       error: error.message,
-//     });
-//   }
-// };
-
-
 exports.getMyEducation = async (req, res) => {
   try {
-    const { userId } = req.user;
+    const { userId, role } = req.user;
 
-    const educationRecord = await JobSeekerEducation.findOne({ userId })
-      .populate({
-        path: "userId",
-        select: "phoneNumber role"
-      })
-      .populate("jobSeekerId")
-      .lean();
+    if (role !== "job_seeker") {
+      return res.status(403).json({
+        status: false,
+        message: "Only job seekers can view education records.",
+      });
+    }
 
-    if (!educationRecord) {
+    const educations = await JobSeekerEducation.find({ userId });
+
+    if (educations.length === 0) {
+      return res.status(404).json({
+        status: false,
+        message: "No education records found.",
+      });
+    }
+
+    const formatted = educations.map((edu) => ({
+      id: edu._id,
+      degree: edu.degree,
+      boardOfUniversity: edu.boardOfUniversity,
+      sessionFrom: edu.sessionFrom ? edu.sessionFrom.toISOString().split("T")[0] : null,
+      sessionTo: edu.sessionTo ? edu.sessionTo.toISOString().split("T")[0] : null,
+      marks: edu.marks,
+      gradeOrPercentage: edu.gradeOrPercentage,
+    }));
+
+    res.status(200).json({
+      status: true,
+      message: "Education list fetched successfully.",
+      data: formatted,
+    });
+
+  } catch (err) {
+    console.error("Error fetching educations:", err);
+    res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: err.message,
+    });
+  }
+};
+
+
+
+exports.getEducationById = async (req, res) => {
+  try {
+    const { userId, role } = req.user;
+    const { educationId } = req.params;
+
+    // Role check
+    if (role !== "job_seeker") {
+      return res.status(403).json({
+        status: false,
+        message: "Only job seekers can view education records.",
+      });
+    }
+
+    // Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(educationId)) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid education ID format.",
+      });
+    }
+
+    // Find education belonging to the user
+    const education = await JobSeekerEducation.findOne({
+      userId,
+      _id: educationId,
+    });
+
+    if (!education) {
       return res.status(404).json({
         status: false,
         message: "Education record not found.",
       });
     }
 
-    // Remove __v, timestamps, and IDs you don't want
-    delete educationRecord.__v;
-    delete educationRecord.createdAt;
-    delete educationRecord.updatedAt;
-    delete educationRecord.userId;
-    delete educationRecord.jobSeekerId;
+    // Format response
+    const formatted = {
+      id: education._id,
+      degree: education.degree,
+      boardOfUniversity: education.boardOfUniversity,
+      sessionFrom: education.sessionFrom
+        ? education.sessionFrom.toISOString().split("T")[0]
+        : null,
+      sessionTo: education.sessionTo
+        ? education.sessionTo.toISOString().split("T")[0]
+        : null,
+      marks: education.marks,
+      gradeOrPercentage: education.gradeOrPercentage,
+    };
 
-    // Replace top-level _id with id
-    educationRecord.id = educationRecord._id;
-    delete educationRecord._id;
-
-    // Format nested educations array
-    if (educationRecord.educations && Array.isArray(educationRecord.educations)) {
-      educationRecord.educations = educationRecord.educations.map((edu) => {
-        edu.id = edu._id;
-        delete edu._id;
-
-        // Format sessionFrom (DD-MM-YYYY)
-        if (edu.sessionFrom) {
-          const fromDate = new Date(edu.sessionFrom);
-          const day = String(fromDate.getDate()).padStart(2, "0");
-          const month = String(fromDate.getMonth() + 1).padStart(2, "0");
-          const year = fromDate.getFullYear();
-          edu.sessionFrom = `${day}-${month}-${year}`;
-        }
-
-        // Format sessionTo (DD-MM-YYYY)
-        if (edu.sessionTo) {
-          const toDate = new Date(edu.sessionTo);
-          const day = String(toDate.getDate()).padStart(2, "0");
-          const month = String(toDate.getMonth() + 1).padStart(2, "0");
-          const year = toDate.getFullYear();
-          edu.sessionTo = `${day}-${month}-${year}`;
-        }
-
-        return edu;
-      });
-    }
-
-    res.json({
+    res.status(200).json({
       status: true,
-      data: educationRecord,
+      message: "Education record fetched successfully.",
+      data: formatted,
     });
-  } catch (error) {
-    console.error("Error fetching education:", error);
+  } catch (err) {
+    console.error("Error fetching education by ID:", err);
     res.status(500).json({
       status: false,
       message: "Server error.",
-      error: error.message,
+      error: err.message,
     });
   }
 };
 
 
-// exports.getMyEducation = async (req, res) => {
-//   try {
-//     const { userId } = req.user;
 
-//     const educationRecord = await JobSeekerEducation.findOne({ userId })
-//       .populate({
-//         path: "userId",
-//         select: "phoneNumber role"
-//       })
-//       .populate("jobSeekerId")
-//       .lean();
-
-//     if (!educationRecord) {
-//       return res.status(404).json({
-//         status: false,
-//         message: "Education record not found.",
-//       });
-//     }
-
-//     // Remove __v and timestamps
-//     delete educationRecord.__v;
-//     delete educationRecord.createdAt;
-//     delete educationRecord.updatedAt;
-    
-
-//     // Replace _id with id
-//     educationRecord.id = educationRecord._id;
-//     delete educationRecord._id;
-
-//     // Format nested educations array
-//     if (educationRecord.educations && Array.isArray(educationRecord.educations)) {
-//       educationRecord.educations = educationRecord.educations.map((edu) => {
-//         edu.id = edu._id;
-//         delete edu._id;
-
-//         // Format sessionFrom
-//         if (edu.sessionFrom) {
-//           edu.sessionFrom = new Date(edu.sessionFrom)
-//             .toLocaleDateString("en-GB")
-//             .split("/")
-//             .join("-");
-//         }
-
-//         // Format sessionTo
-//         if (edu.sessionTo) {
-//           edu.sessionTo = new Date(edu.sessionTo)
-//             .toLocaleDateString("en-GB")
-//             .split("/")
-//             .join("-");
-//         }
-
-//         return edu;
-//       });
-//     }
-
-//     // Format userId _id to id
-//     if (educationRecord.userId && educationRecord.userId._id) {
-//       educationRecord.userId.id = educationRecord.userId._id;
-//       delete educationRecord.userId._id;
-//     }
-
-//     // Format jobSeekerId fields
-//     if (educationRecord.jobSeekerId && educationRecord.jobSeekerId._id) {
-//       educationRecord.jobSeekerId.id = educationRecord.jobSeekerId._id;
-//       delete educationRecord.jobSeekerId._id;
-
-//       delete educationRecord.jobSeekerId.__v;
-//       delete educationRecord.jobSeekerId.createdAt;
-//       delete educationRecord.jobSeekerId.updatedAt;
-
-//       // Format dateOfBirth to DD-MM-YYYY
-//       if (educationRecord.jobSeekerId.dateOfBirth) {
-//         const dob = new Date(educationRecord.jobSeekerId.dateOfBirth);
-//         const day = String(dob.getDate()).padStart(2, "0");
-//         const month = String(dob.getMonth() + 1).padStart(2, "0");
-//         const year = dob.getFullYear();
-//         educationRecord.jobSeekerId.dateOfBirth = `${day}-${month}-${year}`;
-//       }
-//     }
-
-//     res.json({
-//       status: true,
-//       data: educationRecord,
-//     });
-//   } catch (error) {
-//     console.error("Error fetching education:", error);
-//     res.status(500).json({
-//       status: false,
-//       message: "Server error.",
-//       error: error.message,
-//     });
-//   }
-// };
-
-
-exports.updateEducation = async (req, res) => {
+exports.updateEducationById = async (req, res) => {
   try {
     const { userId, role } = req.user;
+    const { educationId } = req.params;
+    const updateFields = req.body;
 
     if (role !== "job_seeker") {
       return res.status(403).json({
         status: false,
-        message: "Only job seekers can update education.",
+        message: "Only job seekers can update education records.",
       });
     }
 
-    const { updates } = req.body;
-
-    if (!updates || !Array.isArray(updates) || updates.length === 0) {
+    if (!mongoose.Types.ObjectId.isValid(educationId)) {
       return res.status(400).json({
         status: false,
-        message: "Provide an array of updates.",
+        message: "Invalid education ID.",
       });
     }
 
-    let modifiedCount = 0;
-
-    for (const update of updates) {
-      const { educationId, ...fields } = update;
-
-      if (!educationId) continue;
-
-      if (Object.keys(fields).length === 0) continue;
-
-      const setObj = {};
-      for (const [key, value] of Object.entries(fields)) {
-        setObj[`educations.$.${key}`] = value;
-      }
-
-      const result = await JobSeekerEducation.updateOne(
-        { userId, "educations._id": educationId },
-        { $set: setObj }
-      );
-
-      if (result.modifiedCount > 0) {
-        modifiedCount++;
-      }
-    }
-
-    res.json({
-      status: true,
-      message: `${modifiedCount} education record updated successfully.`,
+    const education = await JobSeekerEducation.findOne({
+      _id: educationId,
+      userId,
     });
-  } catch (error) {
-    console.error("Error updating educations:", error);
-    res.status(500).json({
-      status: false,
-      message: "Server error.",
-      error: error.message,
-    });
-  }
-};
 
-exports.deleteEducation = async (req, res) => {
-  try {
-    const { userId, role } = req.user;
-
-    if (role !== "job_seeker") {
-      return res.status(403).json({
-        status: false,
-        message: "Only job seekers can delete education.",
-      });
-    }
-
-    let idsToDelete = [];
-
-    if (req.query.educationId) {
-      idsToDelete = req.query.educationId.split(",").map(id => id.trim());
-    } else {
-      return res.status(400).json({
-        status: false,
-        message: "Provide educationId query parameter (single or comma-separated).",
-      });
-    }
-
-    const result = await JobSeekerEducation.updateOne(
-      { userId },
-      { $pull: { educations: { _id: { $in: idsToDelete } } } }
-    );
-
-    if (result.modifiedCount === 0) {
+    if (!education) {
       return res.status(404).json({
         status: false,
-        message: "No matching education records found to delete.",
+        message: "Education record not found.",
       });
     }
 
-    res.json({
-      status: true,
-      message: `${idsToDelete.length} education record(s) deleted successfully.`,
+    // Update only allowed fields
+    const allowedFields = [
+      "degree",
+      "boardOfUniversity",
+      "sessionFrom",
+      "sessionTo",
+      "marks",
+      "gradeOrPercentage",
+    ];
+
+    allowedFields.forEach((field) => {
+      if (updateFields[field] !== undefined) {
+        education[field] = updateFields[field];
+      }
     });
-  } catch (error) {
-    console.error("Error deleting educations:", error);
+
+    await education.save();
+
+    res.status(200).json({
+      status: true,
+      message: "Education record updated successfully.",
+      data: {
+        id: education._id,
+        degree: education.degree,
+        boardOfUniversity: education.boardOfUniversity,
+        sessionFrom: education.sessionFrom?.toISOString().split("T")[0],
+        sessionTo: education.sessionTo?.toISOString().split("T")[0],
+        marks: education.marks,
+        gradeOrPercentage: education.gradeOrPercentage,
+      },
+    });
+  } catch (err) {
+    console.error("Error updating education:", err);
     res.status(500).json({
       status: false,
       message: "Server error.",
-      error: error.message,
+      error: err.message,
     });
   }
 };
 
 
+exports.deleteEducationById = async (req, res) => {
+  try {
+    const { userId, role } = req.user;
+    const { educationId } = req.params;
+
+    if (role !== "job_seeker") {
+      return res.status(403).json({
+        status: false,
+        message: "Only job seekers can delete education records.",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(educationId)) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid education ID.",
+      });
+    }
+
+    const education = await JobSeekerEducation.findOneAndDelete({
+      _id: educationId,
+      userId,
+    });
+
+    if (!education) {
+      return res.status(404).json({
+        status: false,
+        message: "Education record not found or unauthorized.",
+      });
+    }
+
+    res.status(200).json({
+      status: true,
+      message: "Education record deleted successfully.",
+    });
+  } catch (err) {
+    console.error("Error deleting education:", err);
+    res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: err.message,
+    });
+  }
+};
