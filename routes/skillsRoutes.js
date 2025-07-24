@@ -6,8 +6,8 @@ const { verifyToken } = require('../middleware/authMiddleware');
 
 router.post('/create-skills', verifyToken, createSkills);
  router.get('/get-skills', verifyToken, getMySkills);
-  router.put('/update-skills/:skillId', verifyToken, updateSkillById );
-router.delete('/delete-skills/:skillId', verifyToken, deleteSkillById);
+  router.put('/update-skills', verifyToken, updateSkillById );
+router.delete('/delete-skills', verifyToken, deleteSkillById);
 
 
 

@@ -93,8 +93,7 @@ exports.getMySkills = async (req, res) => {
 exports.updateSkillById = async (req, res) => {
   try {
     const { userId, role } = req.user;
-    const { skillId } = req.params;
-    const { skills } = req.body;
+    const { skillId, skills } = req.body;
 
     if (role !== "job_seeker") {
       return res.status(403).json({
@@ -103,10 +102,10 @@ exports.updateSkillById = async (req, res) => {
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(skillId)) {
+    if (!skillId || !mongoose.Types.ObjectId.isValid(skillId)) {
       return res.status(400).json({
         status: false,
-        message: "Invalid skill ID.",
+        message: "Invalid or missing skill ID.",
       });
     }
 
@@ -128,11 +127,11 @@ exports.updateSkillById = async (req, res) => {
 
     res.status(200).json({
       status: true,
-      message: "Skill updated successfully.",
-      data: {
-        id: skill._id,
-        skills: skill.skills,
-      },
+      message: "Skill updated successfully."
+      // data: {
+      //   id: skill._id,
+      //   skills: skill.skills,
+      // },
     });
   } catch (error) {
     console.error("Error updating skill:", error);
@@ -144,10 +143,11 @@ exports.updateSkillById = async (req, res) => {
   }
 };
 
+
 exports.deleteSkillById = async (req, res) => {
   try {
     const { userId, role } = req.user;
-    const { skillId } = req.params;
+    const { skillId } = req.body; // Get skillId from body instead of params
 
     if (role !== "job_seeker") {
       return res.status(403).json({
@@ -156,10 +156,10 @@ exports.deleteSkillById = async (req, res) => {
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(skillId)) {
+    if (!skillId || !mongoose.Types.ObjectId.isValid(skillId)) {
       return res.status(400).json({
         status: false,
-        message: "Invalid skill ID.",
+        message: "Invalid or missing skill ID.",
       });
     }
 
@@ -188,8 +188,5 @@ exports.deleteSkillById = async (req, res) => {
     });
   }
 };
-
-
-
 
 
