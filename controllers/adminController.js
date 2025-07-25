@@ -120,25 +120,60 @@ exports.verifyAdminOtp = async (req, res) => {
 exports.createCategory = async (req, res) => {
   try {
     const { name } = req.body;
-    if (!name) return res.status(400).json({ status: false, message: "Name required" });
+    if (!name) {
+      return res.status(400).json({ status: false, message: "Name required" });
+    }
 
     const category = new Category({ name });
     await category.save();
 
-    res.status(201).json({ status: true, message: "Category created", data: category });
+    // Format response manually
+    const formattedCategory = {
+      id: category._id,
+      name: category.name
+    };
+
+    res.status(201).json({
+      status: true,
+      message: "Category created",
+      data: formattedCategory
+    });
   } catch (err) {
-    res.status(500).json({ status: false, message: "Error creating category", error: err.message });
+    res.status(500).json({
+      status: false,
+      message: "Error creating category",
+      error: err.message
+    });
   }
 };
 
+
+
 exports.getAdminCategory = async (req, res) => {
   try {
-    const categories = await Category.find().sort({ name: 1 });
-    res.json({ status: true, data: categories });
+    const categories = await Category.find().sort({ name: 1 }).lean(); // ✅ use lean()
+
+    // ✅ format each category manually
+    const formattedCategories = categories.map(cat => ({
+      id: cat._id,
+      name: cat.name
+    }));
+
+    res.status(200).json({
+      status: true,
+      message: "Categories fetched successfully.",
+      data: formattedCategories // ✅ USE THIS, NOT `categories`
+    });
   } catch (err) {
-    res.status(500).json({ status: false, message: "Error fetching categories" });
+    res.status(500).json({
+      status: false,
+      message: "Error fetching categories",
+      error: err.message
+    });
   }
 };
+
+
 
 exports.updateCategory = async (req, res) => {
   try {
@@ -167,28 +202,85 @@ exports.deleteCategory = async (req, res) => {
 };
 
 //Industry Type
+
+
 exports.createIndustry = async (req, res) => {
   try {
     const { name } = req.body;
-    if (!name) return res.status(400).json({ status: false, message: "Name required" });
+    if (!name) {
+      return res.status(400).json({ status: false, message: "Name required" });
+    }
 
     const industry = new IndustryType({ name });
     await industry.save();
 
-    res.status(201).json({ status: true, message: "Industry type created", data: industry });
+    const formattedIndustry = {
+      id: industry._id,
+      name: industry.name
+    };
+
+    res.status(201).json({
+      status: true,
+      message: "Industry type created",
+      data: formattedIndustry
+    });
   } catch (err) {
-    res.status(500).json({ status: false, message: "Error creating industry", error: err.message });
+    res.status(500).json({
+      status: false,
+      message: "Error creating industry",
+      error: err.message
+    });
   }
 };
 
+
+// exports.createIndustry = async (req, res) => {
+//   try {
+//     const { name } = req.body;
+//     if (!name) return res.status(400).json({ status: false, message: "Name required" });
+
+//     const industry = new IndustryType({ name });
+//     await industry.save();
+
+//     res.status(201).json({ status: true, message: "Industry type created", data: industry });
+//   } catch (err) {
+//     res.status(500).json({ status: false, message: "Error creating industry", error: err.message });
+//   }
+// };
+
+// exports.getAdminIndustry = async (req, res) => {
+//   try {
+//     const industries = await IndustryType.find().sort({ name: 1 });
+//     res.json({ status: true, data: industries });
+//   } catch (err) {
+//     res.status(500).json({ status: false, message: "Error fetching industries" });
+//   }
+// };
+
+
 exports.getAdminIndustry = async (req, res) => {
   try {
-    const industries = await IndustryType.find().sort({ name: 1 });
-    res.json({ status: true, data: industries });
+    const industries = await IndustryType.find().sort({ name: 1 }).lean();
+
+    const formattedIndustries = industries.map(industry => ({
+      id: industry._id,
+      name: industry.name
+    }));
+
+    res.status(200).json({
+      status: true,
+      message: "Industries fetched successfully.",
+      data: formattedIndustries
+    });
   } catch (err) {
-    res.status(500).json({ status: false, message: "Error fetching industries" });
+    res.status(500).json({
+      status: false,
+      message: "Error fetching industries",
+      error: err.message
+    });
   }
 };
+
 
 exports.updateIndustry = async (req, res) => {
   try {
