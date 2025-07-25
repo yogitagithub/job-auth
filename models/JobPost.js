@@ -12,7 +12,7 @@ const jobPostSchema = new mongoose.Schema(
     companyId: {
        type: mongoose.Schema.Types.ObjectId,
        ref: "CompanyProfile",
-        // unique: true,
+      
        required: true
     },
    
@@ -99,6 +99,9 @@ const jobPostSchema = new mongoose.Schema(
       type: String,
       default: "Other",
     },
+    hourlyRate:  {
+      type: Number
+      },
   },
   { timestamps: true }
 );

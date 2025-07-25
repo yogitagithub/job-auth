@@ -126,7 +126,6 @@ exports.updateProfileImage = async (req, res) => {
   try {
     const { userId, role } = req.user;
 
-   
     if (role !== "employer") {
       return res.status(403).json({
         status: false,
@@ -134,17 +133,13 @@ exports.updateProfileImage = async (req, res) => {
       });
     }
 
-    const { image } = req.body;
-
-    
-    if (!image || typeof image !== "string") {
+    if (!req.file) {
       return res.status(400).json({
         status: false,
-        message: "Image URL is required and must be a string."
+        message: "Image file is required."
       });
     }
 
-  
     const profile = await CompanyProfile.findOne({ userId });
 
     if (!profile) {
@@ -154,17 +149,17 @@ exports.updateProfileImage = async (req, res) => {
       });
     }
 
-   
-    profile.image = image;
+    const imagePath = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
 
+    profile.image = imagePath;
     await profile.save();
 
     return res.status(200).json({
       status: true,
       message: "Company profile image updated successfully.",
-      data: {
-        image: profile.image
-      }
+     
+        image: imagePath
+     
     });
   } catch (error) {
     console.error("Error updating company profile image:", error);
@@ -175,6 +170,61 @@ exports.updateProfileImage = async (req, res) => {
     });
   }
 };
+
+
+// exports.updateProfileImage = async (req, res) => {
+//   try {
+//     const { userId, role } = req.user;
+
+   
+//     if (role !== "employer") {
+//       return res.status(403).json({
+//         status: false,
+//         message: "Only employers can update the company image."
+//       });
+//     }
+
+//     const { image } = req.body;
+
+    
+//     if (!image || typeof image !== "string") {
+//       return res.status(400).json({
+//         status: false,
+//         message: "Image URL is required and must be a string."
+//       });
+//     }
+
+  
+//     const profile = await CompanyProfile.findOne({ userId });
+
+//     if (!profile) {
+//       return res.status(404).json({
+//         status: false,
+//         message: "Company profile not found."
+//       });
+//     }
+
+   
+//     profile.image = image;
+
+//     await profile.save();
+
+//     return res.status(200).json({
+//       status: true,
+//       message: "Company profile image updated successfully.",
+//       data: {
+//         image: profile.image
+//       }
+//     });
+//   } catch (error) {
+//     console.error("Error updating company profile image:", error);
+//     res.status(500).json({
+//       status: false,
+//       message: "Server error.",
+//       error: error.message
+//     });
+//   }
+// };
 
 
 
