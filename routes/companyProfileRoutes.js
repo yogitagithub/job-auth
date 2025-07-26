@@ -8,7 +8,7 @@ const { verifyToken } = require('../middleware/authMiddleware');
 router.post('/create-company-profile', verifyToken, saveProfile);
 router.get('/get-company-profile', verifyToken, getProfile);
 
-router.patch('/company-profile-image', 
+router.post('/company-profile-image', 
     verifyToken,  
     upload.single('image'), 
     updateProfileImage);

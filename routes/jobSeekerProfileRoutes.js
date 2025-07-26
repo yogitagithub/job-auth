@@ -8,7 +8,7 @@ const { verifyToken } = require('../middleware/authMiddleware');
 router.post('/create-jobSeeker-profile', verifyToken, saveProfile);
 router.get('/get-jobSeeker-profile', verifyToken, getProfile);
 
-router.patch('/jobSeeker-profile-image',
+router.post('/jobSeeker-profile-image',
      verifyToken,
        upload.single("image"),
       updateProfileImage);
