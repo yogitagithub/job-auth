@@ -182,13 +182,23 @@ exports.updateProfileImage = async (req, res) => {
     profile.image = imagePath;
     await profile.save();
 
-    return res.status(200).json({
+    // return res.status(200).json({
+    //   status: true,
+    //   message: "Job seeker profile image updated successfully.",
+     
+    //     image: imagePath
+     
+    // });
+
+     return res.status(200).json({
       status: true,
       message: "Job seeker profile image updated successfully.",
-     
+      data: {
         image: imagePath
-     
+      }
     });
+
+
   } catch (error) {
     console.error("Error updating job seeker profile image:", error);
     res.status(500).json({
@@ -198,62 +208,6 @@ exports.updateProfileImage = async (req, res) => {
     });
   }
 };
-
-
-
-// exports.updateProfileImage = async (req, res) => {
-//   try {
-//     const { userId, role } = req.user;
-
-   
-//     if (role !== "job_seeker") {
-//       return res.status(403).json({
-//         status: false,
-//         message: "Only job seekers can update the company image."
-//       });
-//     }
-
-//     const { image } = req.body;
-
-    
-//     if (!image || typeof image !== "string") {
-//       return res.status(400).json({
-//         status: false,
-//         message: "Image URL is required and must be a string."
-//       });
-//     }
-
-  
-//     const profile = await JobSeekerProfile.findOne({ userId });
-
-//     if (!profile) {
-//       return res.status(404).json({
-//         status: false,
-//         message: "Job seeker profile not found."
-//       });
-//     }
-
-   
-//     profile.image = image;
-
-//     await profile.save();
-
-//     return res.status(200).json({
-//       status: true,
-//       message: "Job seeker profile image updated successfully.",
-//       data: {
-//         image: profile.image
-//       }
-//     });
-//   } catch (error) {
-//     console.error("Error updating job seeker profile image:", error);
-//     res.status(500).json({
-//       status: false,
-//       message: "Server error.",
-//       error: error.message
-//     });
-//   }
-// };
 
 
 

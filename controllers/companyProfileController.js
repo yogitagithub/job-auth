@@ -154,13 +154,25 @@ exports.updateProfileImage = async (req, res) => {
     profile.image = imagePath;
     await profile.save();
 
-    return res.status(200).json({
+    // return res.status(200).json({
+    //   status: true,
+    //   message: "Company profile image updated successfully.",
+     
+    //     image: imagePath
+     
+    // });
+
+
+     return res.status(200).json({
       status: true,
       message: "Company profile image updated successfully.",
-     
+      data: {
         image: imagePath
-     
+      }
     });
+
+
+    
   } catch (error) {
     console.error("Error updating company profile image:", error);
     res.status(500).json({

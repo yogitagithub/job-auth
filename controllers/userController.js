@@ -52,10 +52,21 @@ exports.sendOtp = async (req, res) => {
 
     console.log(`OTP for ${phoneNumber}: ${otp}, expires at: ${expiresAt.toISOString()}`);
 
-    return res.json({
-      otp,
-      status: true
+    // return res.json({
+    //   otp,
+    //   status: true
+    // });
+
+
+    return res.status(200).json({
+      status: true,
+      message: "OTP sent successfully",
+      result: {
+        otp
+      }
     });
+
+
   } catch (error) {
     console.error('Error sending OTP:', error);
     return res.status(500).json({
@@ -193,14 +204,29 @@ exports.selectRole = async (req, res) => {
       };
     }
 
-    return res.json({
+    // return res.json({
+    //   status: true,
+    //   message: `Role updated to ${role}.`,
+    //   role,
+    //   token,
+    //   ...(companyProfileData && { companyProfile: companyProfileData }),
+    //   ...(jobSeekerProfileData && { jobSeekerProfile: jobSeekerProfileData })
+    // });
+
+
+     return res.status(200).json({
       status: true,
       message: `Role updated to ${role}.`,
-      role,
-      token,
-      ...(companyProfileData && { companyProfile: companyProfileData }),
-      ...(jobSeekerProfileData && { jobSeekerProfile: jobSeekerProfileData })
+      result: {
+        role,
+        token,
+        ...(role === "employer" ? { companyProfile: companyProfileData } : {}),
+        ...(role === "job_seeker" ? { jobSeekerProfile: jobSeekerProfileData } : {})
+      }
     });
+
+
+
   } catch (error) {
     console.error("Error updating role:", error);
     return res.status(500).json({
@@ -260,13 +286,26 @@ exports.verifyOtp = async (req, res) => {
     }
 
    
-    const response = {
+    // const response = {
+    //   status: true,
+    //   message: 'OTP verified',
+    //   role: user.role
+    // };
+
+
+     const response = {
       status: true,
       message: 'OTP verified',
+       result: {
+      role: user.role
+    }
+  };
+
+   const result = {
       role: user.role
     };
 
-   
+     
     if (user.role) {
       const token = jwt.sign(
         { userId: user._id, phoneNumber: user.phoneNumber, role: user.role },
@@ -277,10 +316,18 @@ exports.verifyOtp = async (req, res) => {
       user.token = token;
       await user.save();
 
-      response.token = token;
+      // response.token = token;
+       result.token = token;
+     
     }
 
-    return res.json(response);
+    //  return res.json(response);
+
+     return res.status(200).json({
+      status: true,
+      message: 'OTP verified',
+      result
+    });
 
   } catch (error) {
     console.error('Error verifying OTP:', error);

@@ -47,18 +47,46 @@ exports.createJobPost = async (req, res) => {
 
 exports.getAllJobPosts = async (req, res) => {
   try {
-    const jobPosts = await JobPost.find()
+
+     const { userId, role } = req.user;
+
+       const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 5;
+    const skip = (page - 1) * limit;
+
+      const filter = role === 'employer' ? { userId } : {};
+
+    const totalRecord = await JobPost.countDocuments(filter);
+    const totalPage = Math.ceil(totalRecord / limit);
+
+
+    const jobPosts = await JobPost.find(filter)
       .populate("companyId")  
       .populate("userId", "mobile role") 
        .populate("category", "name")
        .populate("industryType", "name")
-      .sort({ createdAt: -1 }); 
+      .sort({ createdAt: -1 })
+       .skip(skip)
+      .limit(limit); 
 
-    res.json({
+    // res.json({
+    //   success: true,
+    //    message: "All job posts have been fetched successfully.",
+    //   count: jobPosts.length,
+    //   data: jobPosts
+    // });
+
+
+     res.status(200).json({
       success: true,
-      count: jobPosts.length,
-      data: jobPosts
+      message: "Job posts fetched successfully.",
+      // count: jobPosts.length,
+      totalRecord,
+      totalPage,
+       data: jobPosts
     });
+
+
   } catch (error) {
     console.error("Error fetching job posts:", error);
     res.status(500).json({
@@ -88,6 +116,7 @@ exports.getJobPostById = async (req, res) => {
 
     res.json({
       success: true,
+    message: "Job post fetched successfully.",
       data: jobPost
     });
   } catch (error) {
