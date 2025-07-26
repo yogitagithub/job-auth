@@ -68,19 +68,17 @@ const jobPostSchema = new mongoose.Schema(
     
     },
     skills: {
-      type: [String],
+      type: String,
       default: [],
     },
-    salaryRange: {
-      min: {
+    // salaryRange: {
+      minSalary: {
         type: Number,
-       
-      },
-      max: {
+        },
+      maxSalary: {
         type: Number,
-       
-      },
-    },
+        },
+    // },
     state: {
       type: String,
      
