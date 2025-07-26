@@ -76,7 +76,6 @@ exports.saveProfile = async (req, res) => {
   }
 };
 
-
 exports.getProfile = async (req, res) => {
   try {
     const { userId, role } = req.user;

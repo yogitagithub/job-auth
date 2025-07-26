@@ -7,7 +7,7 @@ const { sendAdminOtp, verifyAdminOtp, createCategory,
   createIndustry, getAdminIndustry,
   updateIndustry,
   deleteIndustry, getCategories, getIndustry } = require('../controllers/adminController');
-const { verifyToken, verifyAdmin, verifyEmployerOrAdmin } = require('../middleware/authMiddleware');
+const { verifyToken, verifyAdmin, verifyEmployerOnly, verifyJobSeekerOnly } = require('../middleware/authMiddleware');
 
 
 router.post('/send-otp', sendAdminOtp);
@@ -27,8 +27,10 @@ router.put("/update-industry/:id", verifyToken, verifyAdmin, updateIndustry);
 router.delete("/delete-industry/:id", verifyToken, verifyAdmin, deleteIndustry);
 
 //get all employees
-router.get("/get-categories", verifyToken, verifyEmployerOrAdmin, getCategories);
-router.get("/get-industry", verifyToken, verifyEmployerOrAdmin, getIndustry);
+router.get("/get-categories-employers", verifyToken, verifyEmployerOnly, getCategories);
+router.get("/get-industry-employers", verifyToken, verifyEmployerOnly, getIndustry);
 
+//get all job_seekers
+router.get("/get-industry-jobSeekers", verifyToken, verifyJobSeekerOnly, getIndustry);
 
 module.exports = router;

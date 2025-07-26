@@ -39,10 +39,20 @@ exports.sendAdminOtp = async (req, res) => {
 
     await user.save();
 
-    return res.json({
-      otp: STATIC_OTP,
-      status: true
+    // return res.json({
+    //   otp: STATIC_OTP,
+    //   status: true
+    // });
+
+
+     return res.status(200).json({
+      status: true,
+      message: "OTP sent successfully",
+      result: {
+        otp: STATIC_OTP
+      }
     });
+
 
   } catch (error) {
     console.error("Error in sendAdminOtp:", error);
@@ -100,13 +110,24 @@ exports.verifyAdminOtp = async (req, res) => {
     // ✅ Save updated user
     await user.save();
 
-    return res.json({
+    // return res.json({
+    //   status: true,
+    //   message: 'Admin OTP verified',
+    //   role: 'admin',
+    //   token
+    // });
+
+
+      return res.status(200).json({
       status: true,
       message: 'Admin OTP verified',
-      role: 'admin',
-      token
+      result: {
+        role: 'admin',
+        token
+      }
     });
 
+    
   } catch (error) {
     console.error('Error in verifyAdminOtp:', error);
     return res.status(500).json({
@@ -234,30 +255,6 @@ exports.createIndustry = async (req, res) => {
 };
 
 
-// exports.createIndustry = async (req, res) => {
-//   try {
-//     const { name } = req.body;
-//     if (!name) return res.status(400).json({ status: false, message: "Name required" });
-
-//     const industry = new IndustryType({ name });
-//     await industry.save();
-
-//     res.status(201).json({ status: true, message: "Industry type created", data: industry });
-//   } catch (err) {
-//     res.status(500).json({ status: false, message: "Error creating industry", error: err.message });
-//   }
-// };
-
-// exports.getAdminIndustry = async (req, res) => {
-//   try {
-//     const industries = await IndustryType.find().sort({ name: 1 });
-//     res.json({ status: true, data: industries });
-//   } catch (err) {
-//     res.status(500).json({ status: false, message: "Error fetching industries" });
-//   }
-// };
-
-
 exports.getAdminIndustry = async (req, res) => {
   try {
     const industries = await IndustryType.find().sort({ name: 1 }).lean();
@@ -311,12 +308,17 @@ exports.deleteIndustry = async (req, res) => {
 //get all
 exports.getCategories = async (req, res) => {
   try {
-    const categories = await Category.find().sort({ name: 1 });
+    const categories = await Category.find().sort({ name: 1 }).lean();
+
+    const formatted = categories.map(({ _id, name }) => ({
+      id: _id,
+      name
+    }));
 
     return res.status(200).json({
       status: true,
       message: "Categories fetched successfully.",
-      data: categories
+      data: formatted
     });
   } catch (error) {
     console.error("Error fetching categories:", error);
@@ -328,14 +330,20 @@ exports.getCategories = async (req, res) => {
   }
 };
 
+
 exports.getIndustry = async (req, res) => {
   try {
-    const industries = await IndustryType.find().sort({ name: 1 });
+    const industries = await IndustryType.find().sort({ name: 1 }).lean();
+
+    const formatted = industries.map(({ _id, name }) => ({
+      id: _id,
+      name
+    }));
 
     return res.status(200).json({
       status: true,
       message: "Industry types fetched successfully.",
-      data: industries
+      data: formatted
     });
   } catch (error) {
     console.error("Error fetching industry types:", error);

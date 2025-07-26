@@ -293,13 +293,13 @@ exports.verifyOtp = async (req, res) => {
     // };
 
 
-     const response = {
-      status: true,
-      message: 'OTP verified',
-       result: {
-      role: user.role
-    }
-  };
+  //    const response = {
+  //     status: true,
+  //     message: 'OTP verified',
+  //      result: {
+  //     role: user.role
+  //   }
+  // };
 
    const result = {
       role: user.role

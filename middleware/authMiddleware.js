@@ -38,18 +38,33 @@ exports.verifyAdmin = (req, res, next) => {
   }
 };
 
-exports.verifyEmployerOrAdmin = (req, res, next) => {
+exports.verifyEmployerOnly = (req, res, next) => {
   const role = req.user?.role;
 
-  if (role === "employer" || role === "admin") {
-    next();
+  if (role === "employer") {
+    next(); 
   } else {
     return res.status(403).json({
       status: false,
-      message: "Access denied. Only employers or admins can access this.",
+      message: "Access denied. Employers only."
     });
   }
 };
+
+exports.verifyJobSeekerOnly = (req, res, next) => {
+  const role = req.user?.role;
+
+  if (role === "job_seeker") {
+    next(); 
+  } else {
+    return res.status(403).json({
+      status: false,
+      message: "Access denied. Job seekers only."
+    });
+  }
+};
+
+
 
 
 
