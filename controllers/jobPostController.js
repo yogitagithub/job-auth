@@ -78,7 +78,7 @@ exports.getAllJobPosts = async (req, res) => {
 
 
      res.status(200).json({
-      success: true,
+      status: true,
       message: "Job posts fetched successfully.",
       // count: jobPosts.length,
       totalRecord,
