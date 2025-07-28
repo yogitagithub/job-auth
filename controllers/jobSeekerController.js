@@ -208,5 +208,43 @@ exports.updateProfileImage = async (req, res) => {
   }
 };
 
+exports.getProfileImage = async (req, res) => {
+  try {
+    const { userId, role } = req.user;
+
+    if (role !== "job_seeker") {
+      return res.status(403).json({
+        status: false,
+        message: "Only job seekers can fetch their profile image."
+      });
+    }
+
+    const profile = await JobSeekerProfile.findOne({ userId });
+
+    if (!profile) {
+      return res.status(404).json({
+        status: false,
+        message: "Job seeker profile not found."
+      });
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "Job seeker profile image fetched successfully.",
+      data: {
+        image: profile.image || null
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching job seeker profile image:", error);
+    res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: error.message
+    });
+  }
+};
+
+
 
 

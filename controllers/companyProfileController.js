@@ -184,4 +184,43 @@ exports.updateProfileImage = async (req, res) => {
 };
 
 
+exports.getProfileImage = async (req, res) => {
+  try {
+    const { userId, role } = req.user;
+
+    if (role !== "employer") {
+      return res.status(403).json({
+        status: false,
+        message: "Only employers can fetch the profile image."
+      });
+    }
+
+    const profile = await CompanyProfile.findOne({ userId });
+
+    if (!profile) {
+      return res.status(404).json({
+        status: false,
+        message: "Company profile not found."
+      });
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "Company profile image fetched successfully.",
+      data: {
+        image: profile.image || null
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching company profile image:", error);
+    res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: error.message
+    });
+  }
+};
+
+
+
 

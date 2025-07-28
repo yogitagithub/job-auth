@@ -1,6 +1,7 @@
 const jwt = require("jsonwebtoken");
 const Category = require("../models/AdminCategory");
 const IndustryType = require("../models/AdminIndustry");
+const JobProfile = require("../models/AdminJobProfile");
 const User = require('../models/User');
 
 const ADMIN_PHONE = '1234567809';
@@ -223,8 +224,6 @@ exports.deleteCategory = async (req, res) => {
 };
 
 //Industry Type
-
-
 exports.createIndustry = async (req, res) => {
   try {
     const { name } = req.body;
@@ -305,54 +304,87 @@ exports.deleteIndustry = async (req, res) => {
   }
 };
 
-//get all
-exports.getCategories = async (req, res) => {
+//Job profile
+exports.createProfile = async (req, res) => {
   try {
-    const categories = await Category.find().sort({ name: 1 }).lean();
+    const { name } = req.body;
+    if (!name) {
+      return res.status(400).json({ status: false, message: "Name required" });
+    }
 
-    const formatted = categories.map(({ _id, name }) => ({
-      id: _id,
-      name
+    const profile = new JobProfile({ name });
+    await profile.save();
+
+    const formattedProfile = {
+      id: profile._id,
+      name: profile.name
+    };
+
+    res.status(201).json({
+      status: true,
+      message: "Job profile created",
+      data: formattedProfile
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: false,
+      message: "Error creating profile",
+      error: err.message
+    });
+  }
+};
+
+exports.getProfile = async (req, res) => {
+  try {
+    const profiles = await JobProfile.find().sort({ name: 1 }).lean();
+
+    const formattedprofiles = profiles.map(profile => ({
+      id: profile._id,
+      name: profile.name
     }));
 
-    return res.status(200).json({
+    res.status(200).json({
       status: true,
-      message: "Categories fetched successfully.",
-      data: formatted
+      message: "Job profiles fetched successfully.",
+      data: formattedprofiles
     });
-  } catch (error) {
-    console.error("Error fetching categories:", error);
-    return res.status(500).json({
+  } catch (err) {
+    res.status(500).json({
       status: false,
-      message: "Server error while fetching categories.",
-      error: error.message
+      message: "Error fetching job profiles",
+      error: err.message
     });
   }
 };
 
 
-exports.getIndustry = async (req, res) => {
+exports.updateProfile = async (req, res) => {
   try {
-    const industries = await IndustryType.find().sort({ name: 1 }).lean();
+    const { id } = req.params;
+    const { name } = req.body;
 
-    const formatted = industries.map(({ _id, name }) => ({
-      id: _id,
-      name
-    }));
+    const updated = await JobProfile.findByIdAndUpdate(id, { name }, { new: true });
+    if (!updated) return res.status(404).json({ status: false, message: "Job profile not found" });
 
-    return res.status(200).json({
-      status: true,
-      message: "Industry types fetched successfully.",
-      data: formatted
-    });
-  } catch (error) {
-    console.error("Error fetching industry types:", error);
-    return res.status(500).json({
-      status: false,
-      message: "Server error while fetching industry types.",
-      error: error.message
-    });
+    res.json({ status: true, message: "Updated successfully", data: updated });
+  } catch (err) {
+    res.status(500).json({ status: false, message: "Error updating job profiles" });
   }
 };
+
+exports.deleteProfile = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deleted = await JobProfile.findByIdAndDelete(id);
+    if (!deleted) return res.status(404).json({ status: false, message: "Not found" });
+
+    res.json({ status: true, message: "Job profile deleted" });
+  } catch (err) {
+    res.status(500).json({ status: false, message: "Error deleting job profile" });
+  }
+};
+
+
+
 
 
