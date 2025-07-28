@@ -15,6 +15,7 @@ const workRoutes = require("./routes/workExpRoutes");
 const resumeRoutes = require("./routes/resumeRoutes");
 const skillsRoutes = require("./routes/skillsRoutes");
 const applyJobRoutes = require("./routes/applyJobRoutes");
+const stateCityRoutes = require("./routes/stateCityRoutes");
 
 // const taskRoutes = require("./routes/taskRoutes");
 
@@ -48,7 +49,7 @@ app.use('/api/auth', resumeRoutes);
 app.use('/api/auth', skillsRoutes);
 app.use('/api/auth', applyJobRoutes);
 // app.use('/api/auth', taskRoutes);
-
+app.use('/api/auth', stateCityRoutes);
 app.use('/api/auth/admin', adminRoutes);
 
 const PORT = process.env.PORT || 8001;

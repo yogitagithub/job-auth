@@ -65,8 +65,7 @@ const jobPostSchema = new mongoose.Schema(
         "Full Time Remote",
         "Full Time On-Site",
       ],
-    
-    },
+     },
     skills: {
       type: String,
       // default: [],

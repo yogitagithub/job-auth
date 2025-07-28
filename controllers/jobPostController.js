@@ -176,8 +176,6 @@ exports.updateJobPostById = async (req, res) => {
   }
 };
 
-
-
 exports.updateJobPostStatus = async (req, res) => {
   try {
     const { id } = req.params;
