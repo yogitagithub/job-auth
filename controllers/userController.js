@@ -145,7 +145,8 @@ exports.selectRole = async (req, res) => {
           companyAddress: null,
           state: null,
           city: null,
-          pincode: null
+          pincode: null,
+          image: null
         });
       }
 
@@ -161,7 +162,8 @@ exports.selectRole = async (req, res) => {
         companyAddress: null,
         state: null,
         city: null,
-        pincode: null
+        pincode: null,
+         image: null
       };
     }
 
@@ -183,7 +185,8 @@ exports.selectRole = async (req, res) => {
           city: null,
           pincode: null,
           alternatePhoneNumber: null,
-          panCardNumber: null
+          panCardNumber: null,
+           image: null
         });
       }
 
@@ -200,7 +203,8 @@ exports.selectRole = async (req, res) => {
         city: null,
         pincode: null,
          alternatePhoneNumber: null,
-          panCardNumber: null
+          panCardNumber: null,
+           image: null
       };
     }
 
