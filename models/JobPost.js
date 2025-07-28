@@ -69,7 +69,7 @@ const jobPostSchema = new mongoose.Schema(
     },
     skills: {
       type: String,
-      default: [],
+      // default: [],
     },
     // salaryRange: {
       minSalary: {
@@ -97,6 +97,11 @@ const jobPostSchema = new mongoose.Schema(
       type: String,
       default: "Other",
     },
+    status: {
+  type: String,
+  enum: ['active', 'expired', 'closed'],
+  default: 'active'
+},
     hourlyRate:  {
       type: Number
       },

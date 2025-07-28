@@ -175,3 +175,53 @@ exports.updateJobPostById = async (req, res) => {
     });
   }
 };
+
+
+
+exports.updateJobPostStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId } = req.user;
+    const { status } = req.body;
+
+    if (!['expired', 'closed'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid status value. Allowed values: 'expired', 'closed'."
+      });
+    }
+
+    const jobPost = await JobPost.findById(id);
+
+    if (!jobPost) {
+      return res.status(404).json({
+        success: false,
+        message: "Job post not found."
+      });
+    }
+
+    if (jobPost.userId.toString() !== userId.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to update this job post status."
+      });
+    }
+
+    jobPost.status = status;
+    await jobPost.save();
+
+    return res.status(200).json({
+      success: true,
+      message: `Job post marked as ${status} successfully.`,
+      data: jobPost
+    });
+
+  } catch (error) {
+    console.error("Error updating job post status:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update job post status.",
+      error: error.message
+    });
+  }
+};
