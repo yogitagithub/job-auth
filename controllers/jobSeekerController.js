@@ -1,4 +1,6 @@
 const JobSeekerProfile = require("../models/JobSeekerProfile");
+const IndustryType = require("../models/AdminIndustry");
+
 
 exports.saveProfile = async (req, res) => {
   try {
@@ -18,7 +20,19 @@ exports.saveProfile = async (req, res) => {
       });
     }
 
-    let profile = await JobSeekerProfile.findOne({ userId });
+
+  if (req.body.industryType) {
+      const industry = await IndustryType.findOne({ name: req.body.industryType });
+      if (!industry) {
+        return res.status(400).json({
+          status: false,
+          message: "Invalid industry type name."
+        });
+      }
+      req.body.industryType = industry._id; 
+    }
+
+     let profile = await JobSeekerProfile.findOne({ userId });
 
    
     if (req.body.dateOfBirth) {
@@ -45,12 +59,18 @@ exports.saveProfile = async (req, res) => {
 
       await profile.save();
 
-      return res.status(201).json({
-        status: true,
-        message: "Job seeker profile created successfully.",
-        data: profile
-      });
-    }
+  const populatedProfile = await JobSeekerProfile.findById(profile._id)
+        .populate("industryType", "name");
+
+       return res.status(201).json({
+         status: true,
+         message: "Job seeker profile created successfully.",
+        data: {
+          ...populatedProfile.toObject(),
+          industryType: populatedProfile.industryType?.name || null
+        }
+       });
+     }
 
    
     const restrictedFields = ["_id", "userId", "phoneNumber", "__v", "image"];
@@ -61,11 +81,19 @@ exports.saveProfile = async (req, res) => {
 
     await profile.save();
 
+       const populatedProfile = await JobSeekerProfile.findById(profile._id)
+          .populate("industryType", "name");
+    
+
     return res.status(200).json({
       status: true,
       message: "Job seeker profile updated successfully.",
-      data: profile
-    });
+       data: {
+        ...populatedProfile.toObject(),
+        industryType: populatedProfile.industryType?.name || null
+      }
+
+     });
   } catch (error) {
     console.error("Error creating/updating job seeker profile:", error);
     res.status(500).json({
@@ -87,7 +115,9 @@ exports.getProfile = async (req, res) => {
       });
     }
 
-    const profile = await JobSeekerProfile.findOne({ userId });
+    // ✅ Populate industryType
+    const profile = await JobSeekerProfile.findOne({ userId })
+      .populate("industryType", "name");
 
     if (!profile) {
       return res.status(404).json({
@@ -96,48 +126,42 @@ exports.getProfile = async (req, res) => {
       });
     }
 
-    
-
     function formatDate(date) {
-  if (!date) return null;
-  const d = new Date(date);
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const year = d.getUTCFullYear();
-  return `${year}-${month}-${day}`;
-}
+      if (!date) return null;
+      const d = new Date(date);
+      const day = String(d.getUTCDate()).padStart(2, '0');
+      const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const year = d.getUTCFullYear();
+      return `${year}-${month}-${day}`;
+    }
 
+    const profileObj = profile.toObject();
 
-     const profileObj = profile.toObject();
-
-       const responseData = {
+    const responseData = {
       id: profileObj._id,
       userId: profileObj.userId,
       phoneNumber: profileObj.phoneNumber,
       name: profileObj.name,
-        dateOfBirth: formatDate(profileObj.dateOfBirth), 
-      
+      dateOfBirth: formatDate(profileObj.dateOfBirth),
       gender: profileObj.gender,
       email: profileObj.email,
-      industry: profileObj.industry,
+      industryType: profileObj.industryType?.name || null, // ✅ Fixed
       jobProfile: profileObj.jobProfile,
       address: profileObj.address,
-      state: profileObj.state,
       state: profileObj.state,
       city: profileObj.city,
       pincode: profileObj.pincode,
       panCardNumber: profileObj.panCardNumber,
       alternatePhoneNumber: profileObj.alternatePhoneNumber,
-       image: profileObj.image
+      image: profileObj.image
     };
 
-     return res.json({
+    return res.json({
       status: true,
       message: "Job seeker profile fetched successfully.",
       data: responseData
     });
 
-   
   } catch (error) {
     console.error(error);
     res.status(500).json({
@@ -147,6 +171,79 @@ exports.getProfile = async (req, res) => {
     });
   }
 };
+
+
+// exports.getProfile = async (req, res) => {
+//   try {
+//     const { userId, role } = req.user;
+
+//     if (role !== "job_seeker") {
+//       return res.status(403).json({
+//         status: false,
+//         message: "Only job seekers can view their profiles."
+//       });
+//     }
+
+//     const profile = await JobSeekerProfile.findOne({ userId });
+
+//     if (!profile) {
+//       return res.status(404).json({
+//         status: false,
+//         message: "Job seeker profile not found."
+//       });
+//     }
+
+    
+
+//     function formatDate(date) {
+//   if (!date) return null;
+//   const d = new Date(date);
+//   const day = String(d.getUTCDate()).padStart(2, '0');
+//   const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+//   const year = d.getUTCFullYear();
+//   return `${year}-${month}-${day}`;
+// }
+
+
+//      const profileObj = profile.toObject();
+
+//        const responseData = {
+//       id: profileObj._id,
+//       userId: profileObj.userId,
+//       phoneNumber: profileObj.phoneNumber,
+//       name: profileObj.name,
+//         dateOfBirth: formatDate(profileObj.dateOfBirth), 
+      
+//       gender: profileObj.gender,
+//       email: profileObj.email,
+//       industry: profileObj.industry,
+//       jobProfile: profileObj.jobProfile,
+//       address: profileObj.address,
+//       state: profileObj.state,
+//       state: profileObj.state,
+//       city: profileObj.city,
+//       pincode: profileObj.pincode,
+//       panCardNumber: profileObj.panCardNumber,
+//       alternatePhoneNumber: profileObj.alternatePhoneNumber,
+//        image: profileObj.image
+//     };
+
+//      return res.json({
+//       status: true,
+//       message: "Job seeker profile fetched successfully.",
+//       data: responseData
+//     });
+
+   
+//   } catch (error) {
+//     console.error(error);
+//     res.status(500).json({
+//       status: false,
+//       message: "Server error.",
+//       error: error.message
+//     });
+//   }
+// };
 
 exports.updateProfileImage = async (req, res) => {
   try {

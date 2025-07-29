@@ -36,12 +36,16 @@ const profileSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
     },
-    industry: {
-      type: String,
-    
-    },
+
+    industryType: {  
+    type: mongoose.Schema.Types.ObjectId,
+  ref: "IndustryType",
+  
+},
      panCardNumber: { type: String, trim: true },
+
       alternatePhoneNumber: { type: String },
+      
     jobProfile: {
       type: String,
      
