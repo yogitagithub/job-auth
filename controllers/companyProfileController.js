@@ -1,4 +1,6 @@
 const CompanyProfile = require("../models/CompanyProfile");
+const IndustryType = require("../models/AdminIndustry");
+
 
 exports.saveProfile = async (req, res) => {
   try {
@@ -18,28 +20,43 @@ exports.saveProfile = async (req, res) => {
       });
     }
 
+    // Convert industryType name to ObjectId
+    if (req.body.industryType) {
+      const industry = await IndustryType.findOne({ name: req.body.industryType });
+      if (!industry) {
+        return res.status(400).json({
+          status: false,
+          message: "Invalid industry type name."
+        });
+      }
+      req.body.industryType = industry._id; // Replace name with ObjectId
+    }
+
     let profile = await CompanyProfile.findOne({ userId });
 
     if (!profile) {
-      
-      const { image, ...restFields } = req.body;
-
       profile = new CompanyProfile({
         userId,
         phoneNumber,
-        ...restFields
+        ...req.body
       });
 
       await profile.save();
 
+      // Populate industryType and return only its name
+      const populatedProfile = await CompanyProfile.findById(profile._id)
+        .populate("industryType", "name");
+
       return res.status(201).json({
         status: true,
         message: "Company profile created successfully.",
-        data: profile
+        data: {
+          ...populatedProfile.toObject(),
+          industryType: populatedProfile.industryType?.name || null
+        }
       });
     }
 
-   
     const restrictedFields = ["_id", "userId", "phoneNumber", "__v", "image"];
     Object.keys(req.body).forEach((field) => {
       if (restrictedFields.includes(field)) return;
@@ -48,11 +65,18 @@ exports.saveProfile = async (req, res) => {
 
     await profile.save();
 
+    const populatedProfile = await CompanyProfile.findById(profile._id)
+      .populate("industryType", "name");
+
     return res.status(200).json({
       status: true,
       message: "Company profile updated successfully.",
-      data: profile
+      data: {
+        ...populatedProfile.toObject(),
+        industryType: populatedProfile.industryType?.name || null
+      }
     });
+
   } catch (error) {
     console.error("Error creating/updating company profile:", error);
     res.status(500).json({
@@ -62,6 +86,69 @@ exports.saveProfile = async (req, res) => {
     });
   }
 };
+
+// exports.saveProfile = async (req, res) => {
+//   try {
+//     const { userId, role, phoneNumber } = req.user;
+
+//     if (role !== "employer") {
+//       return res.status(403).json({
+//         status: false,
+//         message: "Only employers can create or update company profiles."
+//       });
+//     }
+
+//     if (!req.body || Object.keys(req.body).length === 0) {
+//       return res.status(400).json({
+//         status: false,
+//         message: "No fields provided to create or update."
+//       });
+//     }
+
+//     let profile = await CompanyProfile.findOne({ userId });
+
+//     if (!profile) {
+      
+//       const { image, ...restFields } = req.body;
+
+//       profile = new CompanyProfile({
+//         userId,
+//         phoneNumber,
+//         ...restFields
+//       });
+
+//       await profile.save();
+
+//       return res.status(201).json({
+//         status: true,
+//         message: "Company profile created successfully.",
+//         data: profile
+//       });
+//     }
+
+   
+//     const restrictedFields = ["_id", "userId", "phoneNumber", "__v", "image"];
+//     Object.keys(req.body).forEach((field) => {
+//       if (restrictedFields.includes(field)) return;
+//       profile[field] = req.body[field];
+//     });
+
+//     await profile.save();
+
+//     return res.status(200).json({
+//       status: true,
+//       message: "Company profile updated successfully.",
+//       data: profile
+//     });
+//   } catch (error) {
+//     console.error("Error creating/updating company profile:", error);
+//     res.status(500).json({
+//       status: false,
+//       message: "Server error.",
+//       error: error.message
+//     });
+//   }
+// };
 
 
 exports.getProfile = async (req, res) => {
