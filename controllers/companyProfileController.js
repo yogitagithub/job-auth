@@ -87,70 +87,6 @@ exports.saveProfile = async (req, res) => {
   }
 };
 
-// exports.saveProfile = async (req, res) => {
-//   try {
-//     const { userId, role, phoneNumber } = req.user;
-
-//     if (role !== "employer") {
-//       return res.status(403).json({
-//         status: false,
-//         message: "Only employers can create or update company profiles."
-//       });
-//     }
-
-//     if (!req.body || Object.keys(req.body).length === 0) {
-//       return res.status(400).json({
-//         status: false,
-//         message: "No fields provided to create or update."
-//       });
-//     }
-
-//     let profile = await CompanyProfile.findOne({ userId });
-
-//     if (!profile) {
-      
-//       const { image, ...restFields } = req.body;
-
-//       profile = new CompanyProfile({
-//         userId,
-//         phoneNumber,
-//         ...restFields
-//       });
-
-//       await profile.save();
-
-//       return res.status(201).json({
-//         status: true,
-//         message: "Company profile created successfully.",
-//         data: profile
-//       });
-//     }
-
-   
-//     const restrictedFields = ["_id", "userId", "phoneNumber", "__v", "image"];
-//     Object.keys(req.body).forEach((field) => {
-//       if (restrictedFields.includes(field)) return;
-//       profile[field] = req.body[field];
-//     });
-
-//     await profile.save();
-
-//     return res.status(200).json({
-//       status: true,
-//       message: "Company profile updated successfully.",
-//       data: profile
-//     });
-//   } catch (error) {
-//     console.error("Error creating/updating company profile:", error);
-//     res.status(500).json({
-//       status: false,
-//       message: "Server error.",
-//       error: error.message
-//     });
-//   }
-// };
-
-
 exports.getProfile = async (req, res) => {
   try {
     const { userId, role } = req.user;
@@ -162,8 +98,8 @@ exports.getProfile = async (req, res) => {
       });
     }
 
-    
-  const profile = await CompanyProfile.findOne({ userId }).populate("industryType", "name");
+    const profile = await CompanyProfile.findOne({ userId })
+      .populate("industryType", "name");
 
     if (!profile) {
       return res.status(404).json({
@@ -172,16 +108,14 @@ exports.getProfile = async (req, res) => {
       });
     }
 
-   
     const profileObj = profile.toObject();
 
-    
     const responseData = {
       id: profileObj._id,
       userId: profileObj.userId,
       phoneNumber: profileObj.phoneNumber,
       companyName: profileObj.companyName,
-      industryType: profileObj.industryType,
+      industryType: profileObj.industryType?.name || null, // ✅ Only name
       contactPersonName: profileObj.contactPersonName,
       panCardNumber: profileObj.panCardNumber,
       gstNumber: profileObj.gstNumber,
