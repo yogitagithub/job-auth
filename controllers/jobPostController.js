@@ -82,7 +82,7 @@ exports.getAllJobPosts = async (req, res) => {
     const totalPage = Math.ceil(totalRecord / limit);
 
     const jobPosts = await JobPost.find(filter)
-      .populate("companyId")
+      .populate("companyId") 
       .populate("userId", "mobile role")
       .populate("category", "name")
       .populate("industryType", "name")
@@ -91,10 +91,11 @@ exports.getAllJobPosts = async (req, res) => {
       .limit(limit)
       .lean();
 
-    // Transform response
+   
     const transformedJobPosts = jobPosts.map(job => ({
       _id: job._id,
-      company: job.companyId?.companyName || null, // only company name
+      company: job.companyId?.companyName || null,
+      companyImage: job.companyId?.image || null, 
       category: job.category?.name || null,
       industryType: job.industryType?.name || null,
       jobTitle: job.jobTitle,
@@ -131,7 +132,6 @@ exports.getAllJobPosts = async (req, res) => {
     });
   }
 };
-
 
 exports.getJobPostById = async (req, res) => {
   try {
