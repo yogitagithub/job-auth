@@ -44,7 +44,7 @@ const jobPostSchema = new mongoose.Schema(
     },
     salaryType: {
       type: String,
-      enum: ["Hourly", "Monthly"],
+      enum: ["Hourly", "Weekly", "Monthly"],
      
     },
     displayPhoneNumber: {
@@ -60,10 +60,13 @@ const jobPostSchema = new mongoose.Schema(
     jobType: {
       type: String,
       enum: [
-        "Hourly",
+      
         "On-Site",
         "Full Time Remote",
         "Full Time On-Site",
+        "Part Time Remote",
+        "Part Time On-Site",
+        "Contractual"
       ],
      },
     skills: {

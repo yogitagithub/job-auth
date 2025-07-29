@@ -20,7 +20,7 @@ exports.saveProfile = async (req, res) => {
       });
     }
 
-    // Convert industryType name to ObjectId
+   
     if (req.body.industryType) {
       const industry = await IndustryType.findOne({ name: req.body.industryType });
       if (!industry) {
@@ -29,7 +29,7 @@ exports.saveProfile = async (req, res) => {
           message: "Invalid industry type name."
         });
       }
-      req.body.industryType = industry._id; // Replace name with ObjectId
+      req.body.industryType = industry._id; 
     }
 
     let profile = await CompanyProfile.findOne({ userId });
@@ -43,7 +43,7 @@ exports.saveProfile = async (req, res) => {
 
       await profile.save();
 
-      // Populate industryType and return only its name
+    
       const populatedProfile = await CompanyProfile.findById(profile._id)
         .populate("industryType", "name");
 
@@ -115,7 +115,7 @@ exports.getProfile = async (req, res) => {
       userId: profileObj.userId,
       phoneNumber: profileObj.phoneNumber,
       companyName: profileObj.companyName,
-      industryType: profileObj.industryType?.name || null, // ✅ Only name
+      industryType: profileObj.industryType?.name || null,
       contactPersonName: profileObj.contactPersonName,
       panCardNumber: profileObj.panCardNumber,
       gstNumber: profileObj.gstNumber,
@@ -241,6 +241,69 @@ exports.getProfileImage = async (req, res) => {
     });
   }
 };
+
+
+exports.getAllCompanies = async (req, res) => {
+  try {
+  
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 5;
+    const skip = (page - 1) * limit;
+
+  
+    const totalCompanies = await CompanyProfile.countDocuments();
+
+   
+    const companies = await CompanyProfile.find()
+      .populate("industryType", "name")
+      .skip(skip)
+      .limit(limit)
+      .sort({ createdAt: -1 }); 
+
+    if (!companies || companies.length === 0) {
+      return res.status(404).json({
+        status: false,
+        message: "No company profiles found."
+      });
+    }
+
+   
+    const responseData = companies.map(company => ({
+      id: company._id,
+      userId: company.userId,
+      phoneNumber: company.phoneNumber,
+      companyName: company.companyName,
+      industryType: company.industryType?.name || null,
+      contactPersonName: company.contactPersonName,
+      panCardNumber: company.panCardNumber,
+      gstNumber: company.gstNumber,
+      alternatePhoneNumber: company.alternatePhoneNumber,
+      email: company.email,
+      companyAddress: company.companyAddress,
+      state: company.state,
+      city: company.city,
+      pincode: company.pincode,
+      image: company.image
+    }));
+
+    return res.json({
+      status: true,
+      message: "Company profiles fetched successfully.",
+      totalCompanies,
+      currentPage: page,
+      totalPages: Math.ceil(totalCompanies / limit),
+      data: responseData
+    });
+  } catch (error) {
+    console.error("Error fetching companies:", error);
+    res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: error.message
+    });
+  }
+};
+
 
 
 

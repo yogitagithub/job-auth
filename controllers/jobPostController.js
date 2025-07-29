@@ -68,7 +68,6 @@ exports.createJobPost = async (req, res) => {
   }
 };
 
-
 exports.getAllJobPosts = async (req, res) => {
   try {
     const { userId, role } = req.user;
@@ -90,13 +89,29 @@ exports.getAllJobPosts = async (req, res) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .lean(); // convert to plain object
+      .lean();
 
-    // Transform response to return only category & industryType names
+    // Transform response
     const transformedJobPosts = jobPosts.map(job => ({
-      ...job,
+      _id: job._id,
+      company: job.companyId?.companyName || null, // only company name
       category: job.category?.name || null,
-      industryType: job.industryType?.name || null
+      industryType: job.industryType?.name || null,
+      jobTitle: job.jobTitle,
+      jobDescription: job.jobDescription,
+      salaryType: job.salaryType,
+      displayPhoneNumber: job.displayPhoneNumber,
+      displayEmail: job.displayEmail,
+      jobType: job.jobType,
+      skills: job.skills,
+      minSalary: job.minSalary,
+      maxSalary: job.maxSalary,
+      state: job.state,
+      experience: job.experience,
+      otherField: job.otherField,
+      status: job.status,
+      createdAt: job.createdAt,
+      updatedAt: job.updatedAt
     }));
 
     res.status(200).json({
@@ -116,6 +131,56 @@ exports.getAllJobPosts = async (req, res) => {
     });
   }
 };
+
+
+
+// exports.getAllJobPosts = async (req, res) => {
+//   try {
+//     const { userId, role } = req.user;
+
+//     const page = parseInt(req.query.page) || 1;
+//     const limit = parseInt(req.query.limit) || 5;
+//     const skip = (page - 1) * limit;
+
+//     const filter = role === 'employer' ? { userId } : {};
+
+//     const totalRecord = await JobPost.countDocuments(filter);
+//     const totalPage = Math.ceil(totalRecord / limit);
+
+//     const jobPosts = await JobPost.find(filter)
+//       .populate("companyId")
+//       .populate("userId", "mobile role")
+//       .populate("category", "name")
+//       .populate("industryType", "name")
+//       .sort({ createdAt: -1 })
+//       .skip(skip)
+//       .limit(limit)
+//       .lean(); // convert to plain object
+
+//     // Transform response to return only category & industryType names
+//     const transformedJobPosts = jobPosts.map(job => ({
+//       ...job,
+//       category: job.category?.name || null,
+//       industryType: job.industryType?.name || null
+//     }));
+
+//     res.status(200).json({
+//       status: true,
+//       message: "Job posts fetched successfully.",
+//       totalRecord,
+//       totalPage,
+//       data: transformedJobPosts
+//     });
+
+//   } catch (error) {
+//     console.error("Error fetching job posts:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Failed to fetch job posts.",
+//       error: error.message
+//     });
+//   }
+// };
 
 exports.getJobPostById = async (req, res) => {
   try {
@@ -243,3 +308,52 @@ exports.updateJobPostStatus = async (req, res) => {
     });
   }
 };
+
+
+exports.getAllJobPostsPublic = async (req, res) => {
+  try {
+    // Pagination setup
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 5;
+    const skip = (page - 1) * limit;
+
+    // Count total jobs
+    const totalRecord = await JobPost.countDocuments();
+    const totalPage = Math.ceil(totalRecord / limit);
+
+    // Fetch job posts (no token required, so no userId filter)
+    const jobPosts = await JobPost.find()
+      .populate("companyId") // Company details
+      .populate("category", "name") // Only category name
+      .populate("industryType", "name") // Only industry type name
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(); // Convert to plain JS object
+
+    // Transform response (only names for category & industryType)
+    const transformedJobPosts = jobPosts.map(job => ({
+      ...job,
+      category: job.category?.name || null,
+      industryType: job.industryType?.name || null
+    }));
+
+    res.status(200).json({
+      status: true,
+      message: "Job posts fetched successfully.",
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data: transformedJobPosts
+    });
+
+  } catch (error) {
+    console.error("Error fetching job posts:", error);
+    res.status(500).json({
+      status: false,
+      message: "Failed to fetch job posts.",
+      error: error.message
+    });
+  }
+};
+

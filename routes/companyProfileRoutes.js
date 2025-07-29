@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const upload = require('../middleware/upload'); 
-const { saveProfile, getProfile, updateProfileImage, getProfileImage } = require('../controllers/companyProfileController');
+const { saveProfile, getProfile, updateProfileImage, getProfileImage, getAllCompanies } = require('../controllers/companyProfileController');
 const { verifyToken } = require('../middleware/authMiddleware');
 
 
@@ -16,6 +16,8 @@ router.post('/company-profile-image',
 router.get('/company-profile-image', 
     verifyToken,  
     getProfileImage);
+
+router.get("/public-companies", getAllCompanies);
 
 
 module.exports = router;
