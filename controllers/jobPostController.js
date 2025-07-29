@@ -1,10 +1,10 @@
 const JobPost = require("../models/JobPost");
 const CompanyProfile = require("../models/CompanyProfile");
+const IndustryType = require("../models/AdminIndustry");
 const Category = require("../models/AdminCategory");
 
 exports.createJobPost = async (req, res) => {
   try {
-   
     const company = await CompanyProfile.findOne({ userId: req.user.userId });
 
     if (!company) {
@@ -14,26 +14,49 @@ exports.createJobPost = async (req, res) => {
       });
     }
 
-     const categoryExists = await Category.findById(req.body.category);
-    if (!categoryExists) {
+   
+    const category = await Category.findOne({ name: req.body.category });
+    if (!category) {
       return res.status(400).json({
         success: false,
-        message: "Invalid category. Please select a valid category.",
+        message: "Invalid category name. Please select a valid category.",
       });
     }
- 
+
+   
+    const industryType = await IndustryType.findOne({ name: req.body.industryType });
+    if (!industryType) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid industry type name. Please select a valid industry type.",
+      });
+    }
+
+   
     const jobPost = new JobPost({
       ...req.body,
-      companyId: company._id, 
-      userId: req.user.userId 
+      category: category._id,
+      industryType: industryType._id,
+      companyId: company._id,
+      userId: req.user.userId
     });
 
     await jobPost.save();
 
+    const populatedJobPost = await JobPost.findById(jobPost._id)
+      .populate("category", "name")
+      .populate("industryType", "name")
+      .lean(); 
+
+   
+    populatedJobPost.category = populatedJobPost.category?.name || null;
+    populatedJobPost.industryType = populatedJobPost.industryType?.name || null;
+
+
     res.status(201).json({
       success: true,
       message: "Job post created successfully.",
-      data: jobPost
+      data: populatedJobPost
     });
   } catch (error) {
     console.error("Error creating job post:", error);
@@ -45,47 +68,44 @@ exports.createJobPost = async (req, res) => {
   }
 };
 
+
 exports.getAllJobPosts = async (req, res) => {
   try {
+    const { userId, role } = req.user;
 
-     const { userId, role } = req.user;
-
-       const page = parseInt(req.query.page) || 1;
+    const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 5;
     const skip = (page - 1) * limit;
 
-      const filter = role === 'employer' ? { userId } : {};
+    const filter = role === 'employer' ? { userId } : {};
 
     const totalRecord = await JobPost.countDocuments(filter);
     const totalPage = Math.ceil(totalRecord / limit);
 
-
     const jobPosts = await JobPost.find(filter)
-      .populate("companyId")  
-      .populate("userId", "mobile role") 
-       .populate("category", "name")
-       .populate("industryType", "name")
+      .populate("companyId")
+      .populate("userId", "mobile role")
+      .populate("category", "name")
+      .populate("industryType", "name")
       .sort({ createdAt: -1 })
-       .skip(skip)
-      .limit(limit); 
+      .skip(skip)
+      .limit(limit)
+      .lean(); // convert to plain object
 
-    // res.json({
-    //   success: true,
-    //    message: "All job posts have been fetched successfully.",
-    //   count: jobPosts.length,
-    //   data: jobPosts
-    // });
+    // Transform response to return only category & industryType names
+    const transformedJobPosts = jobPosts.map(job => ({
+      ...job,
+      category: job.category?.name || null,
+      industryType: job.industryType?.name || null
+    }));
 
-
-     res.status(200).json({
+    res.status(200).json({
       status: true,
       message: "Job posts fetched successfully.",
-      // count: jobPosts.length,
       totalRecord,
       totalPage,
-       data: jobPosts
+      data: transformedJobPosts
     });
-
 
   } catch (error) {
     console.error("Error fetching job posts:", error);
