@@ -27,7 +27,7 @@ const reviewSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Prevent multiple reviews by same job seeker for same company
+
 reviewSchema.index({ userId: 1, companyId: 1 }, { unique: true });
 
 module.exports = mongoose.model("Review", reviewSchema);

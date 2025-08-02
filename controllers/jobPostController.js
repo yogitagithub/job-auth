@@ -138,8 +138,8 @@ exports.getJobPostById = async (req, res) => {
     const { id } = req.params;
 
     const jobPost = await JobPost.findById(id)
-      .populate("companyId")
-      .populate("userId", "mobile role")
+      .select("-createdAt -updatedAt -__v") // remove unnecessary fields
+      .populate("companyId", "companyName") // only used to retrieve if needed temporarily
       .populate("category", "name")
       .populate("industryType", "name");
 
@@ -150,20 +150,63 @@ exports.getJobPostById = async (req, res) => {
       });
     }
 
+    const jobData = jobPost.toObject();
+
+    // Remove userId and companyId completely
+    delete jobData.userId;
+    delete jobData.companyId;
+
+    // Convert category and industryType to string
+    if (jobPost.category) jobData.category = jobPost.category.name;
+    if (jobPost.industryType) jobData.industryType = jobPost.industryType.name;
+
     res.json({
-      success: true,
-    message: "Job post fetched successfully.",
-      data: jobPost
+      status: true,
+      message: "Job post fetched successfully.",
+      data: jobData
     });
   } catch (error) {
     console.error("Error fetching job post by ID:", error);
     res.status(500).json({
-      success: false,
+      status: false,
       message: "Failed to fetch job post.",
       error: error.message
     });
   }
 };
+
+
+// exports.getJobPostById = async (req, res) => {
+//   try {
+//     const { id } = req.params;
+
+//     const jobPost = await JobPost.findById(id)
+//       .populate("companyId")
+//       .populate("userId", "mobile role")
+//       .populate("category", "name")
+//       .populate("industryType", "name");
+
+//     if (!jobPost) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "Job post not found."
+//       });
+//     }
+
+//     res.json({
+//       status: true,
+//     message: "Job post fetched successfully.",
+//       data: jobPost
+//     });
+//   } catch (error) {
+//     console.error("Error fetching job post by ID:", error);
+//     res.status(500).json({
+//       status: false,
+//       message: "Failed to fetch job post.",
+//       error: error.message
+//     });
+//   }
+// };
 
 exports.updateJobPostById = async (req, res) => {
   try {
