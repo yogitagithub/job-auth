@@ -167,12 +167,18 @@ exports.getJobPostById = async (req, res) => {
 
 exports.updateJobPostById = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { id, category, industryType, ...updateData } = req.body;
     const { userId } = req.user;
 
-  
-    const jobPost = await JobPost.findById(id);
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Job post ID is required."
+      });
+    }
 
+    // Find job post by ID
+    const jobPost = await JobPost.findById(id);
     if (!jobPost) {
       return res.status(404).json({
         success: false,
@@ -180,7 +186,7 @@ exports.updateJobPostById = async (req, res) => {
       });
     }
 
-   
+    // Verify ownership
     if (jobPost.userId.toString() !== userId.toString()) {
       return res.status(403).json({
         success: false,
@@ -188,20 +194,55 @@ exports.updateJobPostById = async (req, res) => {
       });
     }
 
-    
+    // Restricted fields that can't be updated
     const restrictedFields = ["_id", "userId", "companyId", "__v"];
-    Object.keys(req.body).forEach((field) => {
-      if (restrictedFields.includes(field)) return;
-      jobPost[field] = req.body[field];
+    Object.keys(updateData).forEach((field) => {
+      if (!restrictedFields.includes(field)) {
+        jobPost[field] = updateData[field];
+      }
     });
 
+    // Handle category update (if provided)
+    if (category) {
+      const categoryDoc = await Category.findOne({ name: category });
+      if (!categoryDoc) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid category name. Please select a valid category.",
+        });
+      }
+      jobPost.category = categoryDoc._id;
+    }
+
+    // Handle industryType update (if provided)
+    if (industryType) {
+      const industryTypeDoc = await IndustryType.findOne({ name: industryType });
+      if (!industryTypeDoc) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid industry type name. Please select a valid industry type.",
+        });
+      }
+      jobPost.industryType = industryTypeDoc._id;
+    }
+
     await jobPost.save();
+
+    // Populate updated job post
+    const populatedJobPost = await JobPost.findById(jobPost._id)
+      .populate("category", "name")
+      .populate("industryType", "name")
+      .lean();
+
+    populatedJobPost.category = populatedJobPost.category?.name || null;
+    populatedJobPost.industryType = populatedJobPost.industryType?.name || null;
 
     res.json({
       success: true,
       message: "Job post updated successfully.",
-      data: jobPost
+      data: populatedJobPost
     });
+
   } catch (error) {
     console.error("Error updating job post:", error);
     res.status(500).json({
@@ -211,6 +252,108 @@ exports.updateJobPostById = async (req, res) => {
     });
   }
 };
+
+
+// exports.updateJobPostById = async (req, res) => {
+//   try {
+//     const { id } = req.body;
+//     const { userId } = req.user;
+
+//     if (!id) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Job post ID is required."
+//       });
+//     }
+
+//     const jobPost = await JobPost.findById(id);
+
+//     if (!jobPost) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "Job post not found."
+//       });
+//     }
+
+//     // Check if the logged-in user owns the job post
+//     if (jobPost.userId.toString() !== userId.toString()) {
+//       return res.status(403).json({
+//         success: false,
+//         message: "You are not authorized to update this job post."
+//       });
+//     }
+
+//     // Restrict specific fields from updating
+//     const restrictedFields = ["_id", "userId", "companyId", "__v"];
+//     Object.keys(req.body).forEach((field) => {
+//       if (restrictedFields.includes(field)) return;
+//       jobPost[field] = req.body[field];
+//     });
+
+//     await jobPost.save();
+
+//     res.json({
+//       success: true,
+//       message: "Job post updated successfully.",
+//       data: jobPost
+//     });
+//   } catch (error) {
+//     console.error("Error updating job post:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Failed to update job post.",
+//       error: error.message
+//     });
+//   }
+// };
+
+
+// exports.updateJobPostById = async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const { userId } = req.user;
+
+  
+//     const jobPost = await JobPost.findById(id);
+
+//     if (!jobPost) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "Job post not found."
+//       });
+//     }
+
+   
+//     if (jobPost.userId.toString() !== userId.toString()) {
+//       return res.status(403).json({
+//         success: false,
+//         message: "You are not authorized to update this job post."
+//       });
+//     }
+
+    
+//     const restrictedFields = ["_id", "userId", "companyId", "__v"];
+//     Object.keys(req.body).forEach((field) => {
+//       if (restrictedFields.includes(field)) return;
+//       jobPost[field] = req.body[field];
+//     });
+
+//     await jobPost.save();
+
+//     res.json({
+//       success: true,
+//       message: "Job post updated successfully.",
+//       data: jobPost
+//     });
+//   } catch (error) {
+//     console.error("Error updating job post:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Failed to update job post.",
+//       error: error.message
+//     });
+//   }
+// };
 
 exports.updateJobPostStatus = async (req, res) => {
   try {
