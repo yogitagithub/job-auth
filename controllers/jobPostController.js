@@ -54,14 +54,14 @@ exports.createJobPost = async (req, res) => {
 
 
     res.status(201).json({
-      success: true,
+      status: true,
       message: "Job post created successfully.",
       data: populatedJobPost
     });
   } catch (error) {
     console.error("Error creating job post:", error);
     res.status(500).json({
-      success: false,
+      status: false,
       message: "Failed to create job post.",
       error: error.message
     });
