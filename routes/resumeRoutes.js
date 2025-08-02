@@ -1,13 +1,10 @@
 const express = require("express");
 const router = express.Router();
-const { uploadResume, deleteResume } = require('../controllers/resumeController');
+const { createResume, deleteResume } = require('../controllers/resumeController');
 const { verifyToken } = require('../middleware/authMiddleware');
-const upload = require("../middleware/upload");
+const uploadResume = require("../middleware/uploadResume");
 
 
-router.post('/upload-resume', verifyToken,  upload.single("resume"), uploadResume);
-//  router.get('/get-resume/:id', verifyToken, getResumeById);
- router.delete('/delete-resume', verifyToken, deleteResume);
-
+router.post('/upload-resume', verifyToken,  uploadResume.single("resume"), createResume);
 
 module.exports = router;

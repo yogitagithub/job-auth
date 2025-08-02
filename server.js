@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const path = require("path");
 const connectDB = require("./config/db");
 
 
@@ -17,7 +18,7 @@ const skillsRoutes = require("./routes/skillsRoutes");
 const applyJobRoutes = require("./routes/applyJobRoutes");
 const stateCityRoutes = require("./routes/stateCityRoutes");
 
-// const taskRoutes = require("./routes/taskRoutes");
+ const reviewRoutes = require("./routes/reviewRoutes");
 
 const adminRoutes = require("./routes/adminRoutes");
 
@@ -35,7 +36,7 @@ app.use(express.urlencoded({
   extended: true
 }));
 
-const path = require('path');
+
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use('/api/auth', userRoutes);
@@ -48,7 +49,7 @@ app.use('/api/auth', workRoutes);
 app.use('/api/auth', resumeRoutes);
 app.use('/api/auth', skillsRoutes);
 app.use('/api/auth', applyJobRoutes);
-// app.use('/api/auth', taskRoutes);
+ app.use('/api/auth', reviewRoutes);
 app.use('/api/auth', stateCityRoutes);
 app.use('/api/auth/admin', adminRoutes);
 

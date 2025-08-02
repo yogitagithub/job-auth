@@ -190,6 +190,9 @@ exports.updateProfileImage = async (req, res) => {
       });
     }
 
+  
+
+
     const profile = await JobSeekerProfile.findOne({ userId });
 
     if (!profile) {
@@ -200,8 +203,7 @@ exports.updateProfileImage = async (req, res) => {
     }
 
     // Construct public URL
-    const imagePath = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
-
+   const imagePath = `${req.protocol}://${req.get("host")}/uploads/images/${req.file.filename}`;
     profile.image = imagePath;
     await profile.save();
 

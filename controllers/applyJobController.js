@@ -281,4 +281,50 @@ exports.updateStatus = async (req, res) => {
   }
 };
 
+exports.updateEmployerApprovalStatus = async (req, res) => {
+  try {
+    const { userId, role } = req.user;
+    const { employerApprovalStatus } = req.body;
+    const { applicationId } = req.params;
+
+    if (role !== "employer") {
+      return res.status(403).json({
+        status: false,
+        message: "Only employers can update approval status.",
+      });
+    }
+
+    if (!employerApprovalStatus || !["Unapproved", "Approved"].includes(employerApprovalStatus)) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid approval status. Allowed values: Unapproved, Approved",
+      });
+    }
+
+    const application = await JobApplication.findById(applicationId);
+    if (!application) {
+      return res.status(404).json({
+        status: false,
+        message: "Job application not found.",
+      });
+    }
+
+    // Employer updates approval status
+    application.employerApprovalStatus = employerApprovalStatus;
+    await application.save();
+
+    res.json({
+      status: true,
+      message: `Employer approval status updated to '${employerApprovalStatus}'.`,
+      data: application,
+    });
+  } catch (error) {
+    console.error("Error updating employer approval status:", error);
+    res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: error.message,
+    });
+  }
+};
 
