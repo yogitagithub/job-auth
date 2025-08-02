@@ -11,7 +11,7 @@ router.get('/get-job-post-id/:id', verifyToken, getJobPostById);
 router.put('/update-job-post', verifyToken, updateJobPostById);
 
 // router.put('/update-job-post/:id', verifyToken, updateJobPostById);
-router.put("/jobPostStatus/:id/status", verifyToken, updateJobPostStatus);
+router.put("/jobPostStatus", verifyToken, updateJobPostStatus);
 router.get("/public-jobs", getAllJobPostsPublic);
 
 
