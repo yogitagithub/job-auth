@@ -220,7 +220,7 @@ exports.updateJobPostById = async (req, res) => {
       });
     }
 
-    // Find job post by ID
+  
     const jobPost = await JobPost.findById(id);
     if (!jobPost) {
       return res.status(404).json({
@@ -229,7 +229,7 @@ exports.updateJobPostById = async (req, res) => {
       });
     }
 
-    // Verify ownership
+    
     if (jobPost.userId.toString() !== userId.toString()) {
       return res.status(403).json({
         success: false,
@@ -237,7 +237,7 @@ exports.updateJobPostById = async (req, res) => {
       });
     }
 
-    // Restricted fields that can't be updated
+ 
     const restrictedFields = ["_id", "userId", "companyId", "__v"];
     Object.keys(updateData).forEach((field) => {
       if (!restrictedFields.includes(field)) {
@@ -245,7 +245,7 @@ exports.updateJobPostById = async (req, res) => {
       }
     });
 
-    // Handle category update (if provided)
+  
     if (category) {
       const categoryDoc = await Category.findOne({ name: category });
       if (!categoryDoc) {
@@ -257,7 +257,7 @@ exports.updateJobPostById = async (req, res) => {
       jobPost.category = categoryDoc._id;
     }
 
-    // Handle industryType update (if provided)
+   
     if (industryType) {
       const industryTypeDoc = await IndustryType.findOne({ name: industryType });
       if (!industryTypeDoc) {
@@ -271,7 +271,7 @@ exports.updateJobPostById = async (req, res) => {
 
     await jobPost.save();
 
-    // Populate updated job post
+
     const populatedJobPost = await JobPost.findById(jobPost._id)
       .populate("category", "name")
       .populate("industryType", "name")
@@ -281,7 +281,7 @@ exports.updateJobPostById = async (req, res) => {
     populatedJobPost.industryType = populatedJobPost.industryType?.name || null;
 
     res.json({
-      success: true,
+      status: true,
       message: "Job post updated successfully.",
       data: populatedJobPost
     });
@@ -289,7 +289,7 @@ exports.updateJobPostById = async (req, res) => {
   } catch (error) {
     console.error("Error updating job post:", error);
     res.status(500).json({
-      success: false,
+      status: false,
       message: "Failed to update job post.",
       error: error.message
     });
@@ -505,16 +505,16 @@ exports.updateJobPostStatus = async (req, res) => {
 
 exports.getAllJobPostsPublic = async (req, res) => {
   try {
-    // Pagination setup
+   
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 5;
     const skip = (page - 1) * limit;
 
-    // Count total jobs
+    
     const totalRecord = await JobPost.countDocuments();
     const totalPage = Math.ceil(totalRecord / limit);
 
-    // Fetch job posts (no token required, so no userId filter)
+  
     const jobPosts = await JobPost.find()
       .populate("companyId") // Company details
       .populate("category", "name") // Only category name
