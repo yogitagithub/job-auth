@@ -10,39 +10,39 @@ exports.createJobPost = async (req, res) => {
 
     if (!company) {
       return res.status(400).json({
-        success: false,
+        status: false,
         message: "Company profile not found for this user. Please create a company profile first."
       });
     }
 
-    // Validate Category
-    const category = await Category.findById(req.body.category);
+    // ✅ Validate Category by name
+    const category = await Category.findOne({ name: req.body.category });
     if (!category) {
-      return res.status(400).json({ success: false, message: "Invalid category ID." });
+      return res.status(400).json({ status: false, message: "Invalid category name." });
     }
 
-    // Validate Industry Type
-    const industryType = await IndustryType.findById(req.body.industryType);
+    // ✅ Validate Industry Type by name
+    const industryType = await IndustryType.findOne({ name: req.body.industryType });
     if (!industryType) {
-      return res.status(400).json({ success: false, message: "Invalid industry type ID." });
+      return res.status(400).json({ status: false, message: "Invalid industry type name." });
     }
 
-    // Convert state name to ObjectId
+    // ✅ Validate state by name
     const state = await StateCity.findOne({ state: req.body.state });
     if (!state) {
-      return res.status(400).json({ success: false, message: "Invalid state name." });
+      return res.status(400).json({ status: false, message: "Invalid state name." });
     }
 
-    // Set expiry date (default 30 days if not provided)
-    let expiredDate = req.body.expiredDate 
-      ? new Date(req.body.expiredDate) 
+    // ✅ Set expiry date (default 30 days if not provided)
+    let expiredDate = req.body.expiredDate
+      ? new Date(req.body.expiredDate)
       : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-    // Create job post
+    // ✅ Create job post
     const jobPost = new JobPost({
       ...req.body,
       expiredDate,
-      status: "active", // default status
+      status: "active",
       state: state._id,
       category: category._id,
       industryType: industryType._id,
@@ -52,40 +52,38 @@ exports.createJobPost = async (req, res) => {
 
     await jobPost.save();
 
-     // Format expiredDate to return only YYYY-MM-DD
+    // ✅ Format expiredDate
     const formattedExpiredDate = jobPost.expiredDate.toISOString().split("T")[0];
 
-    // Prepare response (return names instead of ObjectIds)
-    const responseData = {
-      _id: jobPost._id,
-      userId: jobPost.userId,
-      companyId: jobPost.companyId,
-      jobTitle: jobPost.jobTitle,
-      jobDescription: jobPost.jobDescription,
-      salaryType: jobPost.salaryType,
-      displayPhoneNumber: jobPost.displayPhoneNumber,
-      minSalary: jobPost.minSalary,
-      maxSalary: jobPost.maxSalary,
-      status: jobPost.status,
-      experience: jobPost.experience,
-      jobType: jobPost.jobType,
-      skills: jobPost.skills,
-      category: category.name,
-      industryType: industryType.name,
-      state: state.state,
-      expiredDate: formattedExpiredDate
-    };
-
+    // ✅ Response with names instead of ObjectIds
     res.status(201).json({
-      success: true,
+      status: true,
       message: "Job post created successfully.",
-      data: responseData
+      data: {
+        _id: jobPost._id,
+        userId: jobPost.userId,
+        companyId: jobPost.companyId,
+        jobTitle: jobPost.jobTitle,
+        jobDescription: jobPost.jobDescription,
+        salaryType: jobPost.salaryType,
+        displayPhoneNumber: jobPost.displayPhoneNumber,
+        minSalary: jobPost.minSalary,
+        maxSalary: jobPost.maxSalary,
+        status: jobPost.status,
+        experience: jobPost.experience,
+        jobType: jobPost.jobType,
+        skills: jobPost.skills,
+        category: category.name,
+        industryType: industryType.name,
+        state: state.state,
+        expiredDate: formattedExpiredDate
+      }
     });
 
   } catch (error) {
     console.error("Error creating job post:", error);
     res.status(500).json({
-      success: false,
+      status: false,
       message: "Failed to create job post.",
       error: error.message
     });
@@ -155,7 +153,7 @@ exports.getAllJobPosts = async (req, res) => {
   } catch (error) {
     console.error("Error fetching job posts:", error);
     res.status(500).json({
-      success: false,
+      status: false,
       message: "Failed to fetch job posts.",
       error: error.message
     });
@@ -174,7 +172,7 @@ exports.getJobPostById = async (req, res) => {
 
     if (!jobPost) {
       return res.status(404).json({
-        success: false,
+        status: false,
         message: "Job post not found."
       });
     }
@@ -219,66 +217,6 @@ exports.getJobPostById = async (req, res) => {
   }
 };
 
-
-// exports.getJobPostById = async (req, res) => {
-//   try {
-//     const { id } = req.params;
-
-//     let jobPost = await JobPost.findById(id)
-//       .select("-createdAt -updatedAt -__v") // remove unnecessary fields
-//       .populate("companyId", "companyName")
-//       .populate("category", "name")
-//       .populate("industryType", "name")
-//       // .populate("state", "state"); 
-
-//     if (!jobPost) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Job post not found."
-//       });
-//     }
-
-//     // ✅ Check if expired
-//     const today = new Date();
-//     today.setHours(0, 0, 0, 0);
-
-//     if (jobPost.expiredDate && jobPost.expiredDate < today && jobPost.status !== "expired") {
-//       jobPost.status = "expired";
-//       await jobPost.save();
-//     }
-
-//     const jobData = jobPost.toObject();
-
-//     // Remove userId and companyId completely
-//     delete jobData.userId;
-//     delete jobData.companyId;
-
-//     // Convert category, industryType, and state to string
-//     if (jobPost.category) jobData.category = jobPost.category.name;
-//     if (jobPost.industryType) jobData.industryType = jobPost.industryType.name;
-//     // if (jobPost.state) jobData.state = jobPost.state.state;
-
-//     // ✅ Format expiredDate (only date part)
-//     if (jobPost.expiredDate) {
-//       jobData.expiredDate = jobPost.expiredDate.toISOString().split("T")[0];
-//     }
-
-//     res.json({
-//       status: true,
-//       message: "Job post fetched successfully.",
-//       data: jobData
-//     });
-
-//   } catch (error) {
-//     console.error("Error fetching job post by ID:", error);
-//     res.status(500).json({
-//       status: false,
-//       message: "Failed to fetch job post.",
-//       error: error.message
-//     });
-//   }
-// };
-
 exports.updateJobPostById = async (req, res) => {
   try {
     const { id, category, industryType, state, expiredDate, status, ...updateData } = req.body;
@@ -286,7 +224,7 @@ exports.updateJobPostById = async (req, res) => {
 
     if (!id) {
       return res.status(400).json({
-        success: false,
+        status: false,
         message: "Job post ID is required."
       });
     }
@@ -295,14 +233,14 @@ exports.updateJobPostById = async (req, res) => {
 
     if (!jobPost) {
       return res.status(404).json({
-        success: false,
+        status: false,
         message: "Job post not found."
       });
     }
 
     if (jobPost.userId.toString() !== userId.toString()) {
       return res.status(403).json({
-        success: false,
+        status: false,
         message: "You are not authorized to update this job post."
       });
     }
@@ -322,7 +260,7 @@ exports.updateJobPostById = async (req, res) => {
     if (category) {
       const categoryDoc = await Category.findOne({ name: category });
       if (!categoryDoc) {
-        return res.status(400).json({ success: false, message: "Invalid category name." });
+        return res.status(400).json({ status: false, message: "Invalid category name." });
       }
       jobPost.category = categoryDoc._id;
     }
@@ -331,7 +269,7 @@ exports.updateJobPostById = async (req, res) => {
     if (industryType) {
       const industryTypeDoc = await IndustryType.findOne({ name: industryType });
       if (!industryTypeDoc) {
-        return res.status(400).json({ success: false, message: "Invalid industry type name." });
+        return res.status(400).json({ status: false, message: "Invalid industry type name." });
       }
       jobPost.industryType = industryTypeDoc._id;
     }
@@ -340,7 +278,7 @@ exports.updateJobPostById = async (req, res) => {
     if (state) {
       const stateDoc = await StateCity.findOne({ state: state });
       if (!stateDoc) {
-        return res.status(400).json({ success: false, message: "Invalid state name." });
+        return res.status(400).json({ status: false, message: "Invalid state name." });
       }
       jobPost.state = stateDoc._id;
     }
@@ -375,7 +313,7 @@ exports.updateJobPostById = async (req, res) => {
   // ✅ Same date check (strict)
   if (newDateStr === currentDateStr) {
     return res.status(400).json({
-      success: false,
+      status: false,
       message: "The expiry date is the same as the current expiry date. No changes made."
     });
   }
@@ -405,7 +343,7 @@ exports.updateJobPostById = async (req, res) => {
     if (status && !expiredDate) {
       if (status === "active" && jobPost.status === "expired") {
         return res.status(400).json({
-          success: false,
+          status: false,
           message: "You cannot set this job back to active without updating expiry date to a future date."
         });
       }
@@ -453,7 +391,7 @@ exports.updateJobPostStatus = async (req, res) => {
 
     if (!id) {
       return res.status(400).json({
-        success: false,
+        status: false,
         message: "Job post ID is required."
       });
     }
@@ -463,7 +401,7 @@ exports.updateJobPostStatus = async (req, res) => {
 
     if (!jobPost) {
       return res.status(404).json({
-        success: false,
+        status: false,
         message: "Job post not found."
       });
     }
@@ -471,7 +409,7 @@ exports.updateJobPostStatus = async (req, res) => {
     // Authorization check
     if (jobPost.userId.toString() !== userId.toString()) {
       return res.status(403).json({
-        success: false,
+        status: false,
         message: "You are not authorized to update this job post status."
       });
     }
@@ -484,7 +422,7 @@ exports.updateJobPostStatus = async (req, res) => {
       await jobPost.save();
 
       return res.status(400).json({
-        success: false,
+        status: false,
         message: "Job post is already expired. You cannot update its status."
       });
     }
@@ -492,7 +430,7 @@ exports.updateJobPostStatus = async (req, res) => {
     // ❌ Prevent manual 'expired' update
     if (status === "expired") {
       return res.status(400).json({
-        success: false,
+        status: false,
         message: "You cannot manually set status to 'expired'. It is set automatically based on expired date."
       });
     }
@@ -500,7 +438,7 @@ exports.updateJobPostStatus = async (req, res) => {
     // ✅ Allow only active/inactive
     if (!['active', 'inactive'].includes(status)) {
       return res.status(400).json({
-        success: false,
+        status: false,
         message: "Invalid status value. Allowed values: 'active', 'inactive'."
       });
     }
@@ -509,7 +447,7 @@ exports.updateJobPostStatus = async (req, res) => {
     await jobPost.save();
 
     return res.status(200).json({
-      success: true,
+      status: true,
       message: `Job post marked as ${status} successfully.`,
       data: jobPost
     });
@@ -517,7 +455,7 @@ exports.updateJobPostStatus = async (req, res) => {
   } catch (error) {
     console.error("Error updating job post status:", error);
     res.status(500).json({
-      success: false,
+      status: false,
       message: "Failed to update job post status.",
       error: error.message
     });
@@ -579,7 +517,7 @@ exports.deleteJobPostById = async (req, res) => {
     // Validate ID
     if (!id) {
       return res.status(400).json({
-        success: false,
+        status: false,
         message: "Job post ID is required."
       });
     }
@@ -589,7 +527,7 @@ exports.deleteJobPostById = async (req, res) => {
 
     if (!jobPost) {
       return res.status(404).json({
-        success: false,
+        status: false,
         message: "Job post not found or already deleted."
       });
     }
@@ -597,7 +535,7 @@ exports.deleteJobPostById = async (req, res) => {
     // Check authorization (admin or creator)
     if (role !== "admin" && jobPost.userId.toString() !== userId.toString()) {
       return res.status(403).json({
-        success: false,
+        status: false,
         message: "You are not authorized to delete this job post."
       });
     }
@@ -610,7 +548,7 @@ exports.deleteJobPostById = async (req, res) => {
     await jobPost.save();
 
     return res.status(200).json({
-      success: true,
+      status: true,
       message: "Job post deleted successfully (soft delete).",
     
     });
@@ -618,7 +556,7 @@ exports.deleteJobPostById = async (req, res) => {
   } catch (error) {
     console.error("Error deleting job post:", error);
     res.status(500).json({
-      success: false,
+      status: false,
       message: "Failed to delete job post.",
       error: error.message
     });
