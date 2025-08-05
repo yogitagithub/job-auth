@@ -82,10 +82,15 @@ const jobPostSchema = new mongoose.Schema(
     },
 
     state: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "StateCity",
-      required: true
+      type: String,
     },
+
+
+    // state: {
+    //   type: mongoose.Schema.Types.ObjectId,
+    //   ref: "StateCity",
+    //   required: true
+    // },
 
 
     experience: {
