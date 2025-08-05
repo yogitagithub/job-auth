@@ -167,11 +167,10 @@ exports.getJobPostById = async (req, res) => {
     const { id } = req.params;
 
     let jobPost = await JobPost.findById(id)
-      .select("-createdAt -updatedAt -__v") // remove unnecessary fields
+      .select("-createdAt -updatedAt -__v") // Keep only the excluded fields
       .populate("companyId", "companyName")
       .populate("category", "name")
-      .populate("industryType", "name")
-      // .populate("state", "state"); 
+      .populate("industryType", "name");
 
     if (!jobPost) {
       return res.status(404).json({
@@ -195,15 +194,14 @@ exports.getJobPostById = async (req, res) => {
     delete jobData.userId;
     delete jobData.companyId;
 
-    // Convert category, industryType, and state to string
+    // Convert category and industryType to string
     if (jobPost.category) jobData.category = jobPost.category.name;
     if (jobPost.industryType) jobData.industryType = jobPost.industryType.name;
-    // if (jobPost.state) jobData.state = jobPost.state.state;
 
-    // ✅ Format expiredDate (only date part)
-    if (jobPost.expiredDate) {
-      jobData.expiredDate = jobPost.expiredDate.toISOString().split("T")[0];
-    }
+    // ✅ Ensure expiredDate is included (formatted as date)
+    jobData.expiredDate = jobPost.expiredDate
+      ? jobPost.expiredDate.toISOString().split("T")[0]
+      : null;
 
     res.json({
       status: true,
@@ -220,6 +218,66 @@ exports.getJobPostById = async (req, res) => {
     });
   }
 };
+
+
+// exports.getJobPostById = async (req, res) => {
+//   try {
+//     const { id } = req.params;
+
+//     let jobPost = await JobPost.findById(id)
+//       .select("-createdAt -updatedAt -__v") // remove unnecessary fields
+//       .populate("companyId", "companyName")
+//       .populate("category", "name")
+//       .populate("industryType", "name")
+//       // .populate("state", "state"); 
+
+//     if (!jobPost) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "Job post not found."
+//       });
+//     }
+
+//     // ✅ Check if expired
+//     const today = new Date();
+//     today.setHours(0, 0, 0, 0);
+
+//     if (jobPost.expiredDate && jobPost.expiredDate < today && jobPost.status !== "expired") {
+//       jobPost.status = "expired";
+//       await jobPost.save();
+//     }
+
+//     const jobData = jobPost.toObject();
+
+//     // Remove userId and companyId completely
+//     delete jobData.userId;
+//     delete jobData.companyId;
+
+//     // Convert category, industryType, and state to string
+//     if (jobPost.category) jobData.category = jobPost.category.name;
+//     if (jobPost.industryType) jobData.industryType = jobPost.industryType.name;
+//     // if (jobPost.state) jobData.state = jobPost.state.state;
+
+//     // ✅ Format expiredDate (only date part)
+//     if (jobPost.expiredDate) {
+//       jobData.expiredDate = jobPost.expiredDate.toISOString().split("T")[0];
+//     }
+
+//     res.json({
+//       status: true,
+//       message: "Job post fetched successfully.",
+//       data: jobData
+//     });
+
+//   } catch (error) {
+//     console.error("Error fetching job post by ID:", error);
+//     res.status(500).json({
+//       status: false,
+//       message: "Failed to fetch job post.",
+//       error: error.message
+//     });
+//   }
+// };
 
 exports.updateJobPostById = async (req, res) => {
   try {
