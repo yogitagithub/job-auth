@@ -31,7 +31,13 @@ const companyProfileSchema = new mongoose.Schema({
      },
 
   companyAddress: { type: String },
-  state: { type: String },
+
+   state: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "StateCity",
+        required: true
+      },
+      
   city: { type: String },
   pincode: { type: String },
   
