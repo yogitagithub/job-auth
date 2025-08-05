@@ -104,11 +104,11 @@ exports.getAllJobPosts = async (req, res) => {
     const totalPage = Math.ceil(totalRecord / limit);
 
     const jobPosts = await JobPost.find(filter)
-      .populate("companyId") 
+      .populate("companyId")
       .populate("userId", "mobile role")
       .populate("category", "name")
       .populate("industryType", "name")
-      // .populate("state", "state")
+      .populate("state", "state") // ✅ Populate state name
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -129,10 +129,7 @@ exports.getAllJobPosts = async (req, res) => {
       skills: job.skills,
       minSalary: job.minSalary,
       maxSalary: job.maxSalary,
-
-      state: job.state,
-
-      // state: job.state?.state || null,
+      state: job.state?.state || null, // ✅ Corrected
       experience: job.experience,
       otherField: job.otherField,
       status: job.status,
@@ -165,10 +162,11 @@ exports.getJobPostById = async (req, res) => {
     const { id } = req.params;
 
     let jobPost = await JobPost.findById(id)
-      .select("-createdAt -updatedAt -__v") // Keep only the excluded fields
+      .select("-createdAt -updatedAt -__v")
       .populate("companyId", "companyName")
       .populate("category", "name")
-      .populate("industryType", "name");
+      .populate("industryType", "name")
+      .populate("state", "state"); // ✅ Added populate for state
 
     if (!jobPost) {
       return res.status(404).json({
@@ -192,11 +190,12 @@ exports.getJobPostById = async (req, res) => {
     delete jobData.userId;
     delete jobData.companyId;
 
-    // Convert category and industryType to string
+    // Convert populated fields to plain values
     if (jobPost.category) jobData.category = jobPost.category.name;
     if (jobPost.industryType) jobData.industryType = jobPost.industryType.name;
+    if (jobPost.state) jobData.state = jobPost.state.state; // ✅ Convert state to name
 
-    // ✅ Ensure expiredDate is included (formatted as date)
+    // ✅ Ensure expiredDate is formatted
     jobData.expiredDate = jobPost.expiredDate
       ? jobPost.expiredDate.toISOString().split("T")[0]
       : null;
@@ -216,6 +215,7 @@ exports.getJobPostById = async (req, res) => {
     });
   }
 };
+
 
 exports.updateJobPostById = async (req, res) => {
   try {
@@ -283,24 +283,7 @@ exports.updateJobPostById = async (req, res) => {
       jobPost.state = stateDoc._id;
     }
 
-    // ✅ Handle expiry date update
-    // if (expiredDate) {
-    //   const [year, month, day] = expiredDate.split("-");
-    //   const formattedExpiry = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
-
-    //   // Compare only date parts (ignore time)
-    //   const currentExpiry = new Date(jobPost.expiredDate);
-    //   const currentDateStr = currentExpiry.toISOString().split("T")[0];
-    //   const newDateStr = formattedExpiry.toISOString().split("T")[0];
-
-    //   // ✅ Same date check
-    //   if (newDateStr === currentDateStr) {
-    //     return res.status(400).json({
-    //       success: false,
-    //       message: "The expiry date is the same as the current expiry date. No changes made."
-    //     });
-    //   }
-
+   
     if (expiredDate) {
   const [year, month, day] = expiredDate.split("-");
   const formattedExpiry = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
@@ -311,12 +294,12 @@ exports.updateJobPostById = async (req, res) => {
   const newDateStr = formattedExpiry.toISOString().split("T")[0];
 
   // ✅ Same date check (strict)
-  if (newDateStr === currentDateStr) {
-    return res.status(400).json({
-      status: false,
-      message: "The expiry date is the same as the current expiry date. No changes made."
-    });
-  }
+  // if (newDateStr === currentDateStr) {
+  //   return res.status(400).json({
+  //     status: false,
+  //     message: "The expiry date is the same as the current expiry date. No changes made."
+  //   });
+  // }
 
 
       // Update expiry date
