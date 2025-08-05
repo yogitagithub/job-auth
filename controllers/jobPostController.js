@@ -110,16 +110,16 @@ exports.getAllJobPosts = async (req, res) => {
       .populate("userId", "mobile role")
       .populate("category", "name")
       .populate("industryType", "name")
+      .populate("state", "state") // ✅ Added state population
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean();
 
-   
     const transformedJobPosts = jobPosts.map(job => ({
       _id: job._id,
       company: job.companyId?.companyName || null,
-      companyImage: job.companyId?.image || null, 
+      companyImage: job.companyId?.image || null,
       category: job.category?.name || null,
       industryType: job.industryType?.name || null,
       jobTitle: job.jobTitle,
@@ -131,12 +131,12 @@ exports.getAllJobPosts = async (req, res) => {
       skills: job.skills,
       minSalary: job.minSalary,
       maxSalary: job.maxSalary,
-      state: job.state,
+      state: job.state?.state || null, // ✅ State name instead of ObjectId
       experience: job.experience,
       otherField: job.otherField,
       status: job.status,
-       expiredDate: job.expiredDate ? job.expiredDate.toISOString().split("T")[0] : null, // ✅ Only Date
-      isDeleted: job.isDeleted,  
+      expiredDate: job.expiredDate ? job.expiredDate.toISOString().split("T")[0] : null,
+      isDeleted: job.isDeleted,
       createdAt: job.createdAt,
       updatedAt: job.updatedAt
     }));
@@ -158,6 +158,74 @@ exports.getAllJobPosts = async (req, res) => {
     });
   }
 };
+
+
+// exports.getAllJobPosts = async (req, res) => {
+//   try {
+//     const { userId, role } = req.user;
+
+//     const page = parseInt(req.query.page) || 1;
+//     const limit = parseInt(req.query.limit) || 5;
+//     const skip = (page - 1) * limit;
+
+//     const filter = role === 'employer' ? { userId } : {};
+
+//     const totalRecord = await JobPost.countDocuments(filter);
+//     const totalPage = Math.ceil(totalRecord / limit);
+
+//     const jobPosts = await JobPost.find(filter)
+//       .populate("companyId") 
+//       .populate("userId", "mobile role")
+//       .populate("category", "name")
+//       .populate("industryType", "name")
+//       .sort({ createdAt: -1 })
+//       .skip(skip)
+//       .limit(limit)
+//       .lean();
+
+   
+//     const transformedJobPosts = jobPosts.map(job => ({
+//       _id: job._id,
+//       company: job.companyId?.companyName || null,
+//       companyImage: job.companyId?.image || null, 
+//       category: job.category?.name || null,
+//       industryType: job.industryType?.name || null,
+//       jobTitle: job.jobTitle,
+//       jobDescription: job.jobDescription,
+//       salaryType: job.salaryType,
+//       displayPhoneNumber: job.displayPhoneNumber,
+//       displayEmail: job.displayEmail,
+//       jobType: job.jobType,
+//       skills: job.skills,
+//       minSalary: job.minSalary,
+//       maxSalary: job.maxSalary,
+//       state: job.state,
+//       experience: job.experience,
+//       otherField: job.otherField,
+//       status: job.status,
+//        expiredDate: job.expiredDate ? job.expiredDate.toISOString().split("T")[0] : null, // ✅ Only Date
+//       isDeleted: job.isDeleted,  
+//       createdAt: job.createdAt,
+//       updatedAt: job.updatedAt
+//     }));
+
+//     res.status(200).json({
+//       status: true,
+//       message: "Job posts fetched successfully.",
+//       totalRecord,
+//       totalPage,
+//       data: transformedJobPosts
+//     });
+
+//   } catch (error) {
+//     console.error("Error fetching job posts:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Failed to fetch job posts.",
+//       error: error.message
+//     });
+//   }
+// };
 
 exports.getJobPostById = async (req, res) => {
   try {
