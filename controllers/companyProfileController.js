@@ -1,5 +1,10 @@
 const CompanyProfile = require("../models/CompanyProfile");
 const IndustryType = require("../models/AdminIndustry");
+const StateCity = require("../models/StateCity");
+
+const fs = require("fs");
+const fsp = fs.promises;
+const path = require("path");
 
 
 exports.saveProfile = async (req, res) => {
@@ -20,7 +25,7 @@ exports.saveProfile = async (req, res) => {
       });
     }
 
-   
+    //  Handle industry type
     if (req.body.industryType) {
       const industry = await IndustryType.findOne({ name: req.body.industryType });
       if (!industry) {
@@ -29,9 +34,37 @@ exports.saveProfile = async (req, res) => {
           message: "Invalid industry type name."
         });
       }
-      req.body.industryType = industry._id; 
+      req.body.industryType = industry._id;
     }
 
+    //  Handle state and city
+    if (req.body.state && req.body.city) {
+      const stateDoc = await StateCity.findOne({ state: req.body.state });
+      if (!stateDoc) {
+        return res.status(400).json({
+          status: false,
+          message: "Invalid state name."
+        });
+      }
+
+      // Validate if city belongs to this state
+      if (!stateDoc.cities.includes(req.body.city)) {
+        return res.status(400).json({
+          status: false,
+          message: "Invalid city for the selected state."
+        });
+      }
+
+      // Replace state name with its ObjectId for DB saving
+      req.body.state = stateDoc._id;
+    } else {
+      return res.status(400).json({
+        status: false,
+        message: "State and city are required."
+      });
+    }
+
+    // Create or update profile
     let profile = await CompanyProfile.findOne({ userId });
 
     if (!profile) {
@@ -42,37 +75,29 @@ exports.saveProfile = async (req, res) => {
       });
 
       await profile.save();
-
-    
-      const populatedProfile = await CompanyProfile.findById(profile._id)
-        .populate("industryType", "name");
-
-      return res.status(201).json({
-        status: true,
-        message: "Company profile created successfully.",
-        data: {
-          ...populatedProfile.toObject(),
-          industryType: populatedProfile.industryType?.name || null
+    } else {
+      const restrictedFields = ["_id", "userId", "phoneNumber", "__v", "image"];
+      Object.keys(req.body).forEach((field) => {
+        if (!restrictedFields.includes(field)) {
+          profile[field] = req.body[field];
         }
       });
+
+      await profile.save();
     }
 
-    const restrictedFields = ["_id", "userId", "phoneNumber", "__v", "image"];
-    Object.keys(req.body).forEach((field) => {
-      if (restrictedFields.includes(field)) return;
-      profile[field] = req.body[field];
-    });
-
-    await profile.save();
-
+    // Populate state and industry names in response
     const populatedProfile = await CompanyProfile.findById(profile._id)
-      .populate("industryType", "name");
+      .populate("state", "state")         // Get state name
+      .populate("industryType", "name");  // Get industry name
 
     return res.status(200).json({
       status: true,
-      message: "Company profile updated successfully.",
+      message: "Company profile saved successfully.",
       data: {
         ...populatedProfile.toObject(),
+        state: populatedProfile.state?.state || null, // Return state name
+        city: populatedProfile.city,                  // City as name
         industryType: populatedProfile.industryType?.name || null
       }
     });
@@ -99,7 +124,8 @@ exports.getProfile = async (req, res) => {
     }
 
     const profile = await CompanyProfile.findOne({ userId })
-      .populate("industryType", "name");
+      .populate("industryType", "name")
+       .populate("state", "state");
 
     if (!profile) {
       return res.status(404).json({
@@ -122,7 +148,7 @@ exports.getProfile = async (req, res) => {
       alternatePhoneNumber: profileObj.alternatePhoneNumber,
       email: profileObj.email,
       companyAddress: profileObj.companyAddress,
-      state: profileObj.state,
+      state: profileObj.state?.state || null,
       city: profileObj.city,
       pincode: profileObj.pincode,
       image: profileObj.image
@@ -143,9 +169,70 @@ exports.getProfile = async (req, res) => {
   }
 };
 
+exports.deleteCompanyProfile = async (req, res) => {
+  try {
+    const { role, userId } = req.user;
+    const { id } = req.body;
+
+    // Check if the user is an employer
+    if (role !== "employer") {
+      return res.status(403).json({
+        status: false,
+        message: "Only employers can delete company profiles."
+      });
+    }
+
+    // Validate ID
+    if (!id) {
+      return res.status(400).json({
+        status: false,
+        message: "Company profile ID is required."
+      });
+    }
+
+    // Find the profile
+    const profile = await CompanyProfile.findById(id);
+    if (!profile) {
+      return res.status(404).json({
+        status: false,
+        message: "Company profile not found."
+      });
+    }
+
+    // Ensure the employer can only delete their own profile
+    if (profile.userId.toString() !== userId) {
+      return res.status(403).json({
+        status: false,
+        message: "You are not authorized to delete this profile."
+      });
+    }
+
+    // Soft delete the profile
+    profile.isDeleted = true;
+    profile.deletedAt = new Date();
+    await profile.save();
+
+    return res.status(200).json({
+      status: true,
+      message: "Company profile soft deleted successfully."
+    });
+
+  } catch (error) {
+    console.error("Error soft deleting company profile:", error);
+    res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: error.message
+    });
+  }
+};
+
 exports.updateProfileImage = async (req, res) => {
   try {
     const { userId, role } = req.user;
+
+    console.log("Incoming Request User:", req.user);
+    console.log("Uploaded File Details:", req.file);
 
     if (role !== "employer") {
       return res.status(403).json({
@@ -162,6 +249,7 @@ exports.updateProfileImage = async (req, res) => {
     }
 
     const profile = await CompanyProfile.findOne({ userId });
+    console.log("Fetched Profile from DB:", profile);
 
     if (!profile) {
       return res.status(404).json({
@@ -170,41 +258,58 @@ exports.updateProfileImage = async (req, res) => {
       });
     }
 
-    const imagePath = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    // Delete old image if it exists
+if (profile.image) {
+  console.log("Existing image URL in DB:", profile.image);
 
-    profile.image = imagePath;
+  const oldImageFile = path.basename(profile.image);
+  console.log("Extracted old image filename:", oldImageFile);
+
+  if (oldImageFile && oldImageFile !== req.file.filename) {
+    const oldImagePath = path.join(__dirname, "..", "uploads", "images", oldImageFile);
+    console.log("Full old image path to delete:", oldImagePath);
+
+    try {
+      await fsp.unlink(oldImagePath); // use fsp.unlink
+      console.log("Old image deleted successfully:", oldImageFile);
+    } catch (err) {
+      if (err.code !== "ENOENT") {
+        console.error("⚠ Error deleting old image:", err);
+      }
+    }
+  } else {
+    console.log("No old image to delete or same filename uploaded");
+  }
+}
+
+   
+    // Generate new image URL
+    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
+    const newImagePath = `${baseUrl}/uploads/images/${req.file.filename}`;
+    console.log("New image URL to save in DB:", newImagePath);
+
+    profile.image = newImagePath;
     await profile.save();
 
-    // return res.status(200).json({
-    //   status: true,
-    //   message: "Company profile image updated successfully.",
-     
-    //     image: imagePath
-     
-    // });
+    console.log("Profile updated successfully with new image");
 
-
-     return res.status(200).json({
+    return res.status(200).json({
       status: true,
-      message: "Company profile image updated successfully.",
+      message: "Company profile image updated successfully. Old image deleted if it existed.",
       data: {
-        image: imagePath
-      }
+        image: newImagePath,
+      },
     });
 
-
-    
   } catch (error) {
     console.error("Error updating company profile image:", error);
     res.status(500).json({
       status: false,
       message: "Server error.",
-      error: error.message
+      error: error.message,
     });
   }
 };
-
-
 exports.getProfileImage = async (req, res) => {
   try {
     const { userId, role } = req.user;
@@ -242,7 +347,6 @@ exports.getProfileImage = async (req, res) => {
   }
 };
 
-
 exports.getAllCompanies = async (req, res) => {
   try {
   
@@ -256,6 +360,7 @@ exports.getAllCompanies = async (req, res) => {
    
     const companies = await CompanyProfile.find()
       .populate("industryType", "name")
+       .populate("state", "state")
       .skip(skip)
       .limit(limit)
       .sort({ createdAt: -1 }); 
@@ -280,7 +385,7 @@ exports.getAllCompanies = async (req, res) => {
       alternatePhoneNumber: company.alternatePhoneNumber,
       email: company.email,
       companyAddress: company.companyAddress,
-      state: company.state,
+      state: company.state?.state || null,
       city: company.city,
       pincode: company.pincode,
       image: company.image

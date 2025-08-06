@@ -76,7 +76,12 @@ exports.applyJobs = async (req, res) => {
     return res.status(201).json({
       status: true,
       message: "Job applied successfully.",
-      data: application,
+
+       data: {
+    ...application.toObject(),
+    appliedAt: application.appliedAt.toISOString().split("T")[0], // ✅ Only Date
+  },
+      
     });
   } catch (error) {
     console.error("Error applying job:", error);
@@ -101,104 +106,70 @@ exports.getMyApplications = async (req, res) => {
     }
 
     const applications = await JobApplication.find({ userId })
+      .populate({ path: "userId", select: "name phoneNumber email role" })
       .populate({
-        path: "userId",
-        select: "name phoneNumber email role"
+        path: "jobSeekerId",
+        populate: [
+          { path: "jobProfile", select: "name" },
+          { path: "state", select: "state" },
+          { path: "industryType", select: "name" }
+        ]
       })
-      .populate("jobPostId")
-      .populate("jobSeekerId")
-      .populate("educationId")
-      .populate("experienceId")
-      .populate("skillsId")
-      .populate("resumeId")
+      .populate({
+        path: "jobPostId",
+        populate: [
+          { path: "companyId", select: "companyName" },
+          { path: "category", select: "name" },
+          { path: "industryType", select: "name" },
+          { path: "state", select: "state" }
+        ],
+        select: "jobTitle jobDescription salaryType jobType skills minSalary maxSalary expiredDate status"
+      })
+      .populate({ path: "educationId", select: "degree boardOfUniversity sessionFrom sessionTo marks gradeOrPercentage" })
+      .populate({ path: "experienceId", select: "companyName jobTitle sessionFrom sessionTo roleDescription" })
+      .populate({ path: "skillsId", select: "skills" })
+      .populate({ path: "resumeId", select: "fileName fileUrl" })
       .lean();
 
     const formatDate = (date) => {
       if (!date) return null;
       const d = new Date(date);
-      const day = String(d.getDate()).padStart(2, "0");
-      const month = String(d.getMonth() + 1).padStart(2, "0");
-      const year = d.getFullYear();
-      return `${day}-${month}-${year}`;
+      return `${String(d.getDate()).padStart(2, "0")}-${String(d.getMonth() + 1).padStart(2, "0")}-${d.getFullYear()}`;
     };
 
     const transformed = applications.map((app) => {
-      const transformedApp = {
-        ...app,
-        id: app._id,
-        appliedAt: formatDate(app.appliedAt),
-      };
+      // ✅ Convert nested populated fields to string
+      if (app.jobSeekerId) {
+        if (app.jobSeekerId.jobProfile?.name) app.jobSeekerId.jobProfile = app.jobSeekerId.jobProfile.name;
+        if (app.jobSeekerId.state?.state) app.jobSeekerId.state = app.jobSeekerId.state.state;
+        if (app.jobSeekerId.industryType?.name) app.jobSeekerId.industryType = app.jobSeekerId.industryType.name;
+       
+        if (app.jobSeekerId.dateOfBirth) {
+      app.jobSeekerId.dateOfBirth = formatDate(app.jobSeekerId.dateOfBirth);
+    } 
 
-      delete transformedApp._id;
-      delete transformedApp.__v;
-      delete transformedApp.createdAt;
-      delete transformedApp.updatedAt;
+  }
 
-      // Fields to clean and format dates inside
-      const fieldsToClean = [
-        "userId",
-        "jobPostId",
-        "jobSeekerId",
-        "educationId",
-        "experienceId",
-        "skillsId",
-        "resumeId",
-      ];
+      if (app.jobPostId) {
+        if (app.jobPostId.companyId?.companyName) app.jobPostId.companyId = app.jobPostId.companyId.companyName;
+        if (app.jobPostId.category?.name) app.jobPostId.category = app.jobPostId.category.name;
+        if (app.jobPostId.industryType?.name) app.jobPostId.industryType = app.jobPostId.industryType.name;
+        if (app.jobPostId.state?.state) app.jobPostId.state = app.jobPostId.state.state;
+        app.jobPostId.expiredDate = formatDate(app.jobPostId.expiredDate);
+      }
 
-      fieldsToClean.forEach((field) => {
-        if (transformedApp[field] && transformedApp[field]._id) {
-          transformedApp[field].id = transformedApp[field]._id;
-          delete transformedApp[field]._id;
-          delete transformedApp[field].__v;
-          delete transformedApp[field].createdAt;
-          delete transformedApp[field].updatedAt;
+      // Format other date fields
+      if (app.appliedAt) app.appliedAt = formatDate(app.appliedAt);
+      if (app.educationId) {
+        app.educationId.sessionFrom = formatDate(app.educationId.sessionFrom);
+        app.educationId.sessionTo = formatDate(app.educationId.sessionTo);
+      }
+      if (app.experienceId) {
+        app.experienceId.sessionFrom = formatDate(app.experienceId.sessionFrom);
+        app.experienceId.sessionTo = formatDate(app.experienceId.sessionTo);
+      }
 
-          // Format dates in known fields
-          if (transformedApp[field].sessionFrom) {
-            transformedApp[field].sessionFrom = formatDate(
-              transformedApp[field].sessionFrom
-            );
-          }
-          if (transformedApp[field].sessionTo) {
-            transformedApp[field].sessionTo = formatDate(
-              transformedApp[field].sessionTo
-            );
-          }
-          if (transformedApp[field].dateOfBirth) {
-            transformedApp[field].dateOfBirth = formatDate(
-              transformedApp[field].dateOfBirth
-            );
-          }
-          if (transformedApp[field].appliedAt) {
-            transformedApp[field].appliedAt = formatDate(
-              transformedApp[field].appliedAt
-            );
-          }
-
-          // Special: Format dates in nested arrays (education, work experience)
-          if (Array.isArray(transformedApp[field].educations)) {
-            transformedApp[field].educations = transformedApp[field].educations.map((edu) => {
-              if (edu.sessionFrom) edu.sessionFrom = formatDate(edu.sessionFrom);
-              if (edu.sessionTo) edu.sessionTo = formatDate(edu.sessionTo);
-              edu.id = edu._id;
-              delete edu._id;
-              return edu;
-            });
-          }
-
-          if (Array.isArray(transformedApp[field].workExperiences)) {
-            transformedApp[field].workExperiences = transformedApp[field].workExperiences.map((exp) => {
-              if (exp.sessionFrom) exp.sessionFrom = formatDate(exp.sessionFrom);
-              if (exp.sessionTo) exp.sessionTo = formatDate(exp.sessionTo);
-              exp.id = exp._id;
-              delete exp._id;
-              return exp;
-            });
-          }
-        }
-      });
-
-      return transformedApp;
+      return app;
     });
 
     res.json({
@@ -294,10 +265,10 @@ exports.updateEmployerApprovalStatus = async (req, res) => {
       });
     }
 
-    if (!employerApprovalStatus || !["Unapproved", "Approved"].includes(employerApprovalStatus)) {
+    if (!employerApprovalStatus || !["Pending", "Shortlisted", "Rejected", "Viewed"].includes(employerApprovalStatus)) {
       return res.status(400).json({
         status: false,
-        message: "Invalid approval status. Allowed values: Unapproved, Approved",
+        message: "Invalid approval status. Allowed values: Pending, Shortlisted, Rejected, Viewed",
       });
     }
 

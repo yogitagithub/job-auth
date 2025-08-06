@@ -1,12 +1,13 @@
 const express = require("express");
 const router = express.Router();
 const uploadImage = require('../middleware/uploadImage');
-const { saveProfile, getProfile, updateProfileImage, getProfileImage, getAllCompanies } = require('../controllers/companyProfileController');
+const { saveProfile, getProfile, deleteCompanyProfile, updateProfileImage, getProfileImage, getAllCompanies } = require('../controllers/companyProfileController');
 const { verifyToken } = require('../middleware/authMiddleware');
 
 
 router.post('/create-company-profile', verifyToken, saveProfile);
 router.get('/get-company-profile', verifyToken, getProfile);
+router.delete('/delete-company-profile', verifyToken, deleteCompanyProfile);
 
 router.post('/company-profile-image', 
     verifyToken,  

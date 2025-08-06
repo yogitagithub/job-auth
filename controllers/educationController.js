@@ -268,10 +268,12 @@ exports.deleteEducationById = async (req, res) => {
       });
     }
 
-    const education = await JobSeekerEducation.findOneAndDelete({
-      _id: educationId,
-      userId,
-    });
+    // Soft delete instead of deleting
+    const education = await JobSeekerEducation.findOneAndUpdate(
+      { _id: educationId, userId },
+      { $set: { isDeleted: true } },
+      { new: true }
+    );
 
     if (!education) {
       return res.status(404).json({
@@ -282,7 +284,7 @@ exports.deleteEducationById = async (req, res) => {
 
     res.status(200).json({
       status: true,
-      message: "Education record deleted successfully.",
+      message: "Education record deleted successfully (soft delete).",
     });
   } catch (err) {
     console.error("Error deleting education:", err);
@@ -293,3 +295,4 @@ exports.deleteEducationById = async (req, res) => {
     });
   }
 };
+

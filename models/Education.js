@@ -18,6 +18,12 @@ const jobSeekerEducationSchema = new mongoose.Schema(
     sessionTo: { type: Date, required: true },
     marks: { type: String, trim: true },
     gradeOrPercentage: { type: String, trim: true },
+
+     isDeleted: { 
+    type: Boolean, 
+    default: false 
+  }
+  
   },
   { timestamps: true }
 );

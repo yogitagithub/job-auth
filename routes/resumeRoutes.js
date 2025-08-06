@@ -6,5 +6,6 @@ const uploadResume = require("../middleware/uploadResume");
 
 
 router.post('/upload-resume', verifyToken,  uploadResume.single("resume"), createResume);
+router.delete('/delete-resume', verifyToken, deleteResume);
 
 module.exports = router;

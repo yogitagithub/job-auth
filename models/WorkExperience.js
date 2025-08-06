@@ -17,6 +17,12 @@ const workExperienceSchema = new mongoose.Schema(
     sessionFrom: { type: Date, default: null },
     sessionTo: { type: Date, default: null },
     roleDescription: { type: String, trim: true, default: null },
+
+     isDeleted: { 
+    type: Boolean, 
+    default: false 
+  }
+  
   },
   { timestamps: true }
 );

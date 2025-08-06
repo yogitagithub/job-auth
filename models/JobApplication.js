@@ -45,8 +45,8 @@ const jobApplicationSchema = new mongoose.Schema(
 
      employerApprovalStatus: {
       type: String,
-      enum: ["Unapproved", "Approved"],
-      default: "Unapproved"
+      enum: ["Pending", "Shortlisted", "Rejected", "Viewed"],
+      default: "Pending"
     },
 
     appliedAt: {

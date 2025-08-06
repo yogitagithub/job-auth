@@ -275,10 +275,12 @@ exports.deleteWorkExperienceById = async (req, res) => {
       });
     }
 
-    const experience = await WorkExperience.findOneAndDelete({
-      _id: experienceId,
-      userId,
-    });
+    // Soft delete instead of deleting
+    const experience = await WorkExperience.findOneAndUpdate(
+      { _id: experienceId, userId },
+      { $set: { isDeleted: true } },
+      { new: true }
+    );
 
     if (!experience) {
       return res.status(404).json({
@@ -289,7 +291,7 @@ exports.deleteWorkExperienceById = async (req, res) => {
 
     res.status(200).json({
       status: true,
-      message: "Work experience deleted successfully.",
+      message: "Work experience deleted successfully (soft delete).",
     });
   } catch (err) {
     console.error("Error deleting work experience:", err);
@@ -300,7 +302,5 @@ exports.deleteWorkExperienceById = async (req, res) => {
     });
   }
 };
-
-
 
 

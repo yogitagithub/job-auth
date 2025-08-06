@@ -15,30 +15,30 @@ exports.createJobPost = async (req, res) => {
       });
     }
 
-    // ✅ Validate Category by name
+    //  Validate Category by name
     const category = await Category.findOne({ name: req.body.category });
     if (!category) {
       return res.status(400).json({ status: false, message: "Invalid category name." });
     }
 
-    // ✅ Validate Industry Type by name
+    //  Validate Industry Type by name
     const industryType = await IndustryType.findOne({ name: req.body.industryType });
     if (!industryType) {
       return res.status(400).json({ status: false, message: "Invalid industry type name." });
     }
 
-    // ✅ Validate state by name
+    //  Validate state by name
     const state = await StateCity.findOne({ state: req.body.state });
     if (!state) {
       return res.status(400).json({ status: false, message: "Invalid state name." });
     }
 
-    // ✅ Set expiry date (default 30 days if not provided)
+    //  Set expiry date (default 30 days if not provided)
     let expiredDate = req.body.expiredDate
       ? new Date(req.body.expiredDate)
       : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-    // ✅ Create job post
+    //  Create job post
     const jobPost = new JobPost({
       ...req.body,
       expiredDate,
@@ -52,10 +52,10 @@ exports.createJobPost = async (req, res) => {
 
     await jobPost.save();
 
-    // ✅ Format expiredDate
+    //  Format expiredDate
     const formattedExpiredDate = jobPost.expiredDate.toISOString().split("T")[0];
 
-    // ✅ Response with names instead of ObjectIds
+    //  Response with names instead of ObjectIds
     res.status(201).json({
       status: true,
       message: "Job post created successfully.",
@@ -108,7 +108,7 @@ exports.getAllJobPosts = async (req, res) => {
       .populate("userId", "mobile role")
       .populate("category", "name")
       .populate("industryType", "name")
-      .populate("state", "state") // ✅ Populate state name
+      .populate("state", "state") 
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -129,7 +129,7 @@ exports.getAllJobPosts = async (req, res) => {
       skills: job.skills,
       minSalary: job.minSalary,
       maxSalary: job.maxSalary,
-      state: job.state?.state || null, // ✅ Corrected
+      state: job.state?.state || null,
       experience: job.experience,
       otherField: job.otherField,
       status: job.status,
@@ -166,7 +166,7 @@ exports.getJobPostById = async (req, res) => {
       .populate("companyId", "companyName")
       .populate("category", "name")
       .populate("industryType", "name")
-      .populate("state", "state"); // ✅ Added populate for state
+      .populate("state", "state");
 
     if (!jobPost) {
       return res.status(404).json({
@@ -175,7 +175,7 @@ exports.getJobPostById = async (req, res) => {
       });
     }
 
-    // ✅ Check if expired
+   
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -193,9 +193,9 @@ exports.getJobPostById = async (req, res) => {
     // Convert populated fields to plain values
     if (jobPost.category) jobData.category = jobPost.category.name;
     if (jobPost.industryType) jobData.industryType = jobPost.industryType.name;
-    if (jobPost.state) jobData.state = jobPost.state.state; // ✅ Convert state to name
+    if (jobPost.state) jobData.state = jobPost.state.state; 
 
-    // ✅ Ensure expiredDate is formatted
+    //  Ensure expiredDate is formatted
     jobData.expiredDate = jobPost.expiredDate
       ? jobPost.expiredDate.toISOString().split("T")[0]
       : null;
@@ -215,7 +215,6 @@ exports.getJobPostById = async (req, res) => {
     });
   }
 };
-
 
 exports.updateJobPostById = async (req, res) => {
   try {
@@ -288,12 +287,12 @@ exports.updateJobPostById = async (req, res) => {
   const [year, month, day] = expiredDate.split("-");
   const formattedExpiry = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
 
-  // Extract only date parts (ignore time)
-  const currentExpiry = new Date(jobPost.expiredDate);
-  const currentDateStr = currentExpiry.toISOString().split("T")[0];
-  const newDateStr = formattedExpiry.toISOString().split("T")[0];
+  
+  // const currentExpiry = new Date(jobPost.expiredDate);
+  // const currentDateStr = currentExpiry.toISOString().split("T")[0];
+  // const newDateStr = formattedExpiry.toISOString().split("T")[0];
 
-  // ✅ Same date check (strict)
+  
   // if (newDateStr === currentDateStr) {
   //   return res.status(400).json({
   //     status: false,
@@ -302,18 +301,18 @@ exports.updateJobPostById = async (req, res) => {
   // }
 
 
-      // Update expiry date
+    
       jobPost.expiredDate = formattedExpiry;
       jobPost.markModified("expiredDate");
 
-      // Set status based on date
+   
       if (formattedExpiry < today) {
         jobPost.status = "expired";
       } else {
         jobPost.status = "active";
       }
     } else {
-      // No expiry date → set default 30 days
+      
       const defaultExpiry = new Date();
       defaultExpiry.setDate(defaultExpiry.getDate() + 30);
       defaultExpiry.setHours(0, 0, 0, 0);
@@ -410,7 +409,7 @@ exports.updateJobPostStatus = async (req, res) => {
       });
     }
 
-    // ❌ Prevent manual 'expired' update
+    //  Prevent manual 'expired' update
     if (status === "expired") {
       return res.status(400).json({
         status: false,
@@ -418,7 +417,7 @@ exports.updateJobPostStatus = async (req, res) => {
       });
     }
 
-    // ✅ Allow only active/inactive
+    //  Allow only active/inactive
     if (!['active', 'inactive'].includes(status)) {
       return res.status(400).json({
         status: false,
@@ -429,10 +428,29 @@ exports.updateJobPostStatus = async (req, res) => {
     jobPost.status = status;
     await jobPost.save();
 
+    // Populate related fields for proper names
+    const populatedJobPost = await JobPost.findById(jobPost._id)
+      .populate("category", "name")
+      .populate("industryType", "name")
+      .populate("state", "state") 
+      .lean();
+
+    // Format the response to replace objects with just names
+    populatedJobPost.category = populatedJobPost.category?.name || null;
+    populatedJobPost.industryType = populatedJobPost.industryType?.name || null;
+    populatedJobPost.state = populatedJobPost.state?.state || null;
+
+    // Format expiredDate to only date (YYYY-MM-DD)
+    if (populatedJobPost.expiredDate) {
+  populatedJobPost.expiredDate = new Date(populatedJobPost.expiredDate)
+    .toISOString()
+    .split("T")[0];
+}
+
     return res.status(200).json({
       status: true,
       message: `Job post marked as ${status} successfully.`,
-      data: jobPost
+      data: populatedJobPost
     });
 
   } catch (error) {
@@ -447,30 +465,28 @@ exports.updateJobPostStatus = async (req, res) => {
 
 exports.getAllJobPostsPublic = async (req, res) => {
   try {
-   
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 5;
     const skip = (page - 1) * limit;
 
-    
     const totalRecord = await JobPost.countDocuments();
     const totalPage = Math.ceil(totalRecord / limit);
 
-  
     const jobPosts = await JobPost.find()
-      .populate("companyId") // Company details
-      .populate("category", "name") // Only category name
-      .populate("industryType", "name") // Only industry type name
+      .populate("category", "name")
+      .populate("industryType", "name")
+      .populate("state", "state") // ✅ State populated directly
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .lean(); // Convert to plain JS object
+      .lean();
 
-    // Transform response (only names for category & industryType)
+    // Transform response
     const transformedJobPosts = jobPosts.map(job => ({
       ...job,
       category: job.category?.name || null,
-      industryType: job.industryType?.name || null
+      industryType: job.industryType?.name || null,
+      state: job.state?.state || null // Convert state object to state name
     }));
 
     res.status(200).json({

@@ -143,11 +143,10 @@ exports.updateSkillById = async (req, res) => {
   }
 };
 
-
 exports.deleteSkillById = async (req, res) => {
   try {
     const { userId, role } = req.user;
-    const { skillId } = req.body; // Get skillId from body instead of params
+    const { skillId } = req.body;
 
     if (role !== "job_seeker") {
       return res.status(403).json({
@@ -163,12 +162,14 @@ exports.deleteSkillById = async (req, res) => {
       });
     }
 
-    const deletedSkill = await Skill.findOneAndDelete({
-      _id: skillId,
-      userId,
-    });
+    // Soft delete instead of permanent delete
+    const skill = await Skill.findOneAndUpdate(
+      { _id: skillId, userId },
+      { $set: { isDeleted: true } },
+      { new: true }
+    );
 
-    if (!deletedSkill) {
+    if (!skill) {
       return res.status(404).json({
         status: false,
         message: "Skill not found or unauthorized access.",
@@ -177,7 +178,7 @@ exports.deleteSkillById = async (req, res) => {
 
     res.status(200).json({
       status: true,
-      message: "Skill deleted successfully.",
+      message: "Skill deleted successfully (soft delete).",
     });
   } catch (error) {
     console.error("Error deleting skill:", error);
@@ -188,5 +189,6 @@ exports.deleteSkillById = async (req, res) => {
     });
   }
 };
+
 
 

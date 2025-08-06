@@ -1,6 +1,11 @@
 const JobSeekerProfile = require("../models/JobSeekerProfile");
 const IndustryType = require("../models/AdminIndustry");
+const JobProfile = require("../models/AdminJobProfile");
+const StateCity = require("../models/StateCity");
 
+const fs = require("fs");
+const fsp = fs.promises;
+const path = require("path");
 
 exports.saveProfile = async (req, res) => {
   try {
@@ -20,87 +25,115 @@ exports.saveProfile = async (req, res) => {
       });
     }
 
-
-  if (req.body.industryType) {
+    // Handle industry type
+    if (req.body.industryType) {
       const industry = await IndustryType.findOne({ name: req.body.industryType });
       if (!industry) {
-        return res.status(400).json({
-          status: false,
-          message: "Invalid industry type name."
-        });
+        return res.status(400).json({ status: false, message: "Invalid industry type name." });
       }
-      req.body.industryType = industry._id; 
+      req.body.industryType = industry._id;
     }
 
-     let profile = await JobSeekerProfile.findOne({ userId });
+    // Handle job profile
+    if (req.body.jobProfile) {
+      const jobProfileDoc = await JobProfile.findOne({ name: req.body.jobProfile });
+      if (!jobProfileDoc) {
+        return res.status(400).json({ status: false, message: "Invalid job profile name." });
+      }
+      req.body.jobProfile = jobProfileDoc._id;
+    }
 
-   
+    // Handle state and city
+    if (req.body.state && req.body.city) {
+      const stateDoc = await StateCity.findOne({ state: req.body.state });
+      if (!stateDoc) {
+        return res.status(400).json({ status: false, message: "Invalid state name." });
+      }
+
+      if (!stateDoc.cities.includes(req.body.city)) {
+        return res.status(400).json({ status: false, message: "Invalid city for the selected state." });
+      }
+
+      req.body.state = stateDoc._id;
+    } else {
+      return res.status(400).json({ status: false, message: "State and city are required." });
+    }
+
+    // Validate date of birth
     if (req.body.dateOfBirth) {
       const regex = /^\d{2}-\d{2}-\d{4}$/;
       if (!regex.test(req.body.dateOfBirth)) {
-        return res.status(400).json({
-          status: false,
-          message: "dateOfBirth must be in DD-MM-YYYY format."
-        });
+        return res.status(400).json({ status: false, message: "dateOfBirth must be in DD-MM-YYYY format." });
       }
       const [day, month, year] = req.body.dateOfBirth.split("-");
       req.body.dateOfBirth = new Date(`${year}-${month}-${day}`);
     }
 
+    // Check if profile exists
+    let profile = await JobSeekerProfile.findOne({ userId });
+
     if (!profile) {
-     
+      // Create new profile
       const { image, ...restFields } = req.body;
-
-      profile = new JobSeekerProfile({
-        userId,
-        phoneNumber,
-        ...restFields
-      });
-
+      profile = new JobSeekerProfile({ userId, phoneNumber, ...restFields });
       await profile.save();
 
-  const populatedProfile = await JobSeekerProfile.findById(profile._id)
-        .populate("industryType", "name");
+      const populatedProfile = await JobSeekerProfile.findById(profile._id)
+        .populate("industryType", "name")
+        .populate("state", "state")
+        .populate("jobProfile", "name");
 
-       return res.status(201).json({
-         status: true,
-         message: "Job seeker profile created successfully.",
+      return res.status(201).json({
+        status: true,
+        message: "Job seeker profile created successfully.",
         data: {
           ...populatedProfile.toObject(),
-          industryType: populatedProfile.industryType?.name || null
-        }
-       });
-     }
+          industryType: populatedProfile.industryType?.name || null,
+          state: populatedProfile.state?.state || null,
+          jobProfile: populatedProfile.jobProfile?.name || null,
 
-   
+            dateOfBirth: populatedProfile.dateOfBirth 
+      ? populatedProfile.dateOfBirth.toISOString().split("T")[0] // Format date only
+      : null,
+
+          city: populatedProfile.city
+        }
+      });
+    }
+
+    // Update profile
     const restrictedFields = ["_id", "userId", "phoneNumber", "__v", "image"];
     Object.keys(req.body).forEach((field) => {
-      if (restrictedFields.includes(field)) return;
-      profile[field] = req.body[field];
+      if (!restrictedFields.includes(field)) profile[field] = req.body[field];
     });
 
     await profile.save();
 
-       const populatedProfile = await JobSeekerProfile.findById(profile._id)
-          .populate("industryType", "name");
-    
+    const populatedProfile = await JobSeekerProfile.findById(profile._id)
+      .populate("industryType", "name")
+      .populate("state", "state")
+      .populate("jobProfile", "name");
 
     return res.status(200).json({
       status: true,
       message: "Job seeker profile updated successfully.",
-       data: {
+      data: {
         ...populatedProfile.toObject(),
-        industryType: populatedProfile.industryType?.name || null
-      }
+        industryType: populatedProfile.industryType?.name || null,
+        state: populatedProfile.state?.state || null,
+        jobProfile: populatedProfile.jobProfile?.name || null,
 
-     });
+          dateOfBirth: populatedProfile.dateOfBirth 
+      ? populatedProfile.dateOfBirth.toISOString().split("T")[0]
+      : null,
+
+        city: populatedProfile.city
+      }
+    });
+
   } catch (error) {
     console.error("Error creating/updating job seeker profile:", error);
-    res.status(500).json({
-      status: false,
-      message: "Server error.",
-      error: error.message
-    });
+    res.status(500).json({ status: false, message: "Server error.", error: error.message });
   }
 };
 
@@ -115,9 +148,11 @@ exports.getProfile = async (req, res) => {
       });
     }
 
-    // ✅ Populate industryType
+    // ✅ Populate all required fields
     const profile = await JobSeekerProfile.findOne({ userId })
-      .populate("industryType", "name");
+      .populate("industryType", "name")
+      .populate("jobProfile", "name")
+      .populate("state", "state");
 
     if (!profile) {
       return res.status(404).json({
@@ -126,6 +161,7 @@ exports.getProfile = async (req, res) => {
       });
     }
 
+    // Format date
     function formatDate(date) {
       if (!date) return null;
       const d = new Date(date);
@@ -145,10 +181,10 @@ exports.getProfile = async (req, res) => {
       dateOfBirth: formatDate(profileObj.dateOfBirth),
       gender: profileObj.gender,
       email: profileObj.email,
-      industryType: profileObj.industryType?.name || null, // ✅ Fixed
-      jobProfile: profileObj.jobProfile,
+      industryType: profileObj.industryType?.name || null,
+      jobProfile: profileObj.jobProfile?.name || null, // ✅ Fixed
       address: profileObj.address,
-      state: profileObj.state,
+      state: profileObj.state?.state || null, // ✅ Fixed
       city: profileObj.city,
       pincode: profileObj.pincode,
       panCardNumber: profileObj.panCardNumber,
@@ -176,6 +212,9 @@ exports.updateProfileImage = async (req, res) => {
   try {
     const { userId, role } = req.user;
 
+     console.log("Incoming Request User:", req.user);
+    console.log("Uploaded File Details:", req.file);
+
     if (role !== "job_seeker") {
       return res.status(403).json({
         status: false,
@@ -190,10 +229,8 @@ exports.updateProfileImage = async (req, res) => {
       });
     }
 
-  
-
-
     const profile = await JobSeekerProfile.findOne({ userId });
+     console.log("Fetched Profile from DB:", profile);
 
     if (!profile) {
       return res.status(404).json({
@@ -202,24 +239,50 @@ exports.updateProfileImage = async (req, res) => {
       });
     }
 
-    // Construct public URL
-   const imagePath = `${req.protocol}://${req.get("host")}/uploads/images/${req.file.filename}`;
-    profile.image = imagePath;
+     // Delete old image if it exists
+    if (profile.image) {
+      console.log("Existing image URL in DB:", profile.image);
+    
+      const oldImageFile = path.basename(profile.image);
+      console.log("Extracted old image filename:", oldImageFile);
+    
+      if (oldImageFile && oldImageFile !== req.file.filename) {
+        const oldImagePath = path.join(__dirname, "..", "uploads", "images", oldImageFile);
+        console.log("Full old image path to delete:", oldImagePath);
+    
+        try {
+          await fsp.unlink(oldImagePath); // use fsp.unlink
+          console.log("Old image deleted successfully:", oldImageFile);
+        } catch (err) {
+          if (err.code !== "ENOENT") {
+            console.error("⚠ Error deleting old image:", err);
+          }
+        }
+      } else {
+        console.log("⚠ No old image to delete or same filename uploaded");
+      }
+    }
+
+   
+
+     // Generate new image URL
+    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
+    const newImagePath = `${baseUrl}/uploads/images/${req.file.filename}`;
+    console.log("New image URL to save in DB:", newImagePath);
+
+ 
+    profile.image = newImagePath;
     await profile.save();
 
-    // return res.status(200).json({
-    //   status: true,
-    //   message: "Job seeker profile image updated successfully.",
-     
-    //     image: imagePath
-     
-    // });
+    console.log("Profile updated successfully with new image");
+
+   
 
      return res.status(200).json({
       status: true,
-      message: "Job seeker profile image updated successfully.",
+      message: "Job seeker profile image updated successfully. Old image deleted if it existed.",
       data: {
-        image: imagePath
+        image: newImagePath
       }
     });
 
@@ -270,6 +333,63 @@ exports.getProfileImage = async (req, res) => {
     });
   }
 };
+
+exports.deleteProfile = async (req, res) => {
+  try {
+    const { userId, role } = req.user;
+    const { id } = req.body;
+
+    if (role !== "job_seeker") {
+      return res.status(403).json({
+        status: false,
+        message: "Only job seekers can delete their profiles."
+      });
+    }
+
+    if (!id) {
+      return res.status(400).json({
+        status: false,
+        message: "Profile ID is required."
+      });
+    }
+
+    // Find profile
+    const profile = await JobSeekerProfile.findById(id);
+
+    if (!profile) {
+      return res.status(404).json({
+        status: false,
+        message: "Job seeker profile not found."
+      });
+    }
+
+    // Ensure the user owns the profile
+    if (profile.userId.toString() !== userId.toString()) {
+      return res.status(403).json({
+        status: false,
+        message: "You are not authorized to delete this profile."
+      });
+    }
+
+    // Soft delete the profile
+    profile.isDeleted = true;
+    await profile.save();
+
+    return res.status(200).json({
+      status: true,
+      message: "Job seeker profile deleted successfully (soft delete)."
+    });
+
+  } catch (error) {
+    console.error("Error deleting job seeker profile:", error);
+    res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: error.message
+    });
+  }
+};
+
 
 
 

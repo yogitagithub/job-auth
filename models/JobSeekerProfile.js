@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const StateCity = require("./StateCity"); 
 
 const profileSchema = new mongoose.Schema(
   {
@@ -39,33 +40,53 @@ const profileSchema = new mongoose.Schema(
     industryType: {  
     type: mongoose.Schema.Types.ObjectId,
   ref: "IndustryType",
-  
-},
+  },
+
      panCardNumber: { type: String, trim: true },
 
       alternatePhoneNumber: { type: String },
       
-    jobProfile: {
-      type: String,
-     
-    },
+    jobProfile: {  
+    type: mongoose.Schema.Types.ObjectId,
+  ref: "JobProfile",
+  },
 
     address: {
       type: String,
      
     },
-    state: {
-      type: String,
-     
-    },
-    city: {
-      type: String,
-     
-    },
+  
+     state: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "StateCity",
+        // required: true
+      },
+    
+      city: {
+        type: String,
+        validate: {
+          validator: function (value) {
+            if (!value) return true; // Allow null or empty during creation
+            const state = this.state;
+            if (!state) return false;
+            // Assuming you have StateCity model imported
+            return StateCity.findById(state).then((stateDoc) => {
+              return stateDoc && stateDoc.cities.includes(value);
+            });
+          },
+          message: 'City must be one of the cities defined in the selected state'
+        }
+      },
+
     pincode: {
       type: String,
-     
-    },
+     },
+
+      isDeleted: { 
+    type: Boolean, 
+    default: false 
+  }
+  
   },
   { timestamps: true }
 );
