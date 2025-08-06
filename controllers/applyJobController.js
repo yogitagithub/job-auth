@@ -69,8 +69,7 @@ exports.applyJobs = async (req, res) => {
       experienceId: experience._id,
       skillsId: skills._id,
       resumeId: resume._id,
-      // status defaults to "Applied"
-      // appliedAt defaults to Date.now
+     
     });
 
     return res.status(201).json({
@@ -79,7 +78,7 @@ exports.applyJobs = async (req, res) => {
 
        data: {
     ...application.toObject(),
-    appliedAt: application.appliedAt.toISOString().split("T")[0], // ✅ Only Date
+    appliedAt: application.appliedAt.toISOString().split("T")[0], // Only Date
   },
       
     });
