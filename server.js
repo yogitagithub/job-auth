@@ -53,7 +53,7 @@ app.use('/api/auth', reviewRoutes);
 app.use('/api/auth', stateCityRoutes);
 
 app.use('/api/auth', screenRoutes);
-app.use('/api/auth', adminRoutes);
+app.use('/api/auth/admin', adminRoutes);
 
 const PORT = process.env.PORT || 8001;
 app.listen(PORT, () => {
