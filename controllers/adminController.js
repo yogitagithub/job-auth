@@ -169,11 +169,35 @@ exports.createCategory = async (req, res) => {
   }
 };
 
+exports.getCategory = async (req, res) => {
+  try {
+    const categories = await Category.find().sort({ name: 1 }).lean(); // Sorted alphabetically
+
+    const formattedCategories = categories.map(cat => ({
+      id: cat._id,
+      name: cat.name
+    }));
+
+    res.status(200).json({
+      status: true,
+      message: "Categories fetched successfully.",
+      data: formattedCategories
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: false,
+      message: "Error fetching categories",
+      error: err.message
+    });
+  }
+};
+
+
 exports.getCategoryBasedOnRole = async (req, res) => {
   try {
     const { role } = req.user;
 
-    if (!["admin", "employer", "job_seeker"].includes(role)) {
+    if (!["employer", "job_seeker"].includes(role)) {
       return res.status(403).json({
         status: false,
         message: "Access denied. Invalid role."
@@ -258,12 +282,36 @@ exports.createIndustry = async (req, res) => {
   }
 };
 
+exports.getIndustry = async (req, res) => {
+  try {
+    const industries = await IndustryType.find().sort({ name: 1 }).lean(); // Sorted alphabetically
+
+    const formattedIndustries = industries.map(industry => ({
+      id: industry._id,
+      name: industry.name
+    }));
+
+    res.status(200).json({
+      status: true,
+      message: "Industry types fetched successfully.",
+      data: formattedIndustries
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: false,
+      message: "Error fetching industry types.",
+      error: err.message
+    });
+  }
+};
+
+
 exports.getIndustryBasedOnRole = async (req, res) => {
   try {
     const { role } = req.user;
 
     // Optional: restrict access based on role
-    if (!["admin", "employer", "job_seeker"].includes(role)) {
+    if (!["employer", "job_seeker"].includes(role)) {
       return res.status(403).json({
         status: false,
         message: "Access denied. Invalid role."
