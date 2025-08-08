@@ -1,36 +1,5 @@
 const StateCity = require("../models/StateCity");
 
-// exports.getAllStates = async (req, res) => {
-//   try {
-//     const page = parseInt(req.query.page) || 1;
-//     const limit = parseInt(req.query.limit) || 10; // Default limit 10
-//     const skip = (page - 1) * limit;
-
-//     const totalRecord = await StateCity.countDocuments(); // total states
-//     const totalPage = Math.ceil(totalRecord / limit);
-
-//     const statesData = await StateCity.find()
-//       .select("state -_id")
-//       .skip(skip)
-//       .limit(limit);
-
-//     const states = statesData.map((s) => s.state);
-
-//     res.status(200).json({
-//       status: true,
-//       message: "States fetched successfully.",
-//       totalRecord,
-//       totalPage,
-//       currentPage: page,
-//       data: states,
-//     });
-//   } catch (error) {
-//     console.error("Error fetching states:", error);
-//     res.status(500).json({ status: false, message: "Server error" });
-//   }
-// };
-
-
 exports.getAllStates = async (req, res) => {
   try {
     const states = await StateCity.find().select("state -_id");

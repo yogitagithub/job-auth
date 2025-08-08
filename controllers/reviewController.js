@@ -1,50 +1,117 @@
 const Review = require("../models/Review");
 const CompanyProfile = require("../models/CompanyProfile");
+const JobSeekerProfile = require("../models/JobSeekerProfile");
 
-exports.createReview = async (req, res) => {
+exports.createOrUpdateReview = async (req, res) => {
   try {
-    const { userId, role } = req.user; // From auth middleware
-    const { companyId, rating, comment } = req.body;
+    const { userId, role } = req.user; // Extract from token
+    const { jobSeekerId, employerId, rating, comment } = req.body;
 
-    if (role !== "job_seeker") {
-      return res.status(403).json({ status: false, message: "Only job seekers can add reviews." });
+    // Role-based validation
+    if (role === "employer") {
+      if (!jobSeekerId) {
+        return res.status(400).json({
+          status: false,
+          message: "Job seeker ID is required for employer reviews.",
+        });
+      }
+    } 
+    else if (role === "job_seeker") {
+      if (!employerId) {
+        return res.status(400).json({
+          status: false,
+          message: "Employer ID is required for job seeker reviews.",
+        });
+      }
     }
 
-    // Check if company exists
-    const company = await CompanyProfile.findById(companyId);
-    if (!company) {
-      return res.status(404).json({ status: false, message: "Company not found." });
-    }
-
-    // Create review
-    const review = await Review.create({
+    // Prepare review object
+    const reviewData = {
       userId,
-      companyId,
       rating,
       comment,
+      reviewFor: role === "employer" ? "job_seeker" : "employer",
+      jobSeekerId: role === "employer" ? jobSeekerId : undefined,
+      employerId: role === "job_seeker" ? employerId : undefined,
+    };
+
+    // Check if review already exists (update if exists, else create)
+    const filter =
+      role === "employer"
+        ? { userId, jobSeekerId }
+        : { userId, employerId };
+
+    const review = await Review.findOneAndUpdate(filter, reviewData, {
+      new: true,
+      upsert: true, // create if not found
     });
 
-    res.status(201).json({
+    res.status(200).json({
       status: true,
-      message: "Review added successfully.",
+      message: "Review submitted successfully.",
       data: review,
     });
   } catch (error) {
-    if (error.code === 11000) {
-      return res.status(400).json({ status: false, message: "You already reviewed this company." });
-    }
-    console.error("Error adding review:", error);
-    res.status(500).json({ status: false, message: "Server error.", error: error.message });
+    console.error("Error creating review:", error);
+    res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: error.message,
+    });
   }
 };
 
-// Fetch reviews for a company
-exports.getCompanyReviews = async (req, res) => {
+exports.getReviews = async (req, res) => {
   try {
-    const { companyId } = req.params;
+    const { userId, role } = req.user; // Extract from token
 
-    const reviews = await Review.find({ companyId })
-      .populate("userId", "name email")
+    let filter = {};
+    let populateOptions = [];
+
+    if (role === "employer") {
+      // Employer logged in → Fetch reviews written for employer
+      const employerProfile = await CompanyProfile.findOne({ userId });
+
+      if (!employerProfile) {
+        return res.status(404).json({
+          status: false,
+          message: "Employer profile not found.",
+        });
+      }
+
+      filter = { reviewFor: "employer", employerId: employerProfile._id };
+
+      populateOptions = [
+        { path: "userId", select: "name email role" }, // reviewer details (job seeker)
+      ];
+    } 
+    else if (role === "job_seeker") {
+      // Job seeker logged in → Fetch reviews written for job seeker
+      const jobSeekerProfile = await JobSeekerProfile.findOne({ userId });
+
+      if (!jobSeekerProfile) {
+        return res.status(404).json({
+          status: false,
+          message: "Job seeker profile not found.",
+        });
+      }
+
+      filter = { reviewFor: "job_seeker", jobSeekerId: jobSeekerProfile._id };
+
+      populateOptions = [
+        { path: "userId", select: "name email role" }, // reviewer details (employer)
+      ];
+    } 
+    else {
+      return res.status(403).json({
+        status: false,
+        message: "Invalid role.",
+      });
+    }
+
+    // Fetch only role-specific reviews
+    const reviews = await Review.find(filter)
+      .populate(populateOptions)
       .sort({ createdAt: -1 });
 
     res.status(200).json({
@@ -53,36 +120,34 @@ exports.getCompanyReviews = async (req, res) => {
       data: reviews,
     });
   } catch (error) {
-    res.status(500).json({ status: false, message: "Server error.", error: error.message });
+    console.error("Error fetching reviews:", error);
+    res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: error.message,
+    });
   }
 };
 
-// Update review
-exports.updateReview = async (req, res) => {
-  try {
-    const { userId, role } = req.user;
-    const { reviewId } = req.params;
-    const { rating, comment } = req.body;
+// exports.getCompanyReviews = async (req, res) => {
+//   try {
+//     const { companyId } = req.params;
 
-    if (role !== "job_seeker") {
-      return res.status(403).json({ status: false, message: "Only job seekers can update reviews." });
-    }
+//     const reviews = await Review.find({ companyId })
+//       .populate("userId", "name email")
+//       .sort({ createdAt: -1 });
 
-    const review = await Review.findOne({ _id: reviewId, userId });
+//     res.status(200).json({
+//       status: true,
+//       count: reviews.length,
+//       data: reviews,
+//     });
+//   } catch (error) {
+//     res.status(500).json({ status: false, message: "Server error.", error: error.message });
+//   }
+// };
 
-    if (!review) {
-      return res.status(404).json({ status: false, message: "Review not found or unauthorized." });
-    }
 
-    review.rating = rating || review.rating;
-    review.comment = comment || review.comment;
-    await review.save();
-
-    res.status(200).json({ status: true, message: "Review updated successfully.", data: review });
-  } catch (error) {
-    res.status(500).json({ status: false, message: "Server error.", error: error.message });
-  }
-};
 
 // Delete review
 exports.deleteReview = async (req, res) => {

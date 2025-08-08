@@ -1,17 +1,24 @@
-// models/Review.js
 const mongoose = require("mongoose");
 
 const reviewSchema = new mongoose.Schema(
   {
-    userId: {
+    userId: { // Reviewer
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
-    companyId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "CompanyProfile",
+    reviewFor: {
+      type: String,
+      enum: ["employer", "job_seeker"],
       required: true,
+    },
+    employerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "CompanyProfile", // For job seekers reviewing employers
+    },
+    jobSeekerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "JobSeekerProfile", // For employers reviewing job seekers
     },
     rating: {
       type: Number,
@@ -26,8 +33,5 @@ const reviewSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
-
-reviewSchema.index({ userId: 1, companyId: 1 }, { unique: true });
 
 module.exports = mongoose.model("Review", reviewSchema);

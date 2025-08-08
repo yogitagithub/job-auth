@@ -169,33 +169,38 @@ exports.createCategory = async (req, res) => {
   }
 };
 
-
-
-exports.getAdminCategory = async (req, res) => {
+exports.getCategoryBasedOnRole = async (req, res) => {
   try {
-    const categories = await Category.find().sort({ name: 1 }).lean(); // ✅ use lean()
+    const { role } = req.user;
 
-    // ✅ format each category manually
+    if (!["admin", "employer", "job_seeker"].includes(role)) {
+      return res.status(403).json({
+        status: false,
+        message: "Access denied. Invalid role."
+      });
+    }
+
+    const categories = await Category.find().sort({ name: 1 }).lean();
+
     const formattedCategories = categories.map(cat => ({
       id: cat._id,
       name: cat.name
     }));
 
-    res.status(200).json({
+    return res.status(200).json({
       status: true,
-      message: "Categories fetched successfully.",
-      data: formattedCategories // ✅ USE THIS, NOT `categories`
+      message: `${role} categories fetched successfully.`,
+      data: formattedCategories
     });
+
   } catch (err) {
-    res.status(500).json({
+    return res.status(500).json({
       status: false,
       message: "Error fetching categories",
       error: err.message
     });
   }
 };
-
-
 
 exports.updateCategory = async (req, res) => {
   try {
@@ -253,9 +258,18 @@ exports.createIndustry = async (req, res) => {
   }
 };
 
-
-exports.getAdminIndustry = async (req, res) => {
+exports.getIndustryBasedOnRole = async (req, res) => {
   try {
+    const { role } = req.user;
+
+    // Optional: restrict access based on role
+    if (!["admin", "employer", "job_seeker"].includes(role)) {
+      return res.status(403).json({
+        status: false,
+        message: "Access denied. Invalid role."
+      });
+    }
+
     const industries = await IndustryType.find().sort({ name: 1 }).lean();
 
     const formattedIndustries = industries.map(industry => ({
@@ -263,20 +277,19 @@ exports.getAdminIndustry = async (req, res) => {
       name: industry.name
     }));
 
-    res.status(200).json({
+    return res.status(200).json({
       status: true,
-      message: "Industries fetched successfully.",
+      message: `${role} industries fetched successfully.`,
       data: formattedIndustries
     });
-  } catch (err) {
-    res.status(500).json({
+  } catch (error) {
+    return res.status(500).json({
       status: false,
       message: "Error fetching industries",
-      error: err.message
+      error: error.message
     });
   }
 };
-
 
 exports.updateIndustry = async (req, res) => {
   try {
