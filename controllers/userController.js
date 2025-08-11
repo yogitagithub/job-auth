@@ -290,21 +290,6 @@ exports.verifyOtp = async (req, res) => {
     }
 
    
-    // const response = {
-    //   status: true,
-    //   message: 'OTP verified',
-    //   role: user.role
-    // };
-
-
-  //    const response = {
-  //     status: true,
-  //     message: 'OTP verified',
-  //      result: {
-  //     role: user.role
-  //   }
-  // };
-
    const result = {
       role: user.role
     };
@@ -320,13 +305,12 @@ exports.verifyOtp = async (req, res) => {
       user.token = token;
       await user.save();
 
-      // response.token = token;
+    
        result.token = token;
      
     }
 
-    //  return res.json(response);
-
+   
      return res.status(200).json({
       status: true,
       message: 'OTP verified',

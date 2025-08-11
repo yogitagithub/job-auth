@@ -2,7 +2,7 @@ const mongoose = require("mongoose");
 
 const reviewSchema = new mongoose.Schema(
   {
-    userId: { // Reviewer
+    userId: {  
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
@@ -14,11 +14,11 @@ const reviewSchema = new mongoose.Schema(
     },
     employerId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "CompanyProfile", // For job seekers reviewing employers
+      ref: "CompanyProfile",  
     },
     jobSeekerId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "JobSeekerProfile", // For employers reviewing job seekers
+      ref: "JobSeekerProfile", 
     },
     rating: {
       type: Number,

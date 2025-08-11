@@ -59,17 +59,17 @@ const profileSchema = new mongoose.Schema(
      state: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "StateCity",
-        // required: true
+       
       },
     
       city: {
         type: String,
         validate: {
           validator: function (value) {
-            if (!value) return true; // Allow null or empty during creation
+            if (!value) return true; 
             const state = this.state;
             if (!state) return false;
-            // Assuming you have StateCity model imported
+            
             return StateCity.findById(state).then((stateDoc) => {
               return stateDoc && stateDoc.cities.includes(value);
             });

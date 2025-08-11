@@ -268,7 +268,7 @@ exports.deleteEducationById = async (req, res) => {
       });
     }
 
-    // Soft delete instead of deleting
+   
     const education = await JobSeekerEducation.findOneAndUpdate(
       { _id: educationId, userId },
       { $set: { isDeleted: true } },

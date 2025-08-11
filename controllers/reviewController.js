@@ -4,10 +4,10 @@ const JobSeekerProfile = require("../models/JobSeekerProfile");
 
 exports.createOrUpdateReview = async (req, res) => {
   try {
-    const { userId, role } = req.user; // Extract from token
+    const { userId, role } = req.user; 
     const { jobSeekerId, employerId, rating, comment } = req.body;
 
-    // Role-based validation
+   
     if (role === "employer") {
       if (!jobSeekerId) {
         return res.status(400).json({
@@ -25,7 +25,7 @@ exports.createOrUpdateReview = async (req, res) => {
       }
     }
 
-    // Prepare review object
+   
     const reviewData = {
       userId,
       rating,
@@ -35,7 +35,7 @@ exports.createOrUpdateReview = async (req, res) => {
       employerId: role === "job_seeker" ? employerId : undefined,
     };
 
-    // Check if review already exists (update if exists, else create)
+   
     const filter =
       role === "employer"
         ? { userId, jobSeekerId }
@@ -43,7 +43,7 @@ exports.createOrUpdateReview = async (req, res) => {
 
     const review = await Review.findOneAndUpdate(filter, reviewData, {
       new: true,
-      upsert: true, // create if not found
+      upsert: true, 
     });
 
     res.status(200).json({
@@ -63,13 +63,13 @@ exports.createOrUpdateReview = async (req, res) => {
 
 exports.getReviews = async (req, res) => {
   try {
-    const { userId, role } = req.user; // Extract from token
+    const { userId, role } = req.user;  
 
     let filter = {};
     let populateOptions = [];
 
     if (role === "employer") {
-      // Employer logged in → Fetch reviews written for employer
+     
       const employerProfile = await CompanyProfile.findOne({ userId });
 
       if (!employerProfile) {
@@ -82,11 +82,11 @@ exports.getReviews = async (req, res) => {
       filter = { reviewFor: "employer", employerId: employerProfile._id };
 
       populateOptions = [
-        { path: "userId", select: "name email role" }, // reviewer details (job seeker)
+        { path: "userId", select: "name email role" }, 
       ];
     } 
     else if (role === "job_seeker") {
-      // Job seeker logged in → Fetch reviews written for job seeker
+    
       const jobSeekerProfile = await JobSeekerProfile.findOne({ userId });
 
       if (!jobSeekerProfile) {
@@ -99,7 +99,7 @@ exports.getReviews = async (req, res) => {
       filter = { reviewFor: "job_seeker", jobSeekerId: jobSeekerProfile._id };
 
       populateOptions = [
-        { path: "userId", select: "name email role" }, // reviewer details (employer)
+        { path: "userId", select: "name email role" }, 
       ];
     } 
     else {
@@ -109,7 +109,7 @@ exports.getReviews = async (req, res) => {
       });
     }
 
-    // Fetch only role-specific reviews
+  
     const reviews = await Review.find(filter)
       .populate(populateOptions)
       .sort({ createdAt: -1 });
@@ -129,27 +129,7 @@ exports.getReviews = async (req, res) => {
   }
 };
 
-// exports.getCompanyReviews = async (req, res) => {
-//   try {
-//     const { companyId } = req.params;
 
-//     const reviews = await Review.find({ companyId })
-//       .populate("userId", "name email")
-//       .sort({ createdAt: -1 });
-
-//     res.status(200).json({
-//       status: true,
-//       count: reviews.length,
-//       data: reviews,
-//     });
-//   } catch (error) {
-//     res.status(500).json({ status: false, message: "Server error.", error: error.message });
-//   }
-// };
-
-
-
-// Delete review
 exports.deleteReview = async (req, res) => {
   try {
     const { userId, role } = req.user;

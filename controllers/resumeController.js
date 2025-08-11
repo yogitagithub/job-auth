@@ -32,13 +32,13 @@ exports.createResume = async (req, res) => {
     const existingResume = await Resume.findOne({ userId });
 
     if (existingResume) {
-      // 1️⃣ Delete the old file
+     
       const oldFilePath = path.join(__dirname, "..", "uploads", "resumes", path.basename(existingResume.fileUrl));
       if (fs.existsSync(oldFilePath)) {
         fs.unlinkSync(oldFilePath);
       }
 
-      // 2️⃣ Update existing record (No new insert => No duplicate key)
+     
       existingResume.fileUrl = `${process.env.BASE_URL}/uploads/resumes/${req.file.filename}`;
       existingResume.fileName = req.file.originalname;
       existingResume.fileType = req.file.mimetype;
@@ -53,7 +53,7 @@ exports.createResume = async (req, res) => {
       });
     }
 
-    // 3️⃣ If no resume exists, create new one
+  
     const fileUrl = `${process.env.BASE_URL}/uploads/resumes/${req.file.filename}`;
     const newResume = new Resume({
       userId,
@@ -95,7 +95,7 @@ exports.deleteResume = async (req, res) => {
       });
     }
 
-    // Find resume for the user
+   
     const resume = await Resume.findOne({ userId, isDeleted: false });
 
     if (!resume) {
@@ -105,7 +105,7 @@ exports.deleteResume = async (req, res) => {
       });
     }
 
-    // Soft delete (mark isDeleted as true)
+    
     resume.isDeleted = true;
     await resume.save();
 

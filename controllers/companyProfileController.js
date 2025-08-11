@@ -25,7 +25,7 @@ exports.saveProfile = async (req, res) => {
       });
     }
 
-    //  Handle industry type
+  
     if (req.body.industryType) {
       const industry = await IndustryType.findOne({ name: req.body.industryType });
       if (!industry) {
@@ -37,7 +37,7 @@ exports.saveProfile = async (req, res) => {
       req.body.industryType = industry._id;
     }
 
-    //  Handle state and city
+   
     if (req.body.state && req.body.city) {
       const stateDoc = await StateCity.findOne({ state: req.body.state });
       if (!stateDoc) {
@@ -47,7 +47,7 @@ exports.saveProfile = async (req, res) => {
         });
       }
 
-      // Validate if city belongs to this state
+    
       if (!stateDoc.cities.includes(req.body.city)) {
         return res.status(400).json({
           status: false,
@@ -55,7 +55,7 @@ exports.saveProfile = async (req, res) => {
         });
       }
 
-      // Replace state name with its ObjectId for DB saving
+    
       req.body.state = stateDoc._id;
     } else {
       return res.status(400).json({
@@ -64,7 +64,7 @@ exports.saveProfile = async (req, res) => {
       });
     }
 
-    // Create or update profile
+   
     let profile = await CompanyProfile.findOne({ userId });
 
     if (!profile) {
@@ -86,18 +86,18 @@ exports.saveProfile = async (req, res) => {
       await profile.save();
     }
 
-    // Populate state and industry names in response
+  
     const populatedProfile = await CompanyProfile.findById(profile._id)
-      .populate("state", "state")         // Get state name
-      .populate("industryType", "name");  // Get industry name
+      .populate("state", "state")         
+      .populate("industryType", "name"); 
 
     return res.status(200).json({
       status: true,
       message: "Company profile saved successfully.",
       data: {
         ...populatedProfile.toObject(),
-        state: populatedProfile.state?.state || null, // Return state name
-        city: populatedProfile.city,                  // City as name
+        state: populatedProfile.state?.state || null, 
+        city: populatedProfile.city,                 
         industryType: populatedProfile.industryType?.name || null
       }
     });
@@ -174,7 +174,7 @@ exports.deleteCompanyProfile = async (req, res) => {
     const { role, userId } = req.user;
     const { id } = req.body;
 
-    // Check if the user is an employer
+   
     if (role !== "employer") {
       return res.status(403).json({
         status: false,
@@ -182,7 +182,7 @@ exports.deleteCompanyProfile = async (req, res) => {
       });
     }
 
-    // Validate ID
+   
     if (!id) {
       return res.status(400).json({
         status: false,
@@ -190,7 +190,7 @@ exports.deleteCompanyProfile = async (req, res) => {
       });
     }
 
-    // Find the profile
+   
     const profile = await CompanyProfile.findById(id);
     if (!profile) {
       return res.status(404).json({
@@ -199,7 +199,7 @@ exports.deleteCompanyProfile = async (req, res) => {
       });
     }
 
-    // Ensure the employer can only delete their own profile
+   
     if (profile.userId.toString() !== userId) {
       return res.status(403).json({
         status: false,
@@ -207,7 +207,7 @@ exports.deleteCompanyProfile = async (req, res) => {
       });
     }
 
-    // Soft delete the profile
+    
     profile.isDeleted = true;
     profile.deletedAt = new Date();
     await profile.save();
@@ -258,7 +258,7 @@ exports.updateProfileImage = async (req, res) => {
       });
     }
 
-    // Delete old image if it exists
+  
 if (profile.image) {
   console.log("Existing image URL in DB:", profile.image);
 
@@ -270,7 +270,7 @@ if (profile.image) {
     console.log("Full old image path to delete:", oldImagePath);
 
     try {
-      await fsp.unlink(oldImagePath); // use fsp.unlink
+      await fsp.unlink(oldImagePath); 
       console.log("Old image deleted successfully:", oldImageFile);
     } catch (err) {
       if (err.code !== "ENOENT") {
@@ -283,7 +283,7 @@ if (profile.image) {
 }
 
    
-    // Generate new image URL
+   
     const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
     const newImagePath = `${baseUrl}/uploads/images/${req.file.filename}`;
     console.log("New image URL to save in DB:", newImagePath);

@@ -15,7 +15,7 @@ exports.verifyToken = (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
    
-    req.user = decoded; // e.g., { userId, mobile, role, iat, exp }
+    req.user = decoded; 
     next();
   } catch (err) {
     return res.status(401).json({
@@ -29,7 +29,7 @@ exports.verifyToken = (req, res, next) => {
 
 exports.verifyAdmin = (req, res, next) => {
   if (req.user && req.user.role === 'admin') {
-    next(); // user is admin
+    next(); 
   } else {
     return res.status(403).json({
       status: false,

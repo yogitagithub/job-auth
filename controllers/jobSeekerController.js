@@ -25,7 +25,7 @@ exports.saveProfile = async (req, res) => {
       });
     }
 
-    // Handle industry type
+  
     if (req.body.industryType) {
       const industry = await IndustryType.findOne({ name: req.body.industryType });
       if (!industry) {
@@ -34,7 +34,7 @@ exports.saveProfile = async (req, res) => {
       req.body.industryType = industry._id;
     }
 
-    // Handle job profile
+   
     if (req.body.jobProfile) {
       const jobProfileDoc = await JobProfile.findOne({ name: req.body.jobProfile });
       if (!jobProfileDoc) {
@@ -43,7 +43,7 @@ exports.saveProfile = async (req, res) => {
       req.body.jobProfile = jobProfileDoc._id;
     }
 
-    // Handle state and city
+   
     if (req.body.state && req.body.city) {
       const stateDoc = await StateCity.findOne({ state: req.body.state });
       if (!stateDoc) {
@@ -59,7 +59,7 @@ exports.saveProfile = async (req, res) => {
       return res.status(400).json({ status: false, message: "State and city are required." });
     }
 
-    // Validate date of birth
+   
     if (req.body.dateOfBirth) {
       const regex = /^\d{2}-\d{2}-\d{4}$/;
       if (!regex.test(req.body.dateOfBirth)) {
@@ -69,11 +69,11 @@ exports.saveProfile = async (req, res) => {
       req.body.dateOfBirth = new Date(`${year}-${month}-${day}`);
     }
 
-    // Check if profile exists
+   
     let profile = await JobSeekerProfile.findOne({ userId });
 
     if (!profile) {
-      // Create new profile
+     
       const { image, ...restFields } = req.body;
       profile = new JobSeekerProfile({ userId, phoneNumber, ...restFields });
       await profile.save();
@@ -93,7 +93,7 @@ exports.saveProfile = async (req, res) => {
           jobProfile: populatedProfile.jobProfile?.name || null,
 
             dateOfBirth: populatedProfile.dateOfBirth 
-      ? populatedProfile.dateOfBirth.toISOString().split("T")[0] // Format date only
+      ? populatedProfile.dateOfBirth.toISOString().split("T")[0] 
       : null,
 
           city: populatedProfile.city
@@ -101,7 +101,7 @@ exports.saveProfile = async (req, res) => {
       });
     }
 
-    // Update profile
+    
     const restrictedFields = ["_id", "userId", "phoneNumber", "__v", "image"];
     Object.keys(req.body).forEach((field) => {
       if (!restrictedFields.includes(field)) profile[field] = req.body[field];
@@ -148,7 +148,7 @@ exports.getProfile = async (req, res) => {
       });
     }
 
-    // ✅ Populate all required fields
+   
     const profile = await JobSeekerProfile.findOne({ userId })
       .populate("industryType", "name")
       .populate("jobProfile", "name")
@@ -161,7 +161,7 @@ exports.getProfile = async (req, res) => {
       });
     }
 
-    // Format date
+   
     function formatDate(date) {
       if (!date) return null;
       const d = new Date(date);
@@ -182,9 +182,9 @@ exports.getProfile = async (req, res) => {
       gender: profileObj.gender,
       email: profileObj.email,
       industryType: profileObj.industryType?.name || null,
-      jobProfile: profileObj.jobProfile?.name || null, // ✅ Fixed
+      jobProfile: profileObj.jobProfile?.name || null, 
       address: profileObj.address,
-      state: profileObj.state?.state || null, // ✅ Fixed
+      state: profileObj.state?.state || null, 
       city: profileObj.city,
       pincode: profileObj.pincode,
       panCardNumber: profileObj.panCardNumber,
@@ -239,7 +239,7 @@ exports.updateProfileImage = async (req, res) => {
       });
     }
 
-     // Delete old image if it exists
+    
     if (profile.image) {
       console.log("Existing image URL in DB:", profile.image);
     
@@ -251,7 +251,7 @@ exports.updateProfileImage = async (req, res) => {
         console.log("Full old image path to delete:", oldImagePath);
     
         try {
-          await fsp.unlink(oldImagePath); // use fsp.unlink
+          await fsp.unlink(oldImagePath); 
           console.log("Old image deleted successfully:", oldImageFile);
         } catch (err) {
           if (err.code !== "ENOENT") {
@@ -265,7 +265,7 @@ exports.updateProfileImage = async (req, res) => {
 
    
 
-     // Generate new image URL
+    
     const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
     const newImagePath = `${baseUrl}/uploads/images/${req.file.filename}`;
     console.log("New image URL to save in DB:", newImagePath);
@@ -353,7 +353,7 @@ exports.deleteProfile = async (req, res) => {
       });
     }
 
-    // Find profile
+   
     const profile = await JobSeekerProfile.findById(id);
 
     if (!profile) {
@@ -363,7 +363,7 @@ exports.deleteProfile = async (req, res) => {
       });
     }
 
-    // Ensure the user owns the profile
+   
     if (profile.userId.toString() !== userId.toString()) {
       return res.status(403).json({
         status: false,
@@ -371,7 +371,7 @@ exports.deleteProfile = async (req, res) => {
       });
     }
 
-    // Soft delete the profile
+   
     profile.isDeleted = true;
     await profile.save();
 

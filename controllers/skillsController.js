@@ -15,7 +15,7 @@ exports.createSkills = async (req, res) => {
 
     const { skills } = req.body;
 
-    // Convert empty string to null
+   
     const sanitizedSkill = skills?.trim() === "" ? null : skills?.trim();
 
     const jobSeekerProfile = await JobSeekerProfile.findOne({ userId });
@@ -29,7 +29,7 @@ exports.createSkills = async (req, res) => {
     const newSkill = new Skill({
       userId,
       jobSeekerId: jobSeekerProfile._id,
-      skills: sanitizedSkill,  // will be null if empty
+      skills: sanitizedSkill,  
     });
 
     await newSkill.save();
@@ -37,7 +37,7 @@ exports.createSkills = async (req, res) => {
     res.status(201).json({
       status: true,
       message: "Skill saved successfully.",
-      // data: newSkill,
+     
     });
   } catch (error) {
     console.error("Error saving skill:", error);
@@ -109,7 +109,7 @@ exports.updateSkillById = async (req, res) => {
       });
     }
 
-    // Convert empty string to null
+  
     const sanitizedSkill = skills?.trim() === "" ? null : skills?.trim();
 
     const skill = await Skill.findOneAndUpdate(
@@ -162,7 +162,7 @@ exports.deleteSkillById = async (req, res) => {
       });
     }
 
-    // Soft delete instead of permanent delete
+    
     const skill = await Skill.findOneAndUpdate(
       { _id: skillId, userId },
       { $set: { isDeleted: true } },

@@ -1,6 +1,6 @@
 const SplashScreen = require('../models/SplashScreen');
 
-// Create or Update Splash Screen
+
 exports.createOrUpdateSplashScreen = async (req, res) => {
   try {
     const { splashId, title, description } = req.body;
@@ -22,13 +22,13 @@ exports.createOrUpdateSplashScreen = async (req, res) => {
         });
       }
 
-      // Update existing document
+   
       splashScreen.title = title || splashScreen.title;
       splashScreen.description = description || splashScreen.description;
       splashScreen.image = image || splashScreen.image;
       await splashScreen.save();
     } else {
-      // Create new document
+    
       if (!title || !description || !image) {
         return res.status(400).json({
           status: false,
@@ -82,7 +82,7 @@ exports.createOrUpdateSplashScreen = async (req, res) => {
 //   }
 // };
 
-// Get All Splash Screens
+
 exports.getAllSplashScreens = async (req, res) => {
   try {
     const splashScreens = await SplashScreen.find();
@@ -92,7 +92,7 @@ exports.getAllSplashScreens = async (req, res) => {
   }
 };
 
-// Get Splash Screen by ID
+
 exports.getSplashScreenById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -108,7 +108,7 @@ exports.getSplashScreenById = async (req, res) => {
   }
 };
 
-// Delete Splash Screen
+
 exports.deleteSplashScreen = async (req, res) => {
   try {
     const { id } = req.params;

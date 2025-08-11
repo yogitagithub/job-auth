@@ -275,7 +275,6 @@ exports.deleteWorkExperienceById = async (req, res) => {
       });
     }
 
-    // Soft delete instead of deleting
     const experience = await WorkExperience.findOneAndUpdate(
       { _id: experienceId, userId },
       { $set: { isDeleted: true } },

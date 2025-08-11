@@ -15,30 +15,30 @@ exports.createJobPost = async (req, res) => {
       });
     }
 
-    //  Validate Category by name
+   
     const category = await Category.findOne({ name: req.body.category });
     if (!category) {
       return res.status(400).json({ status: false, message: "Invalid category name." });
     }
 
-    //  Validate Industry Type by name
+   
     const industryType = await IndustryType.findOne({ name: req.body.industryType });
     if (!industryType) {
       return res.status(400).json({ status: false, message: "Invalid industry type name." });
     }
 
-    //  Validate state by name
+   
     const state = await StateCity.findOne({ state: req.body.state });
     if (!state) {
       return res.status(400).json({ status: false, message: "Invalid state name." });
     }
 
-    //  Set expiry date (default 30 days if not provided)
+   
     let expiredDate = req.body.expiredDate
       ? new Date(req.body.expiredDate)
       : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-    //  Create job post
+   
     const jobPost = new JobPost({
       ...req.body,
       expiredDate,
@@ -52,10 +52,10 @@ exports.createJobPost = async (req, res) => {
 
     await jobPost.save();
 
-    //  Format expiredDate
+   
     const formattedExpiredDate = jobPost.expiredDate.toISOString().split("T")[0];
 
-    //  Response with names instead of ObjectIds
+   
     res.status(201).json({
       status: true,
       message: "Job post created successfully.",
@@ -186,16 +186,16 @@ exports.getJobPostById = async (req, res) => {
 
     const jobData = jobPost.toObject();
 
-    // Remove userId and companyId completely
+   
     delete jobData.userId;
     delete jobData.companyId;
 
-    // Convert populated fields to plain values
+    
     if (jobPost.category) jobData.category = jobPost.category.name;
     if (jobPost.industryType) jobData.industryType = jobPost.industryType.name;
     if (jobPost.state) jobData.state = jobPost.state.state; 
 
-    //  Ensure expiredDate is formatted
+   
     jobData.expiredDate = jobPost.expiredDate
       ? jobPost.expiredDate.toISOString().split("T")[0]
       : null;
@@ -247,7 +247,7 @@ exports.updateJobPostById = async (req, res) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Update allowed fields except restricted
+   
     const restrictedFields = ["_id", "userId", "companyId", "__v"];
     Object.keys(updateData).forEach((field) => {
       if (!restrictedFields.includes(field)) {
@@ -255,7 +255,7 @@ exports.updateJobPostById = async (req, res) => {
       }
     });
 
-    // Category update
+   
     if (category) {
       const categoryDoc = await Category.findOne({ name: category });
       if (!categoryDoc) {
@@ -264,7 +264,7 @@ exports.updateJobPostById = async (req, res) => {
       jobPost.category = categoryDoc._id;
     }
 
-    // Industry type update
+   
     if (industryType) {
       const industryTypeDoc = await IndustryType.findOne({ name: industryType });
       if (!industryTypeDoc) {
@@ -273,7 +273,7 @@ exports.updateJobPostById = async (req, res) => {
       jobPost.industryType = industryTypeDoc._id;
     }
 
-    // State update
+   
     if (state) {
       const stateDoc = await StateCity.findOne({ state: state });
       if (!stateDoc) {
@@ -288,17 +288,7 @@ exports.updateJobPostById = async (req, res) => {
   const formattedExpiry = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
 
   
-  // const currentExpiry = new Date(jobPost.expiredDate);
-  // const currentDateStr = currentExpiry.toISOString().split("T")[0];
-  // const newDateStr = formattedExpiry.toISOString().split("T")[0];
 
-  
-  // if (newDateStr === currentDateStr) {
-  //   return res.status(400).json({
-  //     status: false,
-  //     message: "The expiry date is the same as the current expiry date. No changes made."
-  //   });
-  // }
 
 
     
@@ -321,7 +311,7 @@ exports.updateJobPostById = async (req, res) => {
       jobPost.status = "active";
     }
 
-    // Manual status update (only if no expiry date change)
+  
     if (status && !expiredDate) {
       if (status === "active" && jobPost.status === "expired") {
         return res.status(400).json({
@@ -334,7 +324,7 @@ exports.updateJobPostById = async (req, res) => {
 
     await jobPost.save();
 
-    // Populate response
+    
     const populatedJobPost = await JobPost.findById(jobPost._id)
       .populate("category", "name")
       .populate("industryType", "name")
@@ -345,7 +335,7 @@ exports.updateJobPostById = async (req, res) => {
     populatedJobPost.industryType = populatedJobPost.industryType?.name || null;
     populatedJobPost.state = populatedJobPost.state?.state || null;
 
-    // Format expiredDate
+   
     if (populatedJobPost.expiredDate) {
       populatedJobPost.expiredDate = new Date(populatedJobPost.expiredDate).toISOString().split("T")[0];
     }
@@ -378,7 +368,7 @@ exports.updateJobPostStatus = async (req, res) => {
       });
     }
 
-    // Find job post
+   
     const jobPost = await JobPost.findById(id);
 
     if (!jobPost) {
@@ -388,7 +378,7 @@ exports.updateJobPostStatus = async (req, res) => {
       });
     }
 
-    // Authorization check
+    
     if (jobPost.userId.toString() !== userId.toString()) {
       return res.status(403).json({
         status: false,
@@ -398,7 +388,7 @@ exports.updateJobPostStatus = async (req, res) => {
 
     const currentDate = new Date();
 
-    // Auto-expire if expiredDate is passed
+   
     if (jobPost.expiredDate && currentDate > jobPost.expiredDate) {
       jobPost.status = "expired";
       await jobPost.save();
@@ -409,7 +399,7 @@ exports.updateJobPostStatus = async (req, res) => {
       });
     }
 
-    //  Prevent manual 'expired' update
+   
     if (status === "expired") {
       return res.status(400).json({
         status: false,
@@ -417,7 +407,7 @@ exports.updateJobPostStatus = async (req, res) => {
       });
     }
 
-    //  Allow only active/inactive
+   
     if (!['active', 'inactive'].includes(status)) {
       return res.status(400).json({
         status: false,
@@ -428,19 +418,19 @@ exports.updateJobPostStatus = async (req, res) => {
     jobPost.status = status;
     await jobPost.save();
 
-    // Populate related fields for proper names
+   
     const populatedJobPost = await JobPost.findById(jobPost._id)
       .populate("category", "name")
       .populate("industryType", "name")
       .populate("state", "state") 
       .lean();
 
-    // Format the response to replace objects with just names
+   
     populatedJobPost.category = populatedJobPost.category?.name || null;
     populatedJobPost.industryType = populatedJobPost.industryType?.name || null;
     populatedJobPost.state = populatedJobPost.state?.state || null;
 
-    // Format expiredDate to only date (YYYY-MM-DD)
+   
     if (populatedJobPost.expiredDate) {
   populatedJobPost.expiredDate = new Date(populatedJobPost.expiredDate)
     .toISOString()
@@ -475,18 +465,18 @@ exports.getAllJobPostsPublic = async (req, res) => {
     const jobPosts = await JobPost.find()
       .populate("category", "name")
       .populate("industryType", "name")
-      .populate("state", "state") // ✅ State populated directly
+      .populate("state", "state") 
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean();
 
-    // Transform response
+  
     const transformedJobPosts = jobPosts.map(job => ({
       ...job,
       category: job.category?.name || null,
       industryType: job.industryType?.name || null,
-      state: job.state?.state || null // Convert state object to state name
+      state: job.state?.state || null 
     }));
 
     res.status(200).json({
@@ -510,10 +500,10 @@ exports.getAllJobPostsPublic = async (req, res) => {
 
 exports.deleteJobPostById = async (req, res) => {
   try {
-    const { id } = req.body; // You are passing ID in the body
+    const { id } = req.body; 
     const { userId, role } = req.user;
 
-    // Validate ID
+   
     if (!id) {
       return res.status(400).json({
         status: false,
@@ -521,7 +511,7 @@ exports.deleteJobPostById = async (req, res) => {
       });
     }
 
-    // Find job post which is not deleted
+    
     const jobPost = await JobPost.findOne({ _id: id, isDeleted: false });
 
     if (!jobPost) {
@@ -531,7 +521,7 @@ exports.deleteJobPostById = async (req, res) => {
       });
     }
 
-    // Check authorization (admin or creator)
+   
     if (role !== "admin" && jobPost.userId.toString() !== userId.toString()) {
       return res.status(403).json({
         status: false,
@@ -539,7 +529,7 @@ exports.deleteJobPostById = async (req, res) => {
       });
     }
 
-    // Soft delete - set isDeleted to true and expire immediately
+   
     jobPost.isDeleted = true;
     jobPost.status = "expired";
     jobPost.expiredDate = new Date();

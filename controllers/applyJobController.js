@@ -10,7 +10,7 @@ exports.applyJobs = async (req, res) => {
     const { userId, role } = req.user;
     const { jobPostId } = req.body;
 
-    // Validate role
+  
     if (role !== "job_seeker") {
       return res.status(403).json({
         status: false,
@@ -18,7 +18,7 @@ exports.applyJobs = async (req, res) => {
       });
     }
 
-    // Validate input
+   
     if (!jobPostId) {
       return res.status(400).json({
         status: false,
@@ -26,7 +26,7 @@ exports.applyJobs = async (req, res) => {
       });
     }
 
-    // Check if already applied to this job
+   
     const existing = await JobApplication.findOne({ userId, jobPostId });
     if (existing) {
       return res.status(400).json({
@@ -35,7 +35,7 @@ exports.applyJobs = async (req, res) => {
       });
     }
 
-    // Ensure profile completion
+
     const jobSeekerProfile = await JobSeekerProfile.findOne({ userId });
     if (!jobSeekerProfile) {
       return res.status(400).json({
@@ -44,7 +44,7 @@ exports.applyJobs = async (req, res) => {
       });
     }
 
-    // Load related details
+
     const [education, experience, skills, resume] = await Promise.all([
       JobSeekerEducation.findOne({ userId }),
       WorkExperience.findOne({ userId }),
@@ -52,7 +52,7 @@ exports.applyJobs = async (req, res) => {
       Resume.findOne({ userId }),
     ]);
 
-    // Validate all required linked documents
+
     if (!education || !experience || !skills || !resume) {
       return res.status(400).json({
         status: false,
@@ -60,7 +60,7 @@ exports.applyJobs = async (req, res) => {
       });
     }
 
-    // Create the job application document
+ 
     const application = await JobApplication.create({
       userId,
       jobSeekerId: jobSeekerProfile._id,
@@ -78,7 +78,7 @@ exports.applyJobs = async (req, res) => {
 
        data: {
     ...application.toObject(),
-    appliedAt: application.appliedAt.toISOString().split("T")[0], // Only Date
+    appliedAt: application.appliedAt.toISOString().split("T")[0], 
   },
       
     });
@@ -137,7 +137,7 @@ exports.getMyApplications = async (req, res) => {
     };
 
     const transformed = applications.map((app) => {
-      // ✅ Convert nested populated fields to string
+     
       if (app.jobSeekerId) {
         if (app.jobSeekerId.jobProfile?.name) app.jobSeekerId.jobProfile = app.jobSeekerId.jobProfile.name;
         if (app.jobSeekerId.state?.state) app.jobSeekerId.state = app.jobSeekerId.state.state;
@@ -157,7 +157,7 @@ exports.getMyApplications = async (req, res) => {
         app.jobPostId.expiredDate = formatDate(app.jobPostId.expiredDate);
       }
 
-      // Format other date fields
+     
       if (app.appliedAt) app.appliedAt = formatDate(app.appliedAt);
       if (app.educationId) {
         app.educationId.sessionFrom = formatDate(app.educationId.sessionFrom);
@@ -189,7 +189,7 @@ exports.updateStatus = async (req, res) => {
   try {
     const { userId, role } = req.user;
     const { status } = req.body;
-    const { applicationId } = req.params;  // Get from URL
+    const { applicationId } = req.params; 
 
     if (!status) {
       return res.status(400).json({
@@ -198,7 +198,7 @@ exports.updateStatus = async (req, res) => {
       });
     }
 
-    // For job seekers, only "Withdrawn" is allowed
+   
     if (role === "job_seeker") {
       if (status !== "Withdrawn") {
         return res.status(400).json({
@@ -207,7 +207,7 @@ exports.updateStatus = async (req, res) => {
         });
       }
     } else {
-      // Employers can set other statuses
+     
       const allowedStatuses = ["Shortlisted", "Rejected", "Hired"];
       if (!allowedStatuses.includes(status)) {
         return res.status(400).json({
@@ -225,7 +225,7 @@ exports.updateStatus = async (req, res) => {
       });
     }
 
-    // If job seeker, ensure they own the application
+   
     if (role === "job_seeker" && !application.userId.equals(userId)) {
       return res.status(403).json({
         status: false,
@@ -279,7 +279,7 @@ exports.updateEmployerApprovalStatus = async (req, res) => {
       });
     }
 
-    // Employer updates approval status
+   
     application.employerApprovalStatus = employerApprovalStatus;
     await application.save();
 

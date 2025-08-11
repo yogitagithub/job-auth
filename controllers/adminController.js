@@ -29,22 +29,18 @@ exports.sendAdminOtp = async (req, res) => {
         phoneNumber,
         otp: STATIC_OTP,
         otpExpiresAt: expiresAt,
-        role: null,         // ✅ Keep it null initially
+        role: null,        
         token: null
       });
     } else {
       user.otp = STATIC_OTP;
       user.otpExpiresAt = expiresAt;
-      // ❌ Don't update role here
+     
     }
 
     await user.save();
 
-    // return res.json({
-    //   otp: STATIC_OTP,
-    //   status: true
-    // });
-
+   
 
      return res.status(200).json({
       status: true,
@@ -84,7 +80,7 @@ exports.verifyAdminOtp = async (req, res) => {
       });
     }
 
-    // Check OTP expiry
+   
     if (user.otpExpiresAt && user.otpExpiresAt < new Date()) {
       return res.status(400).json({
         status: false,
@@ -92,10 +88,10 @@ exports.verifyAdminOtp = async (req, res) => {
       });
     }
 
-    // ✅ Set role to admin now
+   
     user.role = 'admin';
 
-    // ✅ Generate JWT
+   
     const token = jwt.sign(
       {
         userId: user._id,
@@ -108,16 +104,10 @@ exports.verifyAdminOtp = async (req, res) => {
 
     user.token = token;
 
-    // ✅ Save updated user
+    
     await user.save();
 
-    // return res.json({
-    //   status: true,
-    //   message: 'Admin OTP verified',
-    //   role: 'admin',
-    //   token
-    // });
-
+   
 
       return res.status(200).json({
       status: true,
@@ -149,7 +139,7 @@ exports.createCategory = async (req, res) => {
     const category = new Category({ name });
     await category.save();
 
-    // Format response manually
+   
     const formattedCategory = {
       id: category._id,
       name: category.name
@@ -171,7 +161,7 @@ exports.createCategory = async (req, res) => {
 
 exports.getCategory = async (req, res) => {
   try {
-    const categories = await Category.find().sort({ name: 1 }).lean(); // Sorted alphabetically
+    const categories = await Category.find().sort({ name: 1 }).lean(); 
 
     const formattedCategories = categories.map(cat => ({
       id: cat._id,
@@ -284,8 +274,7 @@ exports.createIndustry = async (req, res) => {
 
 exports.getIndustry = async (req, res) => {
   try {
-    const industries = await IndustryType.find().sort({ name: 1 }).lean(); // Sorted alphabetically
-
+    const industries = await IndustryType.find().sort({ name: 1 }).lean(); 
     const formattedIndustries = industries.map(industry => ({
       id: industry._id,
       name: industry.name
@@ -310,7 +299,7 @@ exports.getIndustryBasedOnRole = async (req, res) => {
   try {
     const { role } = req.user;
 
-    // Optional: restrict access based on role
+   
     if (!["employer", "job_seeker"].includes(role)) {
       return res.status(403).json({
         status: false,
