@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const JobSeekerProfile = require("../models/JobSeekerProfile");
 
+
 exports.createResume = async (req, res) => {
   try {
     const { userId, role } = req.user;
@@ -82,6 +83,53 @@ exports.createResume = async (req, res) => {
   }
 };
 
+
+exports.getMyResume = async (req, res) => {
+  try {
+    const { userId, role } = req.user;
+
+    if (role !== "job_seeker") {
+      return res.status(403).json({
+        status: false,
+        message: "Only job seekers can access this resource.",
+      });
+    }
+
+    const resume = await Resume.findOne({ userId }).lean();
+
+    if (!resume) {
+      return res.status(404).json({
+        status: false,
+        message: "No resume found for this user.",
+      });
+    }
+
+    const data = {
+      id: resume._id,
+      userId: resume.userId,
+      jobSeekerId: resume.jobSeekerId || null,
+      fileUrl: resume.fileUrl,
+      fileName: resume.fileName,
+      fileType: resume.fileType,
+      fileSize: resume.fileSize,
+      createdAt: resume.createdAt,
+      updatedAt: resume.updatedAt,
+    };
+
+    return res.status(200).json({
+      status: true,
+      message: "Resume fetched successfully.",
+      data,
+    });
+  } catch (error) {
+    console.error("Error fetching my resume:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: error.message,
+    });
+  }
+};
 
 
 exports.deleteResume = async (req, res) => {
