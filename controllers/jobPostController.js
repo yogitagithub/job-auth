@@ -4,6 +4,9 @@ const IndustryType = require("../models/AdminIndustry");
 const Category = require("../models/AdminCategory");
 const StateCity = require("../models/StateCity");
 
+const escapeRegex = (str = "") =>
+  str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 exports.createJobPost = async (req, res) => {
   try {
     const company = await CompanyProfile.findOne({ userId: req.user.userId });
@@ -453,32 +456,71 @@ exports.updateJobPostStatus = async (req, res) => {
   }
 };
 
+
 exports.getAllJobPostsPublic = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
+    const page  = parseInt(req.query.page)  || 1;
     const limit = parseInt(req.query.limit) || 5;
-    const skip = (page - 1) * limit;
+    const skip  = (page - 1) * limit;
 
-    const totalRecord = await JobPost.countDocuments();
-    const totalPage = Math.ceil(totalRecord / limit);
+    const { jobTitle, state } = req.query; // state = state name (e.g., "Delhi")
 
-    const jobPosts = await JobPost.find()
+    // 1) Build base filter
+    const filter = {};
+
+    // jobTitle: case-insensitive "contains"
+    if (jobTitle && jobTitle.trim()) {
+      filter.jobTitle = { $regex: escapeRegex(jobTitle.trim()), $options: "i" };
+    }
+
+    // state by NAME: find matching StateCity _ids, then filter JobPost.state by those ids
+    if (state && state.trim()) {
+      const stateNameRegex = { $regex: escapeRegex(state.trim()), $options: "i" };
+
+      // You can decide "contains" vs "starts with". For starts-with:
+      // const stateNameRegex = { $regex: "^" + escapeRegex(state.trim()), $options: "i" };
+
+      const matchingStates = await StateCity.find({ state: stateNameRegex }).select("_id");
+      const stateIds = matchingStates.map(s => s._id);
+
+      if (stateIds.length === 0) {
+        // No matching states by name → return empty result fast
+        return res.status(200).json({
+          status: true,
+          message: "Job posts fetched successfully.",
+          totalRecord: 0,
+          totalPage: 0,
+          currentPage: page,
+          data: []
+        });
+      }
+
+      filter.state = { $in: stateIds };
+    }
+
+    // 2) Count with same filter (for pagination)
+    const totalRecord = await JobPost.countDocuments(filter);
+    const totalPage   = Math.ceil(totalRecord / limit);
+
+    // 3) Query with populate + pagination
+    const jobPosts = await JobPost.find(filter)
       .populate("category", "name")
       .populate("industryType", "name")
-      .populate("state", "state") 
+      .populate("state", "state")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean();
 
-  
+    // 4) Transform populated refs into flat strings
     const transformedJobPosts = jobPosts.map(job => ({
       ...job,
-      category: job.category?.name || null,
-      industryType: job.industryType?.name || null,
-      state: job.state?.state || null 
+      category: job.category?.name ?? null,
+      industryType: job.industryType?.name ?? null,
+      state: job.state?.state ?? null
     }));
 
+    // 5) Respond
     res.status(200).json({
       status: true,
       message: "Job posts fetched successfully.",
@@ -497,6 +539,51 @@ exports.getAllJobPostsPublic = async (req, res) => {
     });
   }
 };
+
+// exports.getAllJobPostsPublic = async (req, res) => {
+//   try {
+//     const page = parseInt(req.query.page) || 1;
+//     const limit = parseInt(req.query.limit) || 5;
+//     const skip = (page - 1) * limit;
+
+//     const totalRecord = await JobPost.countDocuments();
+//     const totalPage = Math.ceil(totalRecord / limit);
+
+//     const jobPosts = await JobPost.find()
+//       .populate("category", "name")
+//       .populate("industryType", "name")
+//       .populate("state", "state") 
+//       .sort({ createdAt: -1 })
+//       .skip(skip)
+//       .limit(limit)
+//       .lean();
+
+  
+//     const transformedJobPosts = jobPosts.map(job => ({
+//       ...job,
+//       category: job.category?.name || null,
+//       industryType: job.industryType?.name || null,
+//       state: job.state?.state || null 
+//     }));
+
+//     res.status(200).json({
+//       status: true,
+//       message: "Job posts fetched successfully.",
+//       totalRecord,
+//       totalPage,
+//       currentPage: page,
+//       data: transformedJobPosts
+//     });
+
+//   } catch (error) {
+//     console.error("Error fetching job posts:", error);
+//     res.status(500).json({
+//       status: false,
+//       message: "Failed to fetch job posts.",
+//       error: error.message
+//     });
+//   }
+// };
 
 exports.deleteJobPostById = async (req, res) => {
   try {
