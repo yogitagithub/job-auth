@@ -4,6 +4,19 @@ const IndustryType = require("../models/AdminIndustry");
 const Category = require("../models/AdminCategory");
 const StateCity = require("../models/StateCity");
 
+
+// Return "X day(s) ago)" — minutes/hours ignored
+const daysAgo = (date) => {
+  if (!date) return null;
+  const d = new Date(date);
+  const startOfDate = new Date(d.getFullYear(), d.getMonth(), d.getDate()); // 00:00 of created day
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // 00:00 today
+  const diffDays = Math.max(0, Math.floor((startOfToday - startOfDate) / 86400000));
+  return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+};
+
+
 const escapeRegex = (str = "") =>
   str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -79,7 +92,8 @@ exports.createJobPost = async (req, res) => {
         category: category.name,
         industryType: industryType.name,
         state: state.state,
-        expiredDate: formattedExpiredDate
+        expiredDate: formattedExpiredDate,
+         jobPosted: daysAgo(jobPost.createdAt)
       }
     });
 
@@ -139,7 +153,8 @@ exports.getAllJobPosts = async (req, res) => {
       expiredDate: job.expiredDate ? job.expiredDate.toISOString().split("T")[0] : null,
       isDeleted: job.isDeleted,
       createdAt: job.createdAt,
-      updatedAt: job.updatedAt
+      updatedAt: job.updatedAt,
+       jobPosted: daysAgo(job.createdAt)
     }));
 
     res.status(200).json({
@@ -165,7 +180,7 @@ exports.getJobPostById = async (req, res) => {
     const { id } = req.params;
 
     let jobPost = await JobPost.findById(id)
-      .select("-createdAt -updatedAt -__v")
+      .select("-updatedAt -__v")
       .populate("companyId", "companyName")
       .populate("category", "name")
       .populate("industryType", "name")
@@ -202,6 +217,8 @@ exports.getJobPostById = async (req, res) => {
     jobData.expiredDate = jobPost.expiredDate
       ? jobPost.expiredDate.toISOString().split("T")[0]
       : null;
+
+      jobData.jobPosted = daysAgo(jobPost.createdAt);
 
     res.json({
       status: true,
@@ -290,11 +307,6 @@ exports.updateJobPostById = async (req, res) => {
   const [year, month, day] = expiredDate.split("-");
   const formattedExpiry = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
 
-  
-
-
-
-    
       jobPost.expiredDate = formattedExpiry;
       jobPost.markModified("expiredDate");
 
@@ -342,6 +354,10 @@ exports.updateJobPostById = async (req, res) => {
     if (populatedJobPost.expiredDate) {
       populatedJobPost.expiredDate = new Date(populatedJobPost.expiredDate).toISOString().split("T")[0];
     }
+
+    //add this: compute "X days ago" from createdAt
+const createdAt = populatedJobPost.createdAt || createdAtFromObjectId(populatedJobPost._id);
+populatedJobPost.jobPosted = daysAgo(createdAt);
 
     res.json({
       status: true,
@@ -498,7 +514,7 @@ exports.getAllJobPostsPublic = async (req, res) => {
 
     // 3) Query: don't even fetch createdAt/updatedAt/__v
     const jobPosts = await JobPost.find(filter)
-      .select("-createdAt -updatedAt -__v")                       // <-- exclude here
+      .select("-updatedAt -__v")                       // <-- exclude here
       .populate({ path: "companyId", select: "companyName image" })
       .populate("category", "name")
       .populate("industryType", "name")
@@ -529,7 +545,8 @@ exports.getAllJobPostsPublic = async (req, res) => {
       otherField: j.otherField,
       status: j.status,
       expiredDate: j.expiredDate,     // keep as ISO string from DB; format if needed
-      isDeleted: j.isDeleted
+      isDeleted: j.isDeleted,
+       jobPosted: daysAgo(j.createdAt) 
     }));
 
     // 5) Respond
@@ -552,225 +569,6 @@ exports.getAllJobPostsPublic = async (req, res) => {
   }
 };
 
-// exports.getAllJobPostsPublic = async (req, res) => {
-//   try {
-//     const page  = parseInt(req.query.page)  || 1;
-//     const limit = parseInt(req.query.limit) || 5;
-//     const skip  = (page - 1) * limit;
-
-//     const { jobTitle, state } = req.query;
-
-//     const filter = {};
-
-//     if (jobTitle && jobTitle.trim()) {
-//       filter.jobTitle = { $regex: escapeRegex(jobTitle.trim()), $options: "i" };
-//     }
-
-//     if (state && state.trim()) {
-//       const stateNameRegex = { $regex: escapeRegex(state.trim()), $options: "i" };
-//       const matchingStates = await StateCity.find({ state: stateNameRegex }).select("_id");
-//       const stateIds = matchingStates.map(s => s._id);
-
-//       if (stateIds.length === 0) {
-//         return res.status(200).json({
-//           status: true,
-//           message: "Job posts fetched successfully.",
-//           totalRecord: 0,
-//           totalPage: 0,
-//           currentPage: page,
-//           data: []
-//         });
-//       }
-//       filter.state = { $in: stateIds };
-//     }
-
-//     const totalRecord = await JobPost.countDocuments(filter);
-//     const totalPage   = Math.ceil(totalRecord / limit);
-
-//     const jobPosts = await JobPost.find(filter)
-//       .populate({ path: "companyId", select: "companyName image" }) // <-- add this
-//       .populate("category", "name")
-//       .populate("industryType", "name")
-//       .populate("state", "state")
-//       .sort({ createdAt: -1 })
-//       .skip(skip)
-//       .limit(limit)
-//       .lean();
-
-//     // Build a clean response WITHOUT companyId
-//     const data = jobPosts.map(j => ({
-//       _id: j._id,
-//       company: j.companyId?.companyName ?? null,
-//       companyImage: j.companyId?.image ?? null,
-//       category: j.category?.name ?? null,
-//       industryType: j.industryType?.name ?? null,
-//       jobTitle: j.jobTitle,
-//       jobDescription: j.jobDescription,
-//       salaryType: j.salaryType,
-//       displayPhoneNumber: j.displayPhoneNumber,
-//       displayEmail: j.displayEmail,
-//       jobType: j.jobType,
-//       skills: j.skills,
-//       minSalary: j.minSalary,
-//       maxSalary: j.maxSalary,
-//       state: j.state?.state ?? null,
-//       experience: j.experience,
-//       otherField: j.otherField,
-//       status: j.status,
-//       expiredDate: j.expiredDate, // or format if you prefer
-//       isDeleted: j.isDeleted,
-//       createdAt: j.createdAt,
-//       updatedAt: j.updatedAt
-//     }));
-
-//     res.status(200).json({
-//       status: true,
-//       message: "Job posts fetched successfully.",
-//       totalRecord,
-//       totalPage,
-//       currentPage: page,
-//       data
-//     });
-
-//   } catch (error) {
-//     console.error("Error fetching job posts:", error);
-//     res.status(500).json({
-//       status: false,
-//       message: "Failed to fetch job posts.",
-//       error: error.message
-//     });
-//   }
-// };
-
-
-
-// exports.getAllJobPostsPublic = async (req, res) => {
-//   try {
-//     const page  = parseInt(req.query.page)  || 1;
-//     const limit = parseInt(req.query.limit) || 5;
-//     const skip  = (page - 1) * limit;
-
-//     const { jobTitle, state } = req.query; // state = state name (e.g., "Delhi")
-
-//     // 1) Build base filter
-//     const filter = {};
-
-//     // jobTitle: case-insensitive "contains"
-//     if (jobTitle && jobTitle.trim()) {
-//       filter.jobTitle = { $regex: escapeRegex(jobTitle.trim()), $options: "i" };
-//     }
-
-//     // state by NAME: find matching StateCity _ids, then filter JobPost.state by those ids
-//     if (state && state.trim()) {
-//       const stateNameRegex = { $regex: escapeRegex(state.trim()), $options: "i" };
-
-//       // You can decide "contains" vs "starts with". For starts-with:
-//       // const stateNameRegex = { $regex: "^" + escapeRegex(state.trim()), $options: "i" };
-
-//       const matchingStates = await StateCity.find({ state: stateNameRegex }).select("_id");
-//       const stateIds = matchingStates.map(s => s._id);
-
-//       if (stateIds.length === 0) {
-//         // No matching states by name → return empty result fast
-//         return res.status(200).json({
-//           status: true,
-//           message: "Job posts fetched successfully.",
-//           totalRecord: 0,
-//           totalPage: 0,
-//           currentPage: page,
-//           data: []
-//         });
-//       }
-
-//       filter.state = { $in: stateIds };
-//     }
-
-//     // 2) Count with same filter (for pagination)
-//     const totalRecord = await JobPost.countDocuments(filter);
-//     const totalPage   = Math.ceil(totalRecord / limit);
-
-//     // 3) Query with populate + pagination
-//     const jobPosts = await JobPost.find(filter)
-//       .populate("category", "name")
-//       .populate("industryType", "name")
-//       .populate("state", "state")
-//       .sort({ createdAt: -1 })
-//       .skip(skip)
-//       .limit(limit)
-//       .lean();
-
-//     // 4) Transform populated refs into flat strings
-//     const transformedJobPosts = jobPosts.map(job => ({
-//       ...job,
-//       category: job.category?.name ?? null,
-//       industryType: job.industryType?.name ?? null,
-//       state: job.state?.state ?? null
-//     }));
-
-//     // 5) Respond
-//     res.status(200).json({
-//       status: true,
-//       message: "Job posts fetched successfully.",
-//       totalRecord,
-//       totalPage,
-//       currentPage: page,
-//       data: transformedJobPosts
-//     });
-
-//   } catch (error) {
-//     console.error("Error fetching job posts:", error);
-//     res.status(500).json({
-//       status: false,
-//       message: "Failed to fetch job posts.",
-//       error: error.message
-//     });
-//   }
-// };
-
-// exports.getAllJobPostsPublic = async (req, res) => {
-//   try {
-//     const page = parseInt(req.query.page) || 1;
-//     const limit = parseInt(req.query.limit) || 5;
-//     const skip = (page - 1) * limit;
-
-//     const totalRecord = await JobPost.countDocuments();
-//     const totalPage = Math.ceil(totalRecord / limit);
-
-//     const jobPosts = await JobPost.find()
-//       .populate("category", "name")
-//       .populate("industryType", "name")
-//       .populate("state", "state") 
-//       .sort({ createdAt: -1 })
-//       .skip(skip)
-//       .limit(limit)
-//       .lean();
-
-  
-//     const transformedJobPosts = jobPosts.map(job => ({
-//       ...job,
-//       category: job.category?.name || null,
-//       industryType: job.industryType?.name || null,
-//       state: job.state?.state || null 
-//     }));
-
-//     res.status(200).json({
-//       status: true,
-//       message: "Job posts fetched successfully.",
-//       totalRecord,
-//       totalPage,
-//       currentPage: page,
-//       data: transformedJobPosts
-//     });
-
-//   } catch (error) {
-//     console.error("Error fetching job posts:", error);
-//     res.status(500).json({
-//       status: false,
-//       message: "Failed to fetch job posts.",
-//       error: error.message
-//     });
-//   }
-// };
 
 exports.deleteJobPostById = async (req, res) => {
   try {

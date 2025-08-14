@@ -105,79 +105,60 @@ exports.getMyApplications = async (req, res) => {
     }
 
     const applications = await JobApplication.find({ userId })
-      .populate({ path: "userId", select: "name phoneNumber email role" })
-      .populate({
-        path: "jobSeekerId",
-        populate: [
-          { path: "jobProfile", select: "name" },
-          { path: "state", select: "state" },
-          { path: "industryType", select: "name" }
-        ]
-      })
+      .select("userId jobPostId status employerApprovalStatus appliedAt createdAt updatedAt")
       .populate({
         path: "jobPostId",
+        select: "jobTitle state companyId createdAt",     // ⬅️ need createdAt for jobPosted
         populate: [
-          { path: "companyId", select: "companyName" },
-          { path: "category", select: "name" },
-          { path: "industryType", select: "name" },
-          { path: "state", select: "state" }
-        ],
-        select: "jobTitle jobDescription salaryType jobType skills minSalary maxSalary expiredDate status"
+          { path: "state", select: "state" },
+          { path: "companyId", select: "companyName image" }
+        ]
       })
-      .populate({ path: "educationId", select: "degree boardOfUniversity sessionFrom sessionTo marks gradeOrPercentage" })
-      .populate({ path: "experienceId", select: "companyName jobTitle sessionFrom sessionTo roleDescription" })
-      .populate({ path: "skillsId", select: "skills" })
-      .populate({ path: "resumeId", select: "fileName fileUrl" })
+      .sort({ createdAt: -1 })
       .lean();
 
+    // keep inline helpers inside controller (as you prefer)
     const formatDate = (date) => {
       if (!date) return null;
       const d = new Date(date);
       return `${String(d.getDate()).padStart(2, "0")}-${String(d.getMonth() + 1).padStart(2, "0")}-${d.getFullYear()}`;
     };
 
-    const transformed = applications.map((app) => {
-     
-      if (app.jobSeekerId) {
-        if (app.jobSeekerId.jobProfile?.name) app.jobSeekerId.jobProfile = app.jobSeekerId.jobProfile.name;
-        if (app.jobSeekerId.state?.state) app.jobSeekerId.state = app.jobSeekerId.state.state;
-        if (app.jobSeekerId.industryType?.name) app.jobSeekerId.industryType = app.jobSeekerId.industryType.name;
-       
-        if (app.jobSeekerId.dateOfBirth) {
-      app.jobSeekerId.dateOfBirth = formatDate(app.jobSeekerId.dateOfBirth);
-    } 
+    // days-only, UTC-safe
+    const daysAgo = (date) => {
+      if (!date) return null;
+      const d = new Date(date);
+      const createdUTC = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+      const now = new Date();
+      const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+      const diffDays = Math.max(0, Math.floor((todayUTC - createdUTC) / 86400000));
+      return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+    };
 
-  }
+    const data = applications.map((app) => {
+      const jp = app.jobPostId; // may be object (populated) or null
 
-      if (app.jobPostId) {
-        if (app.jobPostId.companyId?.companyName) app.jobPostId.companyId = app.jobPostId.companyId.companyName;
-        if (app.jobPostId.category?.name) app.jobPostId.category = app.jobPostId.category.name;
-        if (app.jobPostId.industryType?.name) app.jobPostId.industryType = app.jobPostId.industryType.name;
-        if (app.jobPostId.state?.state) app.jobPostId.state = app.jobPostId.state.state;
-        app.jobPostId.expiredDate = formatDate(app.jobPostId.expiredDate);
-      }
-
-     
-      if (app.appliedAt) app.appliedAt = formatDate(app.appliedAt);
-      if (app.educationId) {
-        app.educationId.sessionFrom = formatDate(app.educationId.sessionFrom);
-        app.educationId.sessionTo = formatDate(app.educationId.sessionTo);
-      }
-      if (app.experienceId) {
-        app.experienceId.sessionFrom = formatDate(app.experienceId.sessionFrom);
-        app.experienceId.sessionTo = formatDate(app.experienceId.sessionTo);
-      }
-
-      return app;
+      return {
+        _id: app._id,
+        userId: (app.userId?._id || app.userId).toString(),               // plain string
+        jobPostId: jp ? (jp?._id || jp).toString() : null,                 // plain string
+        jobTitle: jp?.jobTitle ?? null,
+        state: jp?.state?.state ?? null,
+        companyName: jp?.companyId?.companyName ?? null,
+        companyImage: jp?.companyId?.image ?? null,
+        jobPosted: jp ? daysAgo(jp.createdAt) : null,                      // "X days ago" from job post createdAt
+        status: app.status,
+        employerApprovalStatus: app.employerApprovalStatus,
+        appliedAt: formatDate(app.appliedAt),
+        createdAt: app.createdAt,
+        updatedAt: app.updatedAt
+      };
     });
 
-    res.json({
-      status: true,
-      data: transformed,
-    });
+    return res.json({ status: true, data });
   } catch (error) {
     console.error("Error fetching applications:", error);
-    res.status(500).json({
+    return res.status(500).json({
       status: false,
       message: "Server error.",
       error: error.message,

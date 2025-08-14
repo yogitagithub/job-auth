@@ -38,4 +38,7 @@ router.delete("/deleteJobProfile/:id", verifyToken, verifyAdmin, deleteProfile);
 router.get("/getJobProfile-jobSeekers", verifyToken, verifyJobSeekerOnly, getProfile);
 
 
+
+
+
 module.exports = router;
