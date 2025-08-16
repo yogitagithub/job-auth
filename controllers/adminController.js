@@ -4,7 +4,14 @@ const { Types } = mongoose;
 const jwt = require("jsonwebtoken");
 const Category = require("../models/AdminCategory");
 const IndustryType = require("../models/AdminIndustry");
+const Experience = require("../models/AdminExperienceRange");
+const JobType = require("../models/AdminJobType");
 const JobProfile = require("../models/AdminJobProfile");
+const SalaryType = require("../models/AdminSalaryType");
+
+const CompanyProfile = require("../models/CompanyProfile");
+const JobSeekerProfile = require("../models/JobSeekerProfile");
+
 const User = require('../models/User');
 const JobPost = require("../models/JobPost");
 
@@ -387,7 +394,6 @@ exports.getIndustry = async (req, res) => {
   }
 };
 
-
 exports.getIndustryBasedOnRole = async (req, res) => {
   try {
     const { role } = req.user;
@@ -526,6 +532,530 @@ exports.deleteProfile = async (req, res) => {
     res.status(500).json({ status: false, message: "Error deleting job profile" });
   }
 };
+
+
+//experience range
+const escapeRegex = (s = "") => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+
+exports.createExperience = async (req, res) => {
+  try {
+    const name = (req.body?.name || "").trim();
+    if (!name) {
+      return res.status(400).json({ status: false, message: "name is required" });
+    }
+
+    // Find by case-insensitive name (any doc, deleted or not)
+    const existing = await Experience.findOne({
+      name: { $regex: `^${escapeRegex(name)}$`, $options: "i" }
+    });
+
+    if (existing) {
+      if (existing.isDeleted) {
+        // Restore soft-deleted doc
+        existing.isDeleted = false;
+        existing.name = name; // normalize casing/spacing
+        await existing.save();
+        return res.status(200).json({
+          status: true,
+          message: "Experience range restored successfully.",
+          data: existing
+        });
+      }
+      // Already active
+      return res.status(409).json({
+        status: false,
+        message: "Experience range already exists"
+      });
+    }
+
+    const doc = await Experience.create({ name });
+    return res.status(201).json({
+      status: true,
+      message: "Experience range created successfully.",
+      data: doc
+    });
+  } catch (err) {
+    if (err?.code === 11000) {
+      return res.status(409).json({ status: false, message: "Experience range already exists" });
+    }
+    console.error("createExperience error:", err);
+    return res.status(500).json({ status: false, message: "Server error" });
+  }
+};
+
+exports.updateExperience = async (req, res) => {
+  try {
+    const { id } = req.body || {};
+    const name = (req.body?.name || "").trim();
+
+    if (!id || !mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ status: false, message: "Valid id is required" });
+    }
+    if (!name) {
+      return res.status(400).json({ status: false, message: "name is required" });
+    }
+
+    const doc = await Experience.findById(id);
+    if (!doc || doc.isDeleted) {
+      return res.status(404).json({ status: false, message: "Experience range not found" });
+    }
+
+    // Prevent duplicate name (case-insensitive) among non-deleted docs
+    const dupe = await Experience.findOne({
+      _id: { $ne: id },
+      isDeleted: false,
+      name: { $regex: `^${escapeRegex(name)}$`, $options: "i" }
+    });
+    if (dupe) {
+      return res.status(409).json({
+        status: false,
+        message: "Another experience range with this name already exists"
+      });
+    }
+
+    doc.name = name;
+    await doc.save();
+
+    return res.status(200).json({
+      status: true,
+      message: "Experience range updated successfully.",
+      data: doc
+    });
+  } catch (err) {
+    console.error("updateExperience error:", err);
+    return res.status(500).json({ status: false, message: "Server error" });
+  }
+};
+
+exports.getExperience = async (req, res) => {
+  try {
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+
+    const filter = { isDeleted: false };
+
+    const [totalRecord, data] = await Promise.all([
+      Experience.countDocuments(filter),
+      Experience.find(filter)
+        .sort({ createdAt: -1, _id: 1 }) // stable internal order
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean()
+    ]);
+
+    return res.status(200).json({
+      status: true,
+      message: "Experience ranges fetched successfully.",
+      totalRecord,
+      totalPage: Math.ceil(totalRecord / limit) || 0,
+      currentPage: page,
+      data
+    });
+  } catch (err) {
+    console.error("listExperience error:", err);
+    return res.status(500).json({ status: false, message: "Server error" });
+  }
+};
+
+exports.deleteExperience = async (req, res) => {
+  try {
+    const { id } = req.body || {};
+    if (!id || !mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ status: false, message: "Valid id is required" });
+    }
+
+    const doc = await Experience.findById(id);
+    if (!doc || doc.isDeleted) {
+      return res.status(404).json({ status: false, message: "Experience range not found" });
+    }
+
+    doc.isDeleted = true;
+    await doc.save();
+
+    return res.status(200).json({
+      status: true,
+      message: "Experience range deleted successfully."
+    });
+  } catch (err) {
+    console.error("deleteExperience error:", err);
+    return res.status(500).json({ status: false, message: "Server error" });
+  }
+};
+
+//job types
+exports.createJobType = async (req, res) => {
+  try {
+    const name = (req.body?.name || "").trim();
+    if (!name) return res.status(400).json({ status: false, message: "name is required" });
+
+    // find any by case-insensitive name
+    const existing = await JobType.findOne({
+      name: { $regex: `^${escapeRegex(name)}$`, $options: "i" }
+    });
+
+    if (existing) {
+      if (existing.isDeleted) {
+        // restore soft-deleted
+        existing.isDeleted = false;
+        existing.name = name; // normalize casing/spacing
+        await existing.save();
+        return res.status(200).json({
+          status: true,
+          message: "Job type restored successfully.",
+          data: existing
+        });
+      }
+      return res.status(409).json({ status: false, message: "Job type already exists" });
+    }
+
+    const doc = await JobType.create({ name });
+    return res.status(201).json({
+      status: true,
+      message: "Job type created successfully.",
+      data: doc
+    });
+  } catch (err) {
+    if (err?.code === 11000) {
+      return res.status(409).json({ status: false, message: "Job type already exists" });
+    }
+    console.error("createJobType error:", err);
+    return res.status(500).json({ status: false, message: "Server error" });
+  }
+};
+
+exports.updateJobType = async (req, res) => {
+  try {
+    const { id } = req.body || {};
+    const name = (req.body?.name || "").trim();
+
+    if (!id || !mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ status: false, message: "Valid id is required" });
+    }
+    if (!name) {
+      return res.status(400).json({ status: false, message: "name is required" });
+    }
+
+    const doc = await JobType.findById(id);
+    if (!doc || doc.isDeleted) {
+      return res.status(404).json({ status: false, message: "Job type not found" });
+    }
+
+    // duplicate guard among active docs
+    const dupe = await JobType.findOne({
+      _id: { $ne: id },
+      isDeleted: false,
+      name: { $regex: `^${escapeRegex(name)}$`, $options: "i" }
+    });
+    if (dupe) {
+      return res.status(409).json({ status: false, message: "Another job type with this name already exists" });
+    }
+
+    doc.name = name;
+    await doc.save();
+
+    return res.status(200).json({
+      status: true,
+      message: "Job type updated successfully.",
+      data: doc
+    });
+  } catch (err) {
+    console.error("updateJobType error:", err);
+    return res.status(500).json({ status: false, message: "Server error" });
+  }
+};
+
+exports.getJobTypes = async (req, res) => {
+  try {
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+    const filter = { isDeleted: false };
+
+    const [totalRecord, data] = await Promise.all([
+      JobType.countDocuments(filter),
+      JobType.find(filter)
+        .sort({ createdAt: -1, _id: 1 }) // stable internal order
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean()
+    ]);
+
+    return res.status(200).json({
+      status: true,
+      message: "Job types fetched successfully.",
+      totalRecord,
+      totalPage: Math.ceil(totalRecord / limit) || 0,
+      currentPage: page,
+      data
+    });
+  } catch (err) {
+    console.error("listJobTypes error:", err);
+    return res.status(500).json({ status: false, message: "Server error" });
+  }
+};
+
+exports.deleteJobType = async (req, res) => {
+  try {
+    const { id } = req.body || {};
+    if (!id || !mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ status: false, message: "Valid id is required" });
+    }
+
+    const doc = await JobType.findById(id);
+    if (!doc || doc.isDeleted) {
+      return res.status(404).json({ status: false, message: "Job type not found" });
+    }
+
+    doc.isDeleted = true;
+    await doc.save();
+
+    return res.status(200).json({
+      status: true,
+      message: "Job type deleted successfully."
+    });
+  } catch (err) {
+    console.error("deleteJobType error:", err);
+    return res.status(500).json({ status: false, message: "Server error" });
+  }
+};
+
+//salary types
+exports.createSalaryType = async (req, res) => {
+  try {
+    const name = (req.body?.name || "").trim();
+    if (!name) return res.status(400).json({ status: false, message: "name is required" });
+
+    // case-insensitive find (even if soft-deleted)
+    const existing = await SalaryType.findOne({
+      name: { $regex: `^${escapeRegex(name)}$`, $options: "i" }
+    });
+
+    if (existing) {
+      if (existing.isDeleted) {
+        // restore soft-deleted
+        existing.isDeleted = false;
+        existing.name = name; // normalize casing/spacing
+        await existing.save();
+        return res.status(200).json({
+          status: true,
+          message: "Salary type restored successfully.",
+          data: existing
+        });
+      }
+      return res.status(409).json({ status: false, message: "Salary type already exists" });
+    }
+
+    const doc = await SalaryType.create({ name });
+    return res.status(201).json({
+      status: true,
+      message: "Salary type created successfully.",
+      data: doc
+    });
+  } catch (err) {
+    if (err?.code === 11000) {
+      return res.status(409).json({ status: false, message: "Salary type already exists" });
+    }
+    console.error("createSalaryType error:", err);
+    return res.status(500).json({ status: false, message: "Server error" });
+  }
+};
+
+exports.updateSalaryType = async (req, res) => {
+  try {
+    const { id } = req.body || {};
+    const name = (req.body?.name || "").trim();
+
+    if (!id || !mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ status: false, message: "Valid id is required" });
+    }
+    if (!name) {
+      return res.status(400).json({ status: false, message: "name is required" });
+    }
+
+    const doc = await SalaryType.findById(id);
+    if (!doc || doc.isDeleted) {
+      return res.status(404).json({ status: false, message: "Salary type not found" });
+    }
+
+    // duplicate guard among active docs (case-insensitive)
+    const dupe = await SalaryType.findOne({
+      _id: { $ne: id },
+      isDeleted: false,
+      name: { $regex: `^${escapeRegex(name)}$`, $options: "i" }
+    });
+    if (dupe) {
+      return res.status(409).json({ status: false, message: "Another salary type with this name already exists" });
+    }
+
+    doc.name = name;
+    await doc.save();
+
+    return res.status(200).json({
+      status: true,
+      message: "Salary type updated successfully.",
+      data: doc
+    });
+  } catch (err) {
+    console.error("updateSalaryType error:", err);
+    return res.status(500).json({ status: false, message: "Server error" });
+  }
+};
+
+exports.getSalaryTypes = async (req, res) => {
+  try {
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+
+    const filter = { isDeleted: false };
+
+    const [totalRecord, data] = await Promise.all([
+      SalaryType.countDocuments(filter),
+      SalaryType.find(filter)
+        .sort({ createdAt: -1, _id: 1 }) // stable internal order
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean()
+    ]);
+
+    return res.status(200).json({
+      status: true,
+      message: "Salary types fetched successfully.",
+      totalRecord,
+      totalPage: Math.ceil(totalRecord / limit) || 0,
+      currentPage: page,
+      data
+    });
+  } catch (err) {
+    console.error("listSalaryTypes error:", err);
+    return res.status(500).json({ status: false, message: "Server error" });
+  }
+};
+
+exports.deleteSalaryType = async (req, res) => {
+  try {
+    const { id } = req.body || {};
+    if (!id || !mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ status: false, message: "Valid id is required" });
+    }
+
+    const doc = await SalaryType.findById(id);
+    if (!doc || doc.isDeleted) {
+      return res.status(404).json({ status: false, message: "Salary type not found" });
+    }
+
+    doc.isDeleted = true;
+    await doc.save();
+
+    return res.status(200).json({
+      status: true,
+      message: "Salary type deleted successfully."
+    });
+  } catch (err) {
+    console.error("deleteSalaryType error:", err);
+    return res.status(500).json({ status: false, message: "Server error" });
+  }
+};
+
+
+
+
+
+
+
+//get all users(employer and job_seeker)
+// exports.listAllProfiles = async (req, res) => {
+//   try {
+//     const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
+//     const limit = Math.min(Math.max(parseInt(req.query.limit, 5) || 5, 1), 100);
+//     const start = (page - 1) * limit;
+
+//     // counts
+//     const [employerCount, jobSeekerCount] = await Promise.all([
+//       CompanyProfile.countDocuments({ isDeleted: { $ne: true } }),
+//       JobSeekerProfile.countDocuments({ isDeleted: { $ne: true } }),
+//     ]);
+//     const totalRecord = employerCount + jobSeekerCount;
+//     const totalPage = Math.ceil(totalRecord / limit) || 0;
+
+    
+//     const takeFromEmployers =
+//       start < employerCount ? Math.min(limit, employerCount - start) : 0;
+
+//     const employerSkip = Math.min(start, employerCount); // if start is within employer range, skip=start, else skip=employerCount
+//     const remaining = limit - takeFromEmployers;
+//     const jobSeekerSkip = Math.max(0, start - employerCount);
+
+//     const [employers, jobSeekers] = await Promise.all([
+//       takeFromEmployers > 0
+//         ? CompanyProfile.find({ isDeleted: { $ne: true } })
+//             .select("_id userId companyName email phoneNumber state city pincode image industryType createdAt updatedAt")
+//             .sort({ createdAt: -1, _id: 1 }) // internal stable order
+//             .skip(employerSkip)
+//             .limit(takeFromEmployers)
+//             .lean()
+//         : Promise.resolve([]),
+
+//       remaining > 0
+//         ? JobSeekerProfile.find({ isDeleted: { $ne: true } })
+//             .select("_id userId name email phoneNumber gender state city pincode image industryType jobProfile createdAt updatedAt")
+//             .sort({ createdAt: -1, _id: 1 }) // internal stable order
+//             .skip(jobSeekerSkip)
+//             .limit(remaining)
+//             .lean()
+//         : Promise.resolve([]),
+//     ]);
+
+//     // normalize shapes
+//     const emRows = employers.map(p => ({
+//       type: "employer",
+//       profileId: p._id,
+//       userId: p.userId,
+//       displayName: p.companyName,
+//       email: p.email,
+//       phoneNumber: p.phoneNumber,
+//       state: p.state,
+//       city: p.city,
+//       pincode: p.pincode,
+//       image: p.image,
+//       industryType: p.industryType,
+//       createdAt: p.createdAt,
+//       updatedAt: p.updatedAt,
+//     }));
+
+//     const jsRows = jobSeekers.map(p => ({
+//       type: "job_seeker",
+//       profileId: p._id,
+//       userId: p.userId,
+//       displayName: p.name,
+//       email: p.email,
+//       phoneNumber: p.phoneNumber,
+//       gender: p.gender,
+//       state: p.state,
+//       city: p.city,
+//       pincode: p.pincode,
+//       image: p.image,
+//       industryType: p.industryType,
+//       jobProfile: p.jobProfile,
+//       createdAt: p.createdAt,
+//       updatedAt: p.updatedAt,
+//     }));
+
+//     const data = [...emRows, ...jsRows];
+
+//     return res.status(200).json({
+//       status: true,
+//       message: "Profiles fetched successfully.",
+//       totalRecord,
+//       totalPage,
+//       currentPage: page,
+//       data,
+//     });
+//   } catch (err) {
+//     console.error("listAllProfiles error:", err);
+//     return res.status(500).json({ status: false, message: "Server error" });
+//   }
+// };
+
 
 
 

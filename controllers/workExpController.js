@@ -73,7 +73,7 @@ exports.getMyWorkExp = async (req, res) => {
     const experiences = await WorkExperience.find({ userId });
 
     if (experiences.length === 0) {
-      return res.status(404).json({
+      return res.status(200).json({
         status: false,
         message: "No work-experience records found.",
       });

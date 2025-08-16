@@ -1,13 +1,18 @@
 const express = require('express');
-const { sendOtp, selectRole, verifyOtp } = require('../controllers/userController');
+const { sendOtp, selectRole, verifyOtp, sendOtpWebsite, verifyOtpWebsite } = require('../controllers/userController');
 const { getIndustryBasedOnRole, getCategoryBasedOnRole, getJobPostsByCategoryPublic } = require('../controllers/adminController');
 const { verifyToken } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
+//for mobile
 router.post('/sendOtp', sendOtp);
 router.post('/verify-otp', verifyOtp);
 router.post('/select-role', selectRole);
+
+//for website
+router.post('/send-otp-website', sendOtpWebsite);
+ router.post('/verify-otp-website', verifyOtpWebsite);
 
 //get category and industry list for employer and job_seeker
 router.get('/industries', verifyToken, getIndustryBasedOnRole);

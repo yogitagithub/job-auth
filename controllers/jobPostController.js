@@ -93,6 +93,7 @@ exports.createJobPost = async (req, res) => {
         industryType: industryType.name,
         state: state.state,
         expiredDate: formattedExpiredDate,
+        //  aboutCompany: jobPost.aboutCompany ?? null,
          jobPosted: daysAgo(jobPost.createdAt)
       }
     });
