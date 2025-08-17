@@ -74,7 +74,7 @@ exports.getMyWorkExp = async (req, res) => {
 
     if (experiences.length === 0) {
       return res.status(200).json({
-        status: false,
+        status: true,
         message: "No work-experience records found.",
       });
     }
