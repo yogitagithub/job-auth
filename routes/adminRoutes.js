@@ -7,7 +7,7 @@ const { sendAdminOtp, verifyAdminOtp, createCategory, getIndustry, getCategory,
   createIndustry,
   updateIndustry,
   deleteIndustry, createProfile, getProfile, updateProfile, deleteProfile, 
-  createExperience, getExperience, updateExperience, deleteExperience, listAllProfiles, 
+  createExperience, getExperience, updateExperience, deleteExperience, 
 getJobTypes, deleteJobType, updateJobType, createJobType, deleteSalaryType, createSalaryType, getSalaryTypes, updateSalaryType } = require('../controllers/adminController');
 
   const { verifyToken, verifyAdmin, verifyEmployerOnly, verifyJobSeekerOnly } = require('../middleware/authMiddleware');
@@ -56,8 +56,7 @@ router.post("/create-salary-types",  verifyToken, verifyAdmin, createSalaryType)
   router.get("/get-salary-types",   verifyToken, verifyAdmin, getSalaryTypes);
 
 
-//get all users
-// router.get("/profiles", verifyToken, verifyAdmin, listAllProfiles);
+
 
 
 module.exports = router;

@@ -117,11 +117,7 @@ const jobPostSchema = new mongoose.Schema(
      required: true
    },
 
-  //  aboutCompany: { 
-  //   type: String, 
-  //   trim: true, 
-  //   maxlength: 8000
-  //  },
+ 
 
     isDeleted: {
       type: Boolean,
