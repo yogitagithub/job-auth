@@ -36,7 +36,7 @@ router.get("/getJobProfile", verifyToken, verifyAdmin, getProfile);
 router.put("/updateJobProfile/:id", verifyToken, verifyAdmin, updateProfile);
 router.delete("/deleteJobProfile/:id", verifyToken, verifyAdmin, deleteProfile);
 
-router.get("/getJobProfile-jobSeekers", verifyToken, verifyJobSeekerOnly, getProfile);
+
 
 //experience range crud
 router.post("/create-experience", verifyToken, verifyAdmin, createExperience);

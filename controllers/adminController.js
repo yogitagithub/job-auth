@@ -447,6 +447,45 @@ exports.deleteProfile = async (req, res) => {
 };
 
 
+exports.getJobProfileBasedOnRole = async (req, res) => {
+  try {
+    // verifyToken + verifyJobSeekerOnly already ran
+    const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
+
+    const [totalRecord, rows] = await Promise.all([
+      JobProfile.countDocuments({}),
+      JobProfile.find({})
+        .sort({ name: 1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean()
+    ]);
+
+    const data = rows.map(p => ({ id: p._id, name: p.name }));
+
+    return res.status(200).json({
+      status: true,
+      message: data.length
+        ? "Job profiles fetched successfully."
+        : "No job profiles found.",
+      totalRecord,
+      totalPage: Math.ceil(totalRecord / limit) || 0,
+      currentPage: page,
+      data
+    });
+  } catch (err) {
+    console.error("getJobProfileBasedOnRole error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: err.message
+    });
+  }
+};
+
+
+
 //experience range
 const escapeRegex = (s = "") => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -596,6 +635,47 @@ exports.deleteExperience = async (req, res) => {
   }
 };
 
+
+exports.getExperienceRangeBasedOnRole = async (req, res) => {
+  try {
+    // verifyToken + verifyEmployerOnly already enforced at the route
+    const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+
+    const filter = { isDeleted: false };
+
+    const [totalRecord, rows] = await Promise.all([
+      Experience.countDocuments(filter),
+      Experience.find(filter)
+        .sort({ createdAt: -1, _id: 1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean()
+    ]);
+
+    const data = rows.map(x => ({ id: x._id, name: x.name }));
+
+    return res.status(200).json({
+      status: true,
+      message: data.length
+        ? "Experience ranges fetched successfully."
+        : "No experience ranges found.",
+      totalRecord,
+      totalPage: Math.ceil(totalRecord / limit) || 0,
+      currentPage: page,
+      data
+    });
+  } catch (err) {
+    console.error("getExperienceForEmployer error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: err.message
+    });
+  }
+};
+
+
 //job types
 exports.createJobType = async (req, res) => {
   try {
@@ -731,6 +811,47 @@ exports.deleteJobType = async (req, res) => {
     return res.status(500).json({ status: false, message: "Server error" });
   }
 };
+
+
+exports.getJobTypeBasedOnRole = async (req, res) => {
+  try {
+    const role = req.user?.role;
+    if (role !== "employer" && role !== "job_seeker") {
+      return res.status(403).json({
+        status: false,
+        message: "Access denied. Employers and Job seekers only."
+      });
+    }
+
+    const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+
+    const filter = { isDeleted: false };
+    const [totalRecord, rows] = await Promise.all([
+      JobType.countDocuments(filter),
+      JobType.find(filter)
+        .sort({ createdAt: -1, _id: 1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean()
+    ]);
+
+    const data = rows.map(j => ({ id: j._id, name: j.name }));
+
+    return res.status(200).json({
+      status: true,
+      message: data.length ? "Job types fetched successfully." : "No job types found.",
+      totalRecord,
+      totalPage: Math.ceil(totalRecord / limit) || 0,
+      currentPage: page,
+      data
+    });
+  } catch (err) {
+    console.error("getJobTypeBasedOnRole error:", err);
+    return res.status(500).json({ status: false, message: "Server error", error: err.message });
+  }
+};
+
 
 //salary types
 exports.createSalaryType = async (req, res) => {
@@ -870,6 +991,48 @@ exports.deleteSalaryType = async (req, res) => {
 };
 
 
+exports.getSalaryTypeBasedOnRole = async (req, res) => {
+  try {
+    const role = req.user?.role;
+    if (role !== "employer" && role !== "job_seeker") {
+      return res.status(403).json({
+        status: false,
+        message: "Access denied. Employers and Job seekers only."
+      });
+    }
+
+    const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+
+    const filter = { isDeleted: false };
+
+    const [totalRecord, rows] = await Promise.all([
+      SalaryType.countDocuments(filter),
+      SalaryType.find(filter)
+        .sort({ createdAt: -1, _id: 1 }) // stable order
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean()
+    ]);
+
+    const data = rows.map(s => ({ id: s._id, name: s.name }));
+
+    return res.status(200).json({
+      status: true,
+      message: data.length ? "Salary types fetched successfully." : "No salary types found.",
+      totalRecord,
+      totalPage: Math.ceil(totalRecord / limit) || 0,
+      currentPage: page,
+      data
+    });
+  } catch (err) {
+    console.error("getSalaryTypesBasedOnRole error:", err);
+    return res.status(500).json({ status: false, message: "Server error", error: err.message });
+  }
+};
+
+
+
 //other field
 
 exports.createOtherField = async (req, res) => {
@@ -1004,6 +1167,45 @@ exports.getOtherField = async (req, res) => {
   } catch (err) {
     console.error("listOtherFields error:", err);
     return res.status(500).json({ status: false, message: "Server error" });
+  }
+};
+
+exports.getOtherFieldBasedOnRole = async (req, res) => {
+  try {
+    // verifyToken + verifyEmployerOnly already run at the route
+    const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+
+    const filter = { isDeleted: false };
+
+    const [totalRecord, rows] = await Promise.all([
+      OtherField.countDocuments(filter),
+      OtherField.find(filter)
+        .sort({ createdAt: -1, _id: 1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean()
+    ]);
+
+    const data = rows.map(o => ({ id: o._id, name: o.name }));
+
+    return res.status(200).json({
+      status: true,
+      message: data.length
+        ? "Other fields fetched successfully."
+        : "No other fields found.",
+      totalRecord,
+      totalPage: Math.ceil(totalRecord / limit) || 0,
+      currentPage: page,
+      data
+    });
+  } catch (err) {
+    console.error("getOtherFieldsForEmployer error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: err.message
+    });
   }
 };
 
