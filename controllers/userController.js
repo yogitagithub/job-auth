@@ -492,8 +492,6 @@ exports.verifyOtpWebsite = async (req, res) => {
 
     // clear OTP & persist token
     user.token = token;
-    user.otp = null;
-    user.otpExpiresAt = null;
     await user.save();
 
     // ✅ Response (same for new & existing)
