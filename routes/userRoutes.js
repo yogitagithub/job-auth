@@ -1,7 +1,7 @@
 const express = require('express');
 const { sendOtp, selectRole, verifyOtp, sendOtpWebsite, verifyOtpWebsite } = require('../controllers/userController');
 const { getIndustryBasedOnRole, getCategoryBasedOnRole, getJobPostsByCategoryPublic } = require('../controllers/adminController');
-const { verifyToken } = require('../middleware/authMiddleware');
+const { verifyToken, verifyJobSeekerOnly, verifyEmployerOnly } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 

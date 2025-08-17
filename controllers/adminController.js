@@ -255,94 +255,6 @@ exports.deleteCategory = async (req, res) => {
 };
 
 
-// GET /public-categories/:categoryId
-exports.getJobPostsByCategoryPublic = async (req, res) => {
-  try {
-    const { categoryId } = req.params;
-
-    // Validate categoryId
-    if (!Types.ObjectId.isValid(categoryId)) {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid categoryId.",
-      });
-    }
-
-    // Ensure category exists (optional but helpful)
-    const catExists = await Category.exists({ _id: categoryId });
-    if (!catExists) {
-      return res.status(404).json({
-        status: false,
-        message: "Category not found.",
-      });
-    }
-
-    // Pagination
-    const page  = parseInt(req.query.page, 10)  || 1;
-    const limit = parseInt(req.query.limit, 10) || 5;
-    const skip  = (page - 1) * limit;
-
-    // Filter only by category
-    const filter = { category: categoryId };
-
-    // Count & fetch
-    const totalRecord = await JobPost.countDocuments(filter);
-    const totalPage   = Math.ceil(totalRecord / limit);
-
-    const jobPosts = await JobPost.find(filter)
-      .select("-createdAt -updatedAt -__v")
-      .populate({ path: "companyId", select: "companyName image" })
-      .populate("category", "name")
-      .populate("industryType", "name")
-      .populate("state", "state")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean();
-
-    const data = jobPosts.map((j) => ({
-      _id: j._id,
-      company: j.companyId?.companyName ?? null,
-      companyImage: j.companyId?.image ?? null,
-      category: j.category?.name ?? null,
-      industryType: j.industryType?.name ?? null,
-      jobTitle: j.jobTitle,
-      jobDescription: j.jobDescription,
-      salaryType: j.salaryType,
-      displayPhoneNumber: j.displayPhoneNumber,
-      displayEmail: j.displayEmail,
-      jobType: j.jobType,
-      skills: j.skills,
-      minSalary: j.minSalary,
-      maxSalary: j.maxSalary,
-      state: j.state?.state ?? null,
-      experience: j.experience,
-      otherField: j.otherField,
-      status: j.status,
-      expiredDate: j.expiredDate,
-      isDeleted: j.isDeleted,
-    }));
-
-    return res.status(200).json({
-      status: true,
-      message: "Job posts fetched successfully.",
-      totalRecord,
-      totalPage,
-      currentPage: page,
-      data,
-    });
-  } catch (error) {
-    console.error("Error fetching jobs by category:", error);
-    return res.status(500).json({
-      status: false,
-      message: "Failed to fetch job posts.",
-      error: error.message,
-    });
-  }
-};
-
-
-
 //Industry Type
 exports.createIndustry = async (req, res) => {
   try {
@@ -1096,7 +1008,88 @@ exports.getOtherField = async (req, res) => {
 };
 
 
+// GET /public-categories/:categoryId
+exports.getJobPostsByCategoryPublic = async (req, res) => {
+  try {
+    const { categoryId } = req.params;
 
+    // Validate categoryId
+    if (!Types.ObjectId.isValid(categoryId)) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid categoryId.",
+      });
+    }
 
+    // Ensure category exists (optional but helpful)
+    const catExists = await Category.exists({ _id: categoryId });
+    if (!catExists) {
+      return res.status(404).json({
+        status: false,
+        message: "Category not found.",
+      });
+    }
 
+    // Pagination
+    const page  = parseInt(req.query.page, 10)  || 1;
+    const limit = parseInt(req.query.limit, 10) || 5;
+    const skip  = (page - 1) * limit;
 
+    // Filter only by category
+    const filter = { category: categoryId };
+
+    // Count & fetch
+    const totalRecord = await JobPost.countDocuments(filter);
+    const totalPage   = Math.ceil(totalRecord / limit);
+
+    const jobPosts = await JobPost.find(filter)
+      .select("-createdAt -updatedAt -__v")
+      .populate({ path: "companyId", select: "companyName image" })
+      .populate("category", "name")
+      .populate("industryType", "name")
+      .populate("state", "state")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const data = jobPosts.map((j) => ({
+      _id: j._id,
+      company: j.companyId?.companyName ?? null,
+      companyImage: j.companyId?.image ?? null,
+      category: j.category?.name ?? null,
+      industryType: j.industryType?.name ?? null,
+      jobTitle: j.jobTitle,
+      jobDescription: j.jobDescription,
+      salaryType: j.salaryType,
+      displayPhoneNumber: j.displayPhoneNumber,
+      displayEmail: j.displayEmail,
+      jobType: j.jobType,
+      skills: j.skills,
+      minSalary: j.minSalary,
+      maxSalary: j.maxSalary,
+      state: j.state?.state ?? null,
+      experience: j.experience,
+      otherField: j.otherField,
+      status: j.status,
+      expiredDate: j.expiredDate,
+      isDeleted: j.isDeleted,
+    }));
+
+    return res.status(200).json({
+      status: true,
+      message: "Job posts fetched successfully.",
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data,
+    });
+  } catch (error) {
+    console.error("Error fetching jobs by category:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to fetch job posts.",
+      error: error.message,
+    });
+  }
+};
