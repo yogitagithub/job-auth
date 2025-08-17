@@ -6,11 +6,12 @@ const { sendAdminOtp, verifyAdminOtp, createCategory, getIndustry, getCategory,
   deleteCategory,
   createIndustry,
   updateIndustry,
-  deleteIndustry, createProfile, getProfile, updateProfile, deleteProfile, 
-  createExperience, getExperience, updateExperience, deleteExperience, 
-getJobTypes, deleteJobType, updateJobType, createJobType, deleteSalaryType, createSalaryType, getSalaryTypes, updateSalaryType } = require('../controllers/adminController');
+  deleteIndustry, createProfile, getProfile, updateProfile, deleteProfile,
+  createExperience, getExperience, updateExperience, deleteExperience,
+  getJobTypes, deleteJobType, updateJobType, createJobType, deleteSalaryType, createSalaryType, getSalaryTypes, updateSalaryType,
+getOtherField, deleteOtherField, updateOtherField, createOtherField } = require('../controllers/adminController');
 
-  const { verifyToken, verifyAdmin, verifyEmployerOnly, verifyJobSeekerOnly } = require('../middleware/authMiddleware');
+const { verifyToken, verifyAdmin, verifyEmployerOnly, verifyJobSeekerOnly } = require('../middleware/authMiddleware');
 
 
 router.post('/send-otp', sendAdminOtp);
@@ -44,19 +45,22 @@ router.put("/update-experience", verifyToken, verifyAdmin, updateExperience);
 router.delete("/delete-experience", verifyToken, verifyAdmin, deleteExperience);
 
 //job type crud
-router.post("/create-job-types",  verifyToken, verifyAdmin, createJobType);
- router.put("/update-job-types",   verifyToken, verifyAdmin, updateJobType);   
- router.delete("/delete-job-types",verifyToken, verifyAdmin, deleteJobType);  
- router.get("/get-job-types",   verifyToken, verifyAdmin, getJobTypes);
+router.post("/create-job-types", verifyToken, verifyAdmin, createJobType);
+router.put("/update-job-types", verifyToken, verifyAdmin, updateJobType);
+router.delete("/delete-job-types", verifyToken, verifyAdmin, deleteJobType);
+router.get("/get-job-types", verifyToken, verifyAdmin, getJobTypes);
 
- //salary type crud
-router.post("/create-salary-types",  verifyToken, verifyAdmin, createSalaryType);
-  router.put("/update-salary-types",   verifyToken, verifyAdmin, updateSalaryType);   
-  router.delete("/delete-salary-types",verifyToken, verifyAdmin, deleteSalaryType);  
-  router.get("/get-salary-types",   verifyToken, verifyAdmin, getSalaryTypes);
+//salary type crud
+router.post("/create-salary-types", verifyToken, verifyAdmin, createSalaryType);
+router.put("/update-salary-types", verifyToken, verifyAdmin, updateSalaryType);
+router.delete("/delete-salary-types", verifyToken, verifyAdmin, deleteSalaryType);
+router.get("/get-salary-types", verifyToken, verifyAdmin, getSalaryTypes);
 
-
-
+// other field
+router.post("/create-other-field", verifyToken, verifyAdmin, createOtherField);
+router.put("/update-other-field", verifyToken, verifyAdmin, updateOtherField);
+router.delete("/delete-other-field", verifyToken, verifyAdmin, deleteOtherField);
+router.get("/get-other-field", verifyToken, verifyAdmin, getOtherField);
 
 
 module.exports = router;

@@ -8,6 +8,7 @@ const Experience = require("../models/AdminExperienceRange");
 const JobType = require("../models/AdminJobType");
 const JobProfile = require("../models/AdminJobProfile");
 const SalaryType = require("../models/AdminSalaryType");
+const OtherField = require("../models/AdminOtherField");
 
 const CompanyProfile = require("../models/CompanyProfile");
 const JobSeekerProfile = require("../models/JobSeekerProfile");
@@ -957,7 +958,142 @@ exports.deleteSalaryType = async (req, res) => {
 };
 
 
+//other field
 
+exports.createOtherField = async (req, res) => {
+  try {
+    const name = (req.body?.name || "").trim();
+    if (!name) return res.status(400).json({ status: false, message: "name is required" });
+
+    // find by name (case-insensitive), even if soft-deleted
+    const existing = await OtherField.findOne({
+      name: { $regex: `^${escapeRegex(name)}$`, $options: "i" }
+    });
+
+    if (existing) {
+      if (existing.isDeleted) {
+        // restore soft-deleted record
+        existing.isDeleted = false;
+        existing.name = name; // normalize casing/spacing
+        await existing.save();
+        return res.status(200).json({
+          status: true,
+          message: "Other field restored successfully.",
+          data: existing
+        });
+      }
+      return res.status(409).json({ status: false, message: "Other field already exists" });
+    }
+
+    const doc = await OtherField.create({ name });
+    return res.status(201).json({
+      status: true,
+      message: "Other field created successfully.",
+      data: doc
+    });
+  } catch (err) {
+    if (err?.code === 11000) {
+      return res.status(409).json({ status: false, message: "Other field already exists" });
+    }
+    console.error("createOtherField error:", err);
+    return res.status(500).json({ status: false, message: "Server error" });
+  }
+};
+
+exports.updateOtherField = async (req, res) => {
+  try {
+    const { id } = req.body || {};
+    const name = (req.body?.name || "").trim();
+
+    if (!id || !mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ status: false, message: "Valid id is required" });
+    }
+    if (!name) {
+      return res.status(400).json({ status: false, message: "name is required" });
+    }
+
+    const doc = await OtherField.findById(id);
+    if (!doc || doc.isDeleted) {
+      return res.status(404).json({ status: false, message: "Other field not found" });
+    }
+
+    // duplicate guard among active docs (case-insensitive)
+    const dupe = await OtherField.findOne({
+      _id: { $ne: id },
+      isDeleted: false,
+      name: { $regex: `^${escapeRegex(name)}$`, $options: "i" }
+    });
+    if (dupe) {
+      return res.status(409).json({ status: false, message: "Another other field with this name already exists" });
+    }
+
+    doc.name = name;
+    await doc.save();
+
+    return res.status(200).json({
+      status: true,
+      message: "Other field updated successfully.",
+      data: doc
+    });
+  } catch (err) {
+    console.error("updateOtherField error:", err);
+    return res.status(500).json({ status: false, message: "Server error" });
+  }
+};
+
+exports.deleteOtherField = async (req, res) => {
+  try {
+    const { id } = req.body || {};
+    if (!id || !mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ status: false, message: "Valid id is required" });
+    }
+
+    const doc = await OtherField.findById(id);
+    if (!doc || doc.isDeleted) {
+      return res.status(404).json({ status: false, message: "Other field not found" });
+    }
+
+    doc.isDeleted = true;
+    await doc.save();
+
+    return res.status(200).json({
+      status: true,
+      message: "Other field deleted successfully."
+    });
+  } catch (err) {
+    console.error("deleteOtherField error:", err);
+    return res.status(500).json({ status: false, message: "Server error" });
+  }
+};
+
+exports.getOtherField = async (req, res) => {
+  try {
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+    const filter = { isDeleted: false };
+
+    const [totalRecord, data] = await Promise.all([
+      OtherField.countDocuments(filter),
+      OtherField.find(filter)
+        .sort({ createdAt: -1, _id: 1 }) // stable internal order
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean()
+    ]);
+
+    return res.status(200).json({
+      status: true,
+      message: "Other fields fetched successfully.",
+      totalRecord,
+      totalPage: Math.ceil(totalRecord / limit) || 0,
+      currentPage: page,
+      data
+    });
+  } catch (err) {
+    console.error("listOtherFields error:", err);
+    return res.status(500).json({ status: false, message: "Server error" });
+  }
+};
 
 
 
