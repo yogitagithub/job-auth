@@ -4,6 +4,11 @@ const IndustryType = require("../models/AdminIndustry");
 const Category = require("../models/AdminCategory");
 const StateCity = require("../models/StateCity");
 
+const SalaryType = require("../models/AdminSalaryType");
+const JobType = require("../models/AdminJobType");
+const Experience = require("../models/AdminExperienceRange");     
+const OtherField = require("../models/AdminOtherField");
+
 
 // Return "X day(s) ago)" — minutes/hours ignored
 const daysAgo = (date) => {
@@ -20,10 +25,13 @@ const daysAgo = (date) => {
 const escapeRegex = (str = "") =>
   str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+
 exports.createJobPost = async (req, res) => {
   try {
-    const company = await CompanyProfile.findOne({ userId: req.user.userId });
+    const userId = req.user.userId;
 
+    // employer must have a company profile
+    const company = await CompanyProfile.findOne({ userId });
     if (!company) {
       return res.status(400).json({
         status: false,
@@ -31,76 +39,139 @@ exports.createJobPost = async (req, res) => {
       });
     }
 
-   
-    const category = await Category.findOne({ name: req.body.category });
-    if (!category) {
-      return res.status(400).json({ status: false, message: "Invalid category name." });
+    // read NAMES from body (not ids)
+    const {
+      category,
+      industryType,
+      salaryType,
+      jobType,
+      state,
+      experience,
+      otherField,
+
+      jobTitle,
+      jobDescription,
+      skills,
+      minSalary,
+      maxSalary,
+      displayPhoneNumber,
+      displayEmail,
+      hourlyRate,
+      expiredDate
+    } = req.body || {};
+
+    // quick required checks
+    const required = { category, industryType, salaryType, jobType, state, experience, otherField };
+    for (const [k, v] of Object.entries(required)) {
+      if (!v || !String(v).trim()) {
+        return res.status(400).json({ status: false, message: `${k} is required` });
+      }
     }
 
-   
-    const industryType = await IndustryType.findOne({ name: req.body.industryType });
-    if (!industryType) {
-      return res.status(400).json({ status: false, message: "Invalid industry type name." });
+    // simple validations
+    if (minSalary != null && maxSalary != null && Number(minSalary) > Number(maxSalary)) {
+      return res.status(400).json({ status: false, message: "minSalary cannot be greater than maxSalary." });
+    }
+    if (displayPhoneNumber && !/^[0-9]{8,15}$/.test(displayPhoneNumber)) {
+      return res.status(400).json({ status: false, message: "Invalid displayPhoneNumber format." });
+    }
+    if (displayEmail && !/.+\@.+\..+/.test(displayEmail)) {
+      return res.status(400).json({ status: false, message: "Invalid displayEmail format." });
     }
 
-   
-    const state = await StateCity.findOne({ state: req.body.state });
-    if (!state) {
-      return res.status(400).json({ status: false, message: "Invalid state name." });
+    // lookups by exact name (simple)
+    const [
+      categoryDoc,
+      industryTypeDoc,
+      salaryTypeDoc,
+      jobTypeDoc,
+      stateDoc,
+      experienceDoc,
+      otherFieldDoc
+    ] = await Promise.all([
+      Category.findOne({ name: category }),
+      IndustryType.findOne({ name: industryType }),
+      SalaryType.findOne({ name: salaryType, isDeleted: false }),
+      JobType.findOne({ name: jobType, isDeleted: false }),
+      StateCity.findOne({ state }),
+      Experience.findOne({ name: experience, isDeleted: false }), // change to ExperienceRange if that's your model
+      OtherField.findOne({ name: otherField, isDeleted: false })
+    ]);
+
+    if (!categoryDoc)     return res.status(400).json({ status: false, message: "Invalid category name." });
+    if (!industryTypeDoc) return res.status(400).json({ status: false, message: "Invalid industry type name." });
+    if (!salaryTypeDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted salary type name." });
+    if (!jobTypeDoc)      return res.status(400).json({ status: false, message: "Invalid or deleted job type name." });
+    if (!stateDoc)        return res.status(400).json({ status: false, message: "Invalid state name." });
+    if (!experienceDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted experience name." });
+    if (!otherFieldDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted other field name." });
+
+    // expiry (+30 days default)
+    let expiry = expiredDate ? new Date(expiredDate) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    if (isNaN(expiry.getTime())) {
+      return res.status(400).json({ status: false, message: "Invalid expiredDate." });
     }
 
-   
-    let expiredDate = req.body.expiredDate
-      ? new Date(req.body.expiredDate)
-      : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-   
-    const jobPost = new JobPost({
-      ...req.body,
-      expiredDate,
-      status: "active",
-      state: state._id,
-      category: category._id,
-      industryType: industryType._id,
+    // create job (save ObjectIds)
+    const jobPost = await JobPost.create({
+      userId,
       companyId: company._id,
-      userId: req.user.userId
+      category: categoryDoc._id,
+      industryType: industryTypeDoc._id,
+      salaryType: salaryTypeDoc._id,
+      jobType: jobTypeDoc._id,
+      state: stateDoc._id,
+      experience: experienceDoc._id,
+      otherField: otherFieldDoc._id,
+
+      jobTitle,
+      jobDescription,
+      skills,
+      minSalary,
+      maxSalary,
+      displayPhoneNumber,
+      displayEmail,
+      hourlyRate,
+      expiredDate: expiry,
+      status: "active" // schema will keep isApplied=false by default
     });
 
-    await jobPost.save();
-
-   
     const formattedExpiredDate = jobPost.expiredDate.toISOString().split("T")[0];
 
-   
-    res.status(201).json({
+    return res.status(201).json({
       status: true,
       message: "Job post created successfully.",
       data: {
         _id: jobPost._id,
         userId: jobPost.userId,
         companyId: jobPost.companyId,
+
+        // return friendly names (you sent names; ids saved internally)
+        category: categoryDoc.name,
+        industryType: industryTypeDoc.name,
+        state: stateDoc.state,
+        salaryType: salaryTypeDoc.name,
+        jobType: jobTypeDoc.name,
+        experience: experienceDoc.name,
+        otherField: otherFieldDoc.name,
+
         jobTitle: jobPost.jobTitle,
         jobDescription: jobPost.jobDescription,
-        salaryType: jobPost.salaryType,
-        displayPhoneNumber: jobPost.displayPhoneNumber,
+        skills: jobPost.skills,
         minSalary: jobPost.minSalary,
         maxSalary: jobPost.maxSalary,
+        displayPhoneNumber: jobPost.displayPhoneNumber,
+        displayEmail: jobPost.displayEmail,
+        hourlyRate: jobPost.hourlyRate,
         status: jobPost.status,
-        experience: jobPost.experience,
-        jobType: jobPost.jobType,
-        skills: jobPost.skills,
-        category: category.name,
-        industryType: industryType.name,
-        state: state.state,
         expiredDate: formattedExpiredDate,
-       
-         jobPosted: daysAgo(jobPost.createdAt)
+        jobPosted: daysAgo(jobPost.createdAt)
       }
     });
 
   } catch (error) {
     console.error("Error creating job post:", error);
-    res.status(500).json({
+    return res.status(500).json({
       status: false,
       message: "Failed to create job post.",
       error: error.message
@@ -108,70 +179,88 @@ exports.createJobPost = async (req, res) => {
   }
 };
 
+
 exports.getAllJobPosts = async (req, res) => {
   try {
     const { userId, role } = req.user;
 
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 5;
-    const skip = (page - 1) * limit;
+    const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 5, 1), 100);
+    const skip  = (page - 1) * limit;
 
-    const filter = role === 'employer' ? { userId } : {};
+    // Base filter: don't show soft-deleted posts
+    const filter = { isDeleted: false };
+
+    // Employers see only their own posts; everyone else sees all
+    if (role === "employer") filter.userId = userId;
+
+    // (Optional) If you want job seekers to see only active posts, uncomment:
+    // if (role === "job_seeker") filter.status = "active";
 
     const totalRecord = await JobPost.countDocuments(filter);
-    const totalPage = Math.ceil(totalRecord / limit);
+    const totalPage   = Math.ceil(totalRecord / limit) || 0;
 
     const jobPosts = await JobPost.find(filter)
-      .populate("companyId")
-      .populate("userId", "mobile role")
-      .populate("category", "name")
-      .populate("industryType", "name")
-      .populate("state", "state") 
+      .populate({ path: "companyId",    select: "companyName image" })
+      .populate({ path: "userId",       select: "phoneNumber role" }) // your User schema has phoneNumber
+      .populate({ path: "category",     select: "name" })
+      .populate({ path: "industryType", select: "name" })
+      .populate({ path: "salaryType",   select: "name" })
+      .populate({ path: "jobType",      select: "name" })
+      .populate({ path: "experience",   select: "name" })
+      .populate({ path: "otherField",   select: "name" })
+      .populate({ path: "state",        select: "state" })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean();
 
-    const transformedJobPosts = jobPosts.map(job => ({
+    const data = jobPosts.map((job) => ({
       _id: job._id,
-      company: job.companyId?.companyName || null,
-      companyImage: job.companyId?.image || null,
-      category: job.category?.name || null,
-      industryType: job.industryType?.name || null,
-      jobTitle: job.jobTitle,
-      jobDescription: job.jobDescription,
-      salaryType: job.salaryType,
-      displayPhoneNumber: job.displayPhoneNumber,
-      displayEmail: job.displayEmail,
-      jobType: job.jobType,
-      skills: job.skills,
-      minSalary: job.minSalary,
-      maxSalary: job.maxSalary,
-      state: job.state?.state || null,
-      experience: job.experience,
-      otherField: job.otherField,
-      status: job.status,
-      expiredDate: job.expiredDate ? job.expiredDate.toISOString().split("T")[0] : null,
-      isDeleted: job.isDeleted,
-      createdAt: job.createdAt,
-      updatedAt: job.updatedAt,
-       jobPosted: daysAgo(job.createdAt)
+
+      company:       job.companyId?.companyName ?? null,
+      companyImage:  job.companyId?.image ?? null,
+
+      category:      job.category?.name ?? null,
+      industryType:  job.industryType?.name ?? null,
+      salaryType:    job.salaryType?.name ?? null,
+      jobType:       job.jobType?.name ?? null,
+      experience:    job.experience?.name ?? null,
+      otherField:    job.otherField?.name ?? null,
+
+      jobTitle:           job.jobTitle ?? null,
+      jobDescription:     job.jobDescription ?? null,
+      skills:             job.skills ?? null,
+      minSalary:          job.minSalary ?? null,
+      maxSalary:          job.maxSalary ?? null,
+      displayPhoneNumber: job.displayPhoneNumber ?? null,
+      displayEmail:       job.displayEmail ?? null,
+
+      state:        job.state?.state ?? null,
+      hourlyRate:   job.hourlyRate ?? null,
+      status:       job.status ?? null,
+      isApplied:    !!job.isApplied,
+
+      expiredDate:  job.expiredDate ? job.expiredDate.toISOString().split("T")[0] : null,
+      createdAt:    job.createdAt,
+      updatedAt:    job.updatedAt,
+      jobPosted:    daysAgo(job.createdAt),
     }));
 
-    res.status(200).json({
+    return res.status(200).json({
       status: true,
       message: "Job posts fetched successfully.",
       totalRecord,
       totalPage,
-      data: transformedJobPosts
+      currentPage: page,
+      data,
     });
-
   } catch (error) {
     console.error("Error fetching job posts:", error);
-    res.status(500).json({
+    return res.status(500).json({
       status: false,
       message: "Failed to fetch job posts.",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -182,10 +271,14 @@ exports.getJobPostById = async (req, res) => {
 
     let jobPost = await JobPost.findById(id)
       .select("-updatedAt -__v")
-      .populate("companyId", "companyName")
-      .populate("category", "name")
-      .populate("industryType", "name")
-      .populate("state", "state");
+      .populate({ path: "companyId",    select: "companyName image" })
+      .populate({ path: "category",     select: "name" })
+      .populate({ path: "industryType", select: "name" })
+      .populate({ path: "salaryType",   select: "name" })
+      .populate({ path: "jobType",      select: "name" })
+      .populate({ path: "experience",   select: "name" })
+      .populate({ path: "otherField",   select: "name" })
+      .populate({ path: "state",        select: "state" });
 
     if (!jobPost) {
       return res.status(404).json({
@@ -194,48 +287,168 @@ exports.getJobPostById = async (req, res) => {
       });
     }
 
-   
+    // Auto-mark expired if needed (compare by date only)
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
     if (jobPost.expiredDate && jobPost.expiredDate < today && jobPost.status !== "expired") {
       jobPost.status = "expired";
       await jobPost.save();
     }
 
-    const jobData = jobPost.toObject();
+    // Build clean response with friendly names
+    const data = {
+      _id: jobPost._id,
 
-   
-    delete jobData.userId;
-    delete jobData.companyId;
+      company:      jobPost.companyId?.companyName ?? null,
+      companyImage: jobPost.companyId?.image ?? null,
 
-    
-    if (jobPost.category) jobData.category = jobPost.category.name;
-    if (jobPost.industryType) jobData.industryType = jobPost.industryType.name;
-    if (jobPost.state) jobData.state = jobPost.state.state; 
+      category:     jobPost.category?.name ?? null,
+      industryType: jobPost.industryType?.name ?? null,
+      salaryType:   jobPost.salaryType?.name ?? null,
+      jobType:      jobPost.jobType?.name ?? null,
+      experience:   jobPost.experience?.name ?? null,
+      otherField:   jobPost.otherField?.name ?? null,
+      state:        jobPost.state?.state ?? null,
 
-   
-    jobData.expiredDate = jobPost.expiredDate
-      ? jobPost.expiredDate.toISOString().split("T")[0]
-      : null;
+      jobTitle:           jobPost.jobTitle ?? null,
+      jobDescription:     jobPost.jobDescription ?? null,
+      skills:             jobPost.skills ?? null,
+      minSalary:          jobPost.minSalary ?? null,
+      maxSalary:          jobPost.maxSalary ?? null,
+      displayPhoneNumber: jobPost.displayPhoneNumber ?? null,
+      displayEmail:       jobPost.displayEmail ?? null,
+      hourlyRate:         jobPost.hourlyRate ?? null,
 
-      jobData.jobPosted = daysAgo(jobPost.createdAt);
+      status:      jobPost.status,
+      isApplied:   !!jobPost.isApplied,
+      expiredDate: jobPost.expiredDate
+        ? jobPost.expiredDate.toISOString().split("T")[0]
+        : null,
 
-    res.json({
+      createdAt: jobPost.createdAt,
+      jobPosted: daysAgo(jobPost.createdAt)
+    };
+
+    return res.json({
       status: true,
       message: "Job post fetched successfully.",
-      data: jobData
+      data
     });
 
   } catch (error) {
     console.error("Error fetching job post by ID:", error);
-    res.status(500).json({
+    return res.status(500).json({
       status: false,
       message: "Failed to fetch job post.",
       error: error.message
     });
   }
 };
+
+
+exports.getAllJobPostsPublic = async (req, res) => {
+  try {
+    const page  = parseInt(req.query.page, 10)  || 1;
+    const limit = parseInt(req.query.limit, 10) || 5;
+    const skip  = (page - 1) * limit;
+
+    const { jobTitle, state } = req.query;
+
+    // 1) Build filter (only non-deleted; you can also enforce status:'active' if you want)
+    const filter = { isDeleted: false };
+
+    // jobTitle: case-insensitive contains
+    if (jobTitle && jobTitle.trim()) {
+      filter.jobTitle = { $regex: escapeRegex(jobTitle.trim()), $options: "i" };
+    }
+
+    // state by human name (StateCity.state)
+    if (state && state.trim()) {
+      const stateRegex = { $regex: escapeRegex(state.trim()), $options: "i" };
+      const states = await StateCity.find({ state: stateRegex }).select("_id");
+      const stateIds = states.map(s => s._id);
+      if (stateIds.length === 0) {
+        return res.status(200).json({
+          status: true,
+          message: "Job posts fetched successfully.",
+          totalRecord: 0,
+          totalPage: 0,
+          currentPage: page,
+          data: []
+        });
+      }
+      filter.state = { $in: stateIds };
+    }
+
+    // 2) Count for pagination
+    const totalRecord = await JobPost.countDocuments(filter);
+    const totalPage   = Math.ceil(totalRecord / limit);
+
+    // 3) Query (keep createdAt; exclude updatedAt/__v)
+    const jobPosts = await JobPost.find(filter)
+      .select("-updatedAt -__v")
+      .populate({ path: "companyId",    select: "companyName image" })
+      .populate({ path: "category",     select: "name" })
+      .populate({ path: "industryType", select: "name" })
+      .populate({ path: "salaryType",   select: "name" })
+      .populate({ path: "jobType",      select: "name" })
+      .populate({ path: "experience",   select: "name" })
+      .populate({ path: "otherField",   select: "name" })
+      .populate({ path: "state",        select: "state" })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    // 4) Shape response
+    const data = jobPosts.map(j => ({
+      _id: j._id,
+
+      company:      j.companyId?.companyName ?? null,
+      companyImage: j.companyId?.image ?? null,
+
+      category:     j.category?.name ?? null,
+      industryType: j.industryType?.name ?? null,
+      salaryType:   j.salaryType?.name ?? null,
+      jobType:      j.jobType?.name ?? null,
+      experience:   j.experience?.name ?? null,
+      otherField:   j.otherField?.name ?? null,
+      state:        j.state?.state ?? null,
+
+      jobTitle:           j.jobTitle ?? null,
+      jobDescription:     j.jobDescription ?? null,
+      skills:             j.skills ?? null,
+      minSalary:          j.minSalary ?? null,
+      maxSalary:          j.maxSalary ?? null,
+      displayPhoneNumber: j.displayPhoneNumber ?? null,
+      displayEmail:       j.displayEmail ?? null,
+      hourlyRate:         j.hourlyRate ?? null,
+
+      status: j.status,
+      expiredDate: j.expiredDate ? new Date(j.expiredDate).toISOString().split("T")[0] : null,
+      jobPosted: daysAgo(j.createdAt)
+    }));
+
+    // 5) Respond
+    return res.status(200).json({
+      status: true,
+      message: "Job posts fetched successfully.",
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data
+    });
+
+  } catch (error) {
+    console.error("Error fetching job posts:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to fetch job posts.",
+      error: error.message
+    });
+  }
+};
+
 
 exports.updateJobPostById = async (req, res) => {
   try {
@@ -468,103 +681,6 @@ exports.updateJobPostStatus = async (req, res) => {
     res.status(500).json({
       status: false,
       message: "Failed to update job post status.",
-      error: error.message
-    });
-  }
-};
-
-
-exports.getAllJobPostsPublic = async (req, res) => {
-  try {
-    const page  = parseInt(req.query.page, 10)  || 1;
-    const limit = parseInt(req.query.limit, 10) || 5;
-    const skip  = (page - 1) * limit;
-
-    const { jobTitle, state } = req.query;
-
-    // 1) Build filter
-    const filter = {};
-
-    // jobTitle: case-insensitive contains
-    if (jobTitle && jobTitle.trim()) {
-      filter.jobTitle = { $regex: escapeRegex(jobTitle.trim()), $options: "i" };
-    }
-
-    // state (by name in StateCity)
-    if (state && state.trim()) {
-      const stateNameRegex = { $regex: escapeRegex(state.trim()), $options: "i" };
-      const matchingStates = await StateCity.find({ state: stateNameRegex }).select("_id");
-      const stateIds = matchingStates.map(s => s._id);
-
-      if (stateIds.length === 0) {
-        return res.status(200).json({
-          status: true,
-          message: "Job posts fetched successfully.",
-          totalRecord: 0,
-          totalPage: 0,
-          currentPage: page,
-          data: []
-        });
-      }
-      filter.state = { $in: stateIds };
-    }
-
-    // 2) Count for pagination
-    const totalRecord = await JobPost.countDocuments(filter);
-    const totalPage   = Math.ceil(totalRecord / limit);
-
-    // 3) Query: don't even fetch createdAt/updatedAt/__v
-    const jobPosts = await JobPost.find(filter)
-      .select("-updatedAt -__v")                       // <-- exclude here
-      .populate({ path: "companyId", select: "companyName image" })
-      .populate("category", "name")
-      .populate("industryType", "name")
-      .populate("state", "state")
-      .sort({ createdAt: -1 })   // sort still works; uses index, not projection
-      .skip(skip)
-      .limit(limit)
-      .lean();
-
-    // 4) Clean/flatten output (timestamps are already excluded)
-    const data = jobPosts.map(j => ({
-      _id: j._id,
-      company: j.companyId?.companyName ?? null,
-      companyImage: j.companyId?.image ?? null,
-      category: j.category?.name ?? null,
-      industryType: j.industryType?.name ?? null,
-      jobTitle: j.jobTitle,
-      jobDescription: j.jobDescription,
-      salaryType: j.salaryType,
-      displayPhoneNumber: j.displayPhoneNumber,
-      displayEmail: j.displayEmail,
-      jobType: j.jobType,
-      skills: j.skills,
-      minSalary: j.minSalary,
-      maxSalary: j.maxSalary,
-      state: j.state?.state ?? null,
-      experience: j.experience,
-      otherField: j.otherField,
-      status: j.status,
-      expiredDate: j.expiredDate,     // keep as ISO string from DB; format if needed
-      isDeleted: j.isDeleted,
-       jobPosted: daysAgo(j.createdAt) 
-    }));
-
-    // 5) Respond
-    res.status(200).json({
-      status: true,
-      message: "Job posts fetched successfully.",
-      totalRecord,
-      totalPage,
-      currentPage: page,
-      data
-    });
-
-  } catch (error) {
-    console.error("Error fetching job posts:", error);
-    res.status(500).json({
-      status: false,
-      message: "Failed to fetch job posts.",
       error: error.message
     });
   }

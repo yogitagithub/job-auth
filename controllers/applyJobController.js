@@ -4,6 +4,107 @@ const JobSeekerEducation = require("../models/Education");
 const WorkExperience = require("../models/WorkExperience");
 const Skill = require("../models/Skills");
 const Resume = require("../models/Resume");
+const JobPost = require("../models/JobPost");
+
+// exports.applyJobs = async (req, res) => {
+//   try {
+//     const { userId, role } = req.user;
+//     const { jobPostId } = req.body;
+
+//     // Only job seekers can apply
+//     if (role !== "job_seeker") {
+//       return res.status(403).json({
+//         status: false,
+//         message: "Only job seekers can apply for jobs."
+//       });
+//     }
+
+//     // Required field
+//     if (!jobPostId) {
+//       return res.status(400).json({
+//         status: false,
+//         message: "Job Post ID is required."
+//       });
+//     }
+
+//     // Prevent duplicate application for same user & job
+//     const existing = await JobApplication.findOne({ userId, jobPostId });
+//     if (existing) {
+//       return res.status(400).json({
+//         status: false,
+//         message: "You have already applied for this job."
+//       });
+//     }
+
+//     // Make sure job post exists & is available (optional but recommended)
+//     const jobPost = await JobPost.findById(jobPostId).select("_id isDeleted status");
+//     if (!jobPost || jobPost.isDeleted || jobPost.status === "inactive" || jobPost.status === "expired") {
+//       return res.status(400).json({
+//         status: false,
+//         message: "This job is not available to apply."
+//       });
+//     }
+
+//     // Ensure user has a profile
+//     const jobSeekerProfile = await JobSeekerProfile.findOne({ userId });
+//     if (!jobSeekerProfile) {
+//       return res.status(400).json({
+//         status: false,
+//         message: "Please complete your profile before applying."
+//       });
+//     }
+
+//     // Ensure key sections exist
+//     const [education, experience, skills, resume] = await Promise.all([
+//       JobSeekerEducation.findOne({ userId }),
+//       WorkExperience.findOne({ userId }),
+//       Skill.findOne({ userId }),
+//       Resume.findOne({ userId }),
+//     ]);
+
+//     if (!education || !experience || !skills || !resume) {
+//       return res.status(400).json({
+//         status: false,
+//         message:
+//           "Please complete your education, experience, skills, and upload resume before applying."
+//       });
+//     }
+
+//     // Create application with isApplied = true
+//     const application = await JobApplication.create({
+//       userId,
+//       jobSeekerId: jobSeekerProfile._id,
+//       jobPostId,
+//       educationId: education._id,
+//       experienceId: experience._id,
+//       skillsId: skills._id,
+//       resumeId: resume._id,
+//       isApplied: true,                // <-- set here
+//       status: "Applied"
+//     });
+
+//     // Optional: mark the JobPost as 'applied' (global flag on the post)
+//     await JobPost.updateOne({ _id: jobPostId }, { $set: { isApplied: true } });
+
+//     return res.status(201).json({
+//       status: true,
+//       message: "Job applied successfully.",
+//       data: {
+//         ...application.toObject(),
+//         isApplied: true, // explicit in response
+//         appliedAt: application.appliedAt.toISOString().split("T")[0],
+//       },
+//     });
+//   } catch (error) {
+//     console.error("Error applying job:", error);
+//     return res.status(500).json({
+//       status: false,
+//       message: "Server error.",
+//       error: error.message,
+//     });
+//   }
+// };
+
 
 exports.applyJobs = async (req, res) => {
   try {

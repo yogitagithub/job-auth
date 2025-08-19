@@ -49,6 +49,8 @@ const jobApplicationSchema = new mongoose.Schema(
       default: "Pending"
     },
 
+    
+
     appliedAt: {
       type: Date,
       default: Date.now,

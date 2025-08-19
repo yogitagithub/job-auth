@@ -42,8 +42,9 @@ const jobPostSchema = new mongoose.Schema(
     },
 
     salaryType: {
-      type: String,
-      enum: ["Hourly", "Weekly", "Monthly"],
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "SalaryType",
+      required: true
     },
 
     displayPhoneNumber: {
@@ -57,16 +58,9 @@ const jobPostSchema = new mongoose.Schema(
     },
 
     jobType: {
-      type: String,
-      enum: [
-
-        "On-Site",
-        "Full Time Remote",
-        "Full Time On-Site",
-        "Part Time Remote",
-        "Part Time On-Site",
-        "Contractual"
-      ],
+     type: mongoose.Schema.Types.ObjectId,
+      ref: "JobType",
+      required: true
     },
 
     skills: {
@@ -88,18 +82,15 @@ const jobPostSchema = new mongoose.Schema(
     },
 
     experience: {
-      type: String,
-      enum: [
-        "Fresher",
-        "1 - 3 Years",
-        "3 - 5 Years",
-        "5+ Years",
-      ],
+     type: mongoose.Schema.Types.ObjectId,
+      ref: "ExperienceRange",
+      required: true
     },
 
     otherField: {
-      type: String,
-      default: "Other",
+     type: mongoose.Schema.Types.ObjectId,
+      ref: "OtherField",
+      required: true
     },
 
     status: {
@@ -117,7 +108,10 @@ const jobPostSchema = new mongoose.Schema(
      required: true
    },
 
- 
+    isApplied: {
+      type: Boolean,
+      default: false
+    },
 
     isDeleted: {
       type: Boolean,
