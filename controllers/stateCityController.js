@@ -99,6 +99,9 @@ exports.getCitiesByStatePublic = async (req, res) => {
   }
 };
 
+
+
+
 // exports.getCitiesByStatePublic = async (req, res) => {
 //   try {
 //     const { state } = req.query;
