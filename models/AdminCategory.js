@@ -5,7 +5,13 @@ const categorySchema = new mongoose.Schema({
   name: { type: String, 
     required: true, 
     unique: true, 
-    trim: true }
+    trim: true },
+
+     image: { 
+      type: String, 
+      required: false, 
+      trim: true 
+    }
     
 }, 
 { timestamps: true });

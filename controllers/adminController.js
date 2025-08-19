@@ -254,6 +254,50 @@ exports.deleteCategory = async (req, res) => {
   }
 };
 
+exports.getAllCategoriesPublic = async (req, res) => {
+  try {
+    const page  = parseInt(req.query.page, 10)  || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const skip  = (page - 1) * limit;
+
+    // 1) Count for pagination
+    const totalRecord = await Category.countDocuments();
+    const totalPage   = Math.ceil(totalRecord / limit);
+
+    // 2) Fetch categories (sorted alphabetically)
+    const categories = await Category.find()
+      .sort({ name: 1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    // 3) Shape response
+    const data = categories.map(c => ({
+      id: c._id,
+      name: c.name
+    }));
+
+    // 4) Respond
+    return res.status(200).json({
+      status: true,
+      message: "Categories fetched successfully.",
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data
+    });
+
+  } catch (error) {
+    console.error("Error fetching public categories:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to fetch categories.",
+      error: error.message
+    });
+  }
+};
+
+
 
 //Industry Type
 exports.createIndustry = async (req, res) => {
@@ -363,6 +407,49 @@ exports.deleteIndustry = async (req, res) => {
     res.json({ status: true, message: "Industry deleted" });
   } catch (err) {
     res.status(500).json({ status: false, message: "Error deleting industry" });
+  }
+};
+
+
+exports.getAllIndustriesPublic = async (req, res) => {
+  try {
+    const page  = parseInt(req.query.page, 10)  || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const skip  = (page - 1) * limit;
+
+    // 1) Count for pagination
+    const totalRecord = await IndustryType.countDocuments();
+    const totalPage   = Math.ceil(totalRecord / limit);
+
+    // 2) Fetch industries (sorted A→Z)
+    const industries = await IndustryType.find()
+      .sort({ name: 1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    // 3) Shape response
+    const data = industries.map(ind => ({
+      id: ind._id,
+      name: ind.name
+    }));
+
+    // 4) Respond
+    return res.status(200).json({
+      status: true,
+      message: "Industry types fetched successfully.",
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data
+    });
+  } catch (error) {
+    console.error("Error fetching public industry types:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to fetch industry types.",
+      error: error.message
+    });
   }
 };
 

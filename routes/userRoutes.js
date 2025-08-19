@@ -5,7 +5,8 @@ const { getIndustryBasedOnRole, getCategoryBasedOnRole,
     getJobProfileBasedOnRole, getSalaryTypeBasedOnRole, 
     getExperienceRangeBasedOnRole, getJobTypeBasedOnRole, 
     getOtherFieldBasedOnRole, 
-    getJobPostsByCategoryPublic } = require('../controllers/adminController');
+    getJobPostsByCategoryPublic, getAllCategoriesPublic,
+getAllIndustriesPublic } = require('../controllers/adminController');
     
 const { verifyToken, verifyJobSeekerOnly, verifyEmployerOnly } = require('../middleware/authMiddleware');
 
@@ -23,6 +24,9 @@ router.post('/send-otp-website', sendOtpWebsite);
 //get category and industry list for employer and job_seeker
 router.get('/industries', verifyToken, getIndustryBasedOnRole);
 router.get('/categories', verifyToken, getCategoryBasedOnRole);
+router.get("/public-categories", getAllCategoriesPublic);
+router.get("/public-industries", getAllIndustriesPublic);
+
 
 //get job profile list for job_seeker
 router.get("/job-profile", verifyToken, verifyJobSeekerOnly, getJobProfileBasedOnRole);

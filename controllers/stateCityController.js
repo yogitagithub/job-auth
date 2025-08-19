@@ -26,3 +26,65 @@ exports.getCitiesByState = async (req, res) => {
     res.status(500).json({ status: false, message: "Server error" });
   }
 };
+
+
+exports.getAllStatesPublic = async (req, res) => {
+  try {
+    const states = await StateCity.find()
+      .select("state -_id")
+      .sort({ state: 1 })
+      .lean();
+
+    return res.status(200).json({
+      status: true,
+      message: "States fetched successfully.",
+      data: states.map(s => s.state)
+    });
+  } catch (error) {
+    console.error("Error fetching states:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Server error",
+      error: error.message
+    });
+  }
+};
+
+exports.getCitiesByStatePublic = async (req, res) => {
+  try {
+    const { state } = req.query;
+    if (!state || !state.trim()) {
+      return res
+        .status(400)
+        .json({ status: false, message: "State is required" });
+    }
+
+    // exact match (case-sensitive)
+    const result = await StateCity.findOne({ state: state.trim() })
+      .select("state cities -_id")
+      .lean();
+
+    if (!result) {
+      return res
+        .status(404)
+        .json({ status: false, message: "State not found" });
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "Cities fetched successfully.",
+      data: {
+        state: result.state,
+        cities: result.cities || []
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching cities:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Server error",
+      error: error.message
+    });
+  }
+};
+

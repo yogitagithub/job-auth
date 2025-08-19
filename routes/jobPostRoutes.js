@@ -1,6 +1,11 @@
 const express = require("express");
 const router = express.Router();
-const { createJobPost, getAllJobPosts, getJobPostById, updateJobPostById, updateJobPostStatus, deleteJobPostById, getAllJobPostsPublic } = require('../controllers/jobPostController');
+
+const { createJobPost, getAllJobPosts, 
+    getJobPostById, updateJobPostById, 
+    updateJobPostStatus, deleteJobPostById, 
+    getAllJobPostsPublic } = require('../controllers/jobPostController');
+    
 const { verifyToken } = require('../middleware/authMiddleware');
 
 
