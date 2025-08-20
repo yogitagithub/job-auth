@@ -345,7 +345,7 @@ exports.getJobPostById = async (req, res) => {
   }
 };
 
-
+//get all job list without token filter by jobTitle and state
 exports.getAllJobPostsPublic = async (req, res) => {
   try {
     const page  = parseInt(req.query.page, 10)  || 1;
