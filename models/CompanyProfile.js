@@ -69,6 +69,7 @@ const companyProfileSchema = new mongoose.Schema({
 
   aboutCompany: {
      type: String,
+      default: null,
     trim: true
   },
 

@@ -741,4 +741,79 @@ exports.deleteJobPostById = async (req, res) => {
   }
 };
 
+//get job details by job post id without token
+exports.getJobDetailsPublic = async (req, res) => {
+  try {
+    const { id } = req.params;
 
+    // fetch job by id (non-deleted only)
+    let jobPost = await JobPost.findOne({ _id: id, isDeleted: false })
+      .select("-updatedAt -__v")
+      .populate({ path: "companyId",    select: "companyName image aboutCompany" })
+      .populate({ path: "category",     select: "name" })
+      .populate({ path: "industryType", select: "name" })
+      .populate({ path: "salaryType",   select: "name" })
+      .populate({ path: "jobType",      select: "name" })
+      .populate({ path: "experience",   select: "name" })
+      .populate({ path: "otherField",   select: "name" })
+      .populate({ path: "state",        select: "state" });
+
+    if (!jobPost) {
+      return res.status(404).json({ status: false, message: "Job post not found." });
+    }
+
+    // auto-mark expired
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (jobPost.expiredDate && jobPost.expiredDate < today && jobPost.status !== "expired") {
+      jobPost.status = "expired";
+      await jobPost.save();
+    }
+
+    const data = {
+      _id: jobPost._id,
+
+      company:        jobPost.companyId?.companyName ?? null,
+      companyImage:   jobPost.companyId?.image ?? null,
+      aboutCompany:   jobPost.companyId?.aboutCompany ?? null,
+
+      category:       jobPost.category?.name ?? null,
+      industryType:   jobPost.industryType?.name ?? null,
+      salaryType:     jobPost.salaryType?.name ?? null,
+      jobType:        jobPost.jobType?.name ?? null,
+      experience:     jobPost.experience?.name ?? null,
+      otherField:     jobPost.otherField?.name ?? null,
+      state:          jobPost.state?.state ?? null,
+
+      jobTitle:           jobPost.jobTitle ?? null,
+      jobDescription:     jobPost.jobDescription ?? null,
+      skills:             jobPost.skills ?? null,
+      minSalary:          jobPost.minSalary ?? null,
+      maxSalary:          jobPost.maxSalary ?? null,
+      displayPhoneNumber: jobPost.displayPhoneNumber ?? null,
+      displayEmail:       jobPost.displayEmail ?? null,
+      hourlyRate:         jobPost.hourlyRate ?? null,
+
+      status:      jobPost.status,
+      isApplied:   !!jobPost.isApplied,
+      expiredDate: jobPost.expiredDate ? jobPost.expiredDate.toISOString().split("T")[0] : null,
+
+      createdAt: jobPost.createdAt,
+      jobPosted: daysAgo(jobPost.createdAt)
+    };
+
+    return res.status(200).json({
+      status: true,
+      message: "Job details fetched successfully.",
+      data
+    });
+
+  } catch (error) {
+    console.error("Error fetching job post by ID (public):", error);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to fetch job details.",
+      error: error.message
+    });
+  }
+};

@@ -6,7 +6,6 @@ const fs = require("fs");
 const fsp = fs.promises;
 const path = require("path");
 
-
 exports.saveProfile = async (req, res) => {
   try {
     const { userId, role, phoneNumber } = req.user;
@@ -25,7 +24,12 @@ exports.saveProfile = async (req, res) => {
       });
     }
 
-  
+    // 🔹 Normalize aboutCompany
+    if (!req.body.aboutCompany || !req.body.aboutCompany.trim()) {
+      req.body.aboutCompany = null;
+    }
+
+    // 🔹 Handle industryType by name
     if (req.body.industryType) {
       const industry = await IndustryType.findOne({ name: req.body.industryType });
       if (!industry) {
@@ -37,7 +41,7 @@ exports.saveProfile = async (req, res) => {
       req.body.industryType = industry._id;
     }
 
-   
+    // 🔹 Handle state + city
     if (req.body.state && req.body.city) {
       const stateDoc = await StateCity.findOne({ state: req.body.state });
       if (!stateDoc) {
@@ -46,16 +50,12 @@ exports.saveProfile = async (req, res) => {
           message: "Invalid state name."
         });
       }
-
-    
       if (!stateDoc.cities.includes(req.body.city)) {
         return res.status(400).json({
           status: false,
           message: "Invalid city for the selected state."
         });
       }
-
-    
       req.body.state = stateDoc._id;
     } else {
       return res.status(400).json({
@@ -64,7 +64,7 @@ exports.saveProfile = async (req, res) => {
       });
     }
 
-   
+    // 🔹 Create or Update
     let profile = await CompanyProfile.findOne({ userId });
 
     if (!profile) {
@@ -73,7 +73,6 @@ exports.saveProfile = async (req, res) => {
         phoneNumber,
         ...req.body
       });
-
       await profile.save();
     } else {
       const restrictedFields = ["_id", "userId", "phoneNumber", "__v", "image"];
@@ -82,23 +81,23 @@ exports.saveProfile = async (req, res) => {
           profile[field] = req.body[field];
         }
       });
-
       await profile.save();
     }
 
-  
+    // 🔹 Populate response
     const populatedProfile = await CompanyProfile.findById(profile._id)
-      .populate("state", "state")         
-      .populate("industryType", "name"); 
+      .populate("state", "state")
+      .populate("industryType", "name");
 
     return res.status(200).json({
       status: true,
       message: "Company profile saved successfully.",
       data: {
         ...populatedProfile.toObject(),
-        state: populatedProfile.state?.state || null, 
-        city: populatedProfile.city,                 
-        industryType: populatedProfile.industryType?.name || null
+        state: populatedProfile.state?.state || null,
+        city: populatedProfile.city,
+        industryType: populatedProfile.industryType?.name || null,
+        aboutCompany: populatedProfile.aboutCompany || null   // ✅ ensure always in response
       }
     });
 

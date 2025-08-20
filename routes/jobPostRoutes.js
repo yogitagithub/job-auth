@@ -4,7 +4,7 @@ const router = express.Router();
 const { createJobPost, getAllJobPosts, 
     getJobPostById, updateJobPostById, 
     updateJobPostStatus, deleteJobPostById, 
-    getAllJobPostsPublic } = require('../controllers/jobPostController');
+    getAllJobPostsPublic, getJobDetailsPublic } = require('../controllers/jobPostController');
     
 const { verifyToken } = require('../middleware/authMiddleware');
 
@@ -18,7 +18,15 @@ router.delete('/delete-job-post', verifyToken, deleteJobPostById);
 
 
 router.put("/jobPostStatus", verifyToken, updateJobPostStatus);
+
+//get all job post without token
 router.get("/public-jobs", getAllJobPostsPublic);
+
+//get job details by job id without token
+router.get("/public-job-details/:id", getJobDetailsPublic);
+
+
+
 
 
 module.exports = router;
