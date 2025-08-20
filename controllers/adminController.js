@@ -243,6 +243,7 @@ exports.getCategory = async (req, res) => {
   }
 };
 
+
 exports.updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
@@ -253,12 +254,20 @@ exports.updateCategory = async (req, res) => {
       return res.status(404).json({ status: false, message: "Category not found" });
     }
 
-    // 2) Update name only if provided
+    // 2) Block update if category is already soft deleted
+    if (category.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "This category is already soft deleted. Update not allowed."
+      });
+    }
+
+    // 3) Update name only if provided
     if (req.body && typeof req.body.name === "string" && req.body.name.trim()) {
       category.name = req.body.name.trim();
     }
 
-    // 3) If a new image was uploaded, delete old file and set NEW URL
+    // 4) If a new image was uploaded, delete old file and set NEW URL
     if (req.file) {
       const uploadDir = path.join(__dirname, "..", "uploads", "images");
       const baseUrl   = process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
@@ -276,7 +285,7 @@ exports.updateCategory = async (req, res) => {
       category.image = `${baseUrl}/uploads/images/${req.file.filename}`;
     }
 
-    // 4) Save
+    // 5) Save
     await category.save();
 
     return res.json({
@@ -285,7 +294,8 @@ exports.updateCategory = async (req, res) => {
       data: {
         id: category._id,
         name: category.name,
-        image: category.image || null
+        image: category.image || null,
+        isDeleted: category.isDeleted
       }
     });
 
@@ -302,22 +312,38 @@ exports.deleteCategory = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Instead of deleting the document, mark it as deleted
-    const deleted = await Category.findByIdAndUpdate(
-      id,
-      { isDeleted: true },
-      { new: true }
-    );
+    // 1) Find the category first
+    const category = await Category.findById(id);
 
-    if (!deleted) {
-      return res.status(404).json({ status: false, message: "Category not found" });
+    if (!category) {
+      return res.status(404).json({
+        status: false,
+        message: "Category not found"
+      });
     }
+
+    // 2) Block re-deleting an already soft-deleted category
+    if (category.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "This category is already soft deleted."
+      });
+    }
+
+    // 3) Soft delete
+    category.isDeleted = true;
+    await category.save();
 
     return res.json({
       status: true,
       message: "Category soft deleted successfully",
-    
+      data: {
+        id: category._id,
+        name: category.name,
+        isDeleted: category.isDeleted
+      }
     });
+
   } catch (err) {
     console.error("Error soft deleting category:", err);
     return res.status(500).json({
@@ -328,7 +354,6 @@ exports.deleteCategory = async (req, res) => {
   }
 };
 
-//get categories of employer and job seeker
 exports.getCategoryBasedOnRole = async (req, res) => {
   try {
     const { role } = req.user;
@@ -558,21 +583,44 @@ exports.createIndustry = async (req, res) => {
   }
 };
 
+// get industry for admin
 exports.getIndustry = async (req, res) => {
   try {
-    const industries = await IndustryType.find().sort({ name: 1 }).lean(); 
+    const page  = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const skip  = (page - 1) * limit;
+
+    // ✅ Only fetch industries that are not deleted
+    const filter = { isDeleted: false };
+
+    // Count total records (excluding deleted)
+    const totalRecord = await IndustryType.countDocuments(filter);
+    const totalPage   = Math.ceil(totalRecord / limit);
+
+    // Fetch with pagination
+    const industries = await IndustryType.find(filter)
+      .sort({ name: 1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    // Format response
     const formattedIndustries = industries.map(industry => ({
       id: industry._id,
-      name: industry.name
+      name: industry.name,
+      isDeleted: industry.isDeleted
     }));
 
-    res.status(200).json({
+    return res.status(200).json({
       status: true,
       message: "Industry types fetched successfully.",
+      totalRecord,
+      totalPage,
+      currentPage: page,
       data: formattedIndustries
     });
   } catch (err) {
-    res.status(500).json({
+    return res.status(500).json({
       status: false,
       message: "Error fetching industry types.",
       error: err.message
@@ -580,11 +628,11 @@ exports.getIndustry = async (req, res) => {
   }
 };
 
+//get industry for employer and job seeker
 exports.getIndustryBasedOnRole = async (req, res) => {
   try {
     const { role } = req.user;
 
-   
     if (!["employer", "job_seeker"].includes(role)) {
       return res.status(403).json({
         status: false,
@@ -592,9 +640,27 @@ exports.getIndustryBasedOnRole = async (req, res) => {
       });
     }
 
-    const industries = await IndustryType.find().sort({ name: 1 }).lean();
+    // pagination params
+    const page  = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const skip  = (page - 1) * limit;
 
-    const formattedIndustries = industries.map(industry => ({
+    // only non-deleted industries
+    const filter = { isDeleted: false };
+
+    // count for pagination
+    const totalRecord = await IndustryType.countDocuments(filter);
+    const totalPage   = Math.ceil(totalRecord / limit);
+
+    // fetch page
+    const industries = await IndustryType.find(filter)
+      .sort({ name: 1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    // shape response
+    const data = industries.map(industry => ({
       id: industry._id,
       name: industry.name
     }));
@@ -602,7 +668,10 @@ exports.getIndustryBasedOnRole = async (req, res) => {
     return res.status(200).json({
       status: true,
       message: `${role} industries fetched successfully.`,
-      data: formattedIndustries
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data
     });
   } catch (error) {
     return res.status(500).json({
@@ -618,40 +687,100 @@ exports.updateIndustry = async (req, res) => {
     const { id } = req.params;
     const { name } = req.body;
 
-    const updated = await IndustryType.findByIdAndUpdate(id, { name }, { new: true });
-    if (!updated) return res.status(404).json({ status: false, message: "Industry not found" });
+    // 1) Find the industry first
+    const industry = await IndustryType.findById(id);
 
-    res.json({ status: true, message: "Updated successfully", data: updated });
+    if (!industry) {
+      return res.status(404).json({ status: false, message: "Industry not found" });
+    }
+
+    // 2) Block update if already soft-deleted
+    if (industry.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "This industry is already soft deleted. Update not allowed."
+      });
+    }
+
+    // 3) Update name only if provided
+    if (name && name.trim()) {
+      industry.name = name.trim();
+    }
+
+    await industry.save();
+
+    return res.json({
+      status: true,
+      message: "Updated successfully",
+      data: {
+        id: industry._id,
+        name: industry.name,
+        isDeleted: industry.isDeleted
+      }
+    });
   } catch (err) {
-    res.status(500).json({ status: false, message: "Error updating industry" });
+    return res.status(500).json({
+      status: false,
+      message: "Error updating industry",
+      error: err.message
+    });
   }
 };
 
 exports.deleteIndustry = async (req, res) => {
   try {
     const { id } = req.params;
-    const deleted = await IndustryType.findByIdAndDelete(id);
-    if (!deleted) return res.status(404).json({ status: false, message: "Not found" });
 
-    res.json({ status: true, message: "Industry deleted" });
+    // 1) Find industry
+    const industry = await IndustryType.findById(id);
+
+    if (!industry) {
+      return res.status(404).json({
+        status: false,
+        message: "Industry not found"
+      });
+    }
+
+    // 2) If already soft-deleted → block re-deletion
+    if (industry.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "This industry is already soft deleted."
+      });
+    }
+
+    // 3) Soft delete (set flag true)
+    industry.isDeleted = true;
+    await industry.save();
+
+    return res.json({
+      status: true,
+      message: "Industry soft deleted successfully"
+    });
   } catch (err) {
-    res.status(500).json({ status: false, message: "Error deleting industry" });
+    return res.status(500).json({
+      status: false,
+      message: "Error deleting industry",
+      error: err.message
+    });
   }
 };
 
-
+//get industries without token
 exports.getAllIndustriesPublic = async (req, res) => {
   try {
-    const page  = parseInt(req.query.page, 10)  || 1;
+    const page  = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
     const skip  = (page - 1) * limit;
 
+    const filter = { isDeleted: false }; // ✅ exclude soft-deleted
+
     // 1) Count for pagination
-    const totalRecord = await IndustryType.countDocuments();
+    const totalRecord = await IndustryType.countDocuments(filter);
     const totalPage   = Math.ceil(totalRecord / limit);
 
-    // 2) Fetch industries (sorted A→Z)
-    const industries = await IndustryType.find()
+    // 2) Fetch industries (sorted A→Z, only not deleted)
+    const industries = await IndustryType.find(filter)
       .sort({ name: 1 })
       .skip(skip)
       .limit(limit)
@@ -660,7 +789,8 @@ exports.getAllIndustriesPublic = async (req, res) => {
     // 3) Shape response
     const data = industries.map(ind => ({
       id: ind._id,
-      name: ind.name
+      name: ind.name,
+      isDeleted: ind.isDeleted  // optional → remove if you don’t want to expose
     }));
 
     // 4) Respond
