@@ -965,7 +965,7 @@ exports.deleteProfile = async (req, res) => {
   }
 };
 
-//get job profile for employer and job seeker
+//get job profile for job seeker
 exports.getJobProfileBasedOnRole = async (req, res) => {
   try {
     // verifyToken + verifyJobSeekerOnly already ran
@@ -1187,14 +1187,30 @@ exports.deleteExperience = async (req, res) => {
   try {
     const { id } = req.body || {};
     if (!id || !mongoose.isValidObjectId(id)) {
-      return res.status(400).json({ status: false, message: "Valid id is required" });
+      return res.status(400).json({
+        status: false,
+        message: "Valid id is required"
+      });
     }
 
     const doc = await Experience.findById(id);
-    if (!doc || doc.isDeleted) {
-      return res.status(404).json({ status: false, message: "Experience range not found" });
+
+    if (!doc) {
+      return res.status(404).json({
+        status: false,
+        message: "Experience range not found"
+      });
     }
 
+    // 🚫 Already soft deleted
+    if (doc.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "This experience is already soft deleted."
+      });
+    }
+
+    // ✅ Soft delete now
     doc.isDeleted = true;
     await doc.save();
 
@@ -1202,13 +1218,18 @@ exports.deleteExperience = async (req, res) => {
       status: true,
       message: "Experience range deleted successfully."
     });
+
   } catch (err) {
     console.error("deleteExperience error:", err);
-    return res.status(500).json({ status: false, message: "Server error" });
+    return res.status(500).json({
+      status: false,
+      message: "Server error",
+      error: err.message
+    });
   }
 };
 
-//get experience for employer and job seeker
+//get experience for employer 
 exports.getExperienceRangeBasedOnRole = async (req, res) => {
   try {
     // verifyToken + verifyEmployerOnly already enforced at the route
@@ -1303,8 +1324,17 @@ exports.updateJobType = async (req, res) => {
     }
 
     const doc = await JobType.findById(id);
-    if (!doc || doc.isDeleted) {
+
+    if (!doc) {
       return res.status(404).json({ status: false, message: "Job type not found" });
+    }
+
+    // ❌ Safeguard: prevent updates if already soft deleted
+    if (doc.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "This job type is already soft deleted and cannot be updated."
+      });
     }
 
     // duplicate guard among active docs
@@ -1314,7 +1344,10 @@ exports.updateJobType = async (req, res) => {
       name: { $regex: `^${escapeRegex(name)}$`, $options: "i" }
     });
     if (dupe) {
-      return res.status(409).json({ status: false, message: "Another job type with this name already exists" });
+      return res.status(409).json({
+        status: false,
+        message: "Another job type with this name already exists"
+      });
     }
 
     doc.name = name;
@@ -1368,10 +1401,20 @@ exports.deleteJobType = async (req, res) => {
     }
 
     const doc = await JobType.findById(id);
-    if (!doc || doc.isDeleted) {
+
+    if (!doc) {
       return res.status(404).json({ status: false, message: "Job type not found" });
     }
 
+    // ❌ Already soft-deleted → block with 400 (your requested message)
+    if (doc.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "This job profile is already soft deleted."
+      });
+    }
+
+    // ✅ Soft delete
     doc.isDeleted = true;
     await doc.save();
 
@@ -1381,11 +1424,11 @@ exports.deleteJobType = async (req, res) => {
     });
   } catch (err) {
     console.error("deleteJobType error:", err);
-    return res.status(500).json({ status: false, message: "Server error" });
+    return res.status(500).json({ status: false, message: "Server error", error: err.message });
   }
 };
 
-
+//get job type for employer and job seeker
 exports.getJobTypeBasedOnRole = async (req, res) => {
   try {
     const role = req.user?.role;
@@ -1467,6 +1510,7 @@ exports.createSalaryType = async (req, res) => {
   }
 };
 
+
 exports.updateSalaryType = async (req, res) => {
   try {
     const { id } = req.body || {};
@@ -1480,18 +1524,29 @@ exports.updateSalaryType = async (req, res) => {
     }
 
     const doc = await SalaryType.findById(id);
-    if (!doc || doc.isDeleted) {
+    if (!doc) {
       return res.status(404).json({ status: false, message: "Salary type not found" });
     }
 
-    // duplicate guard among active docs (case-insensitive)
+    // ❌ Block updates on soft-deleted docs
+    if (doc.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "This salary type is already soft deleted and cannot be updated."
+      });
+    }
+
+    // Duplicate guard among active docs (case-insensitive exact match)
     const dupe = await SalaryType.findOne({
       _id: { $ne: id },
       isDeleted: false,
       name: { $regex: `^${escapeRegex(name)}$`, $options: "i" }
     });
     if (dupe) {
-      return res.status(409).json({ status: false, message: "Another salary type with this name already exists" });
+      return res.status(409).json({
+        status: false,
+        message: "Another salary type with this name already exists"
+      });
     }
 
     doc.name = name;
@@ -1500,14 +1555,21 @@ exports.updateSalaryType = async (req, res) => {
     return res.status(200).json({
       status: true,
       message: "Salary type updated successfully.",
-      data: doc
+      data: {
+        id: doc._id,
+        name: doc.name,
+        isDeleted: doc.isDeleted
+      }
     });
   } catch (err) {
     console.error("updateSalaryType error:", err);
-    return res.status(500).json({ status: false, message: "Server error" });
+    return res.status(500).json({ status: false, message: "Server error", error: err.message });
   }
 };
 
+
+
+//get salary type for admin
 exports.getSalaryTypes = async (req, res) => {
   try {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
@@ -1542,14 +1604,30 @@ exports.deleteSalaryType = async (req, res) => {
   try {
     const { id } = req.body || {};
     if (!id || !mongoose.isValidObjectId(id)) {
-      return res.status(400).json({ status: false, message: "Valid id is required" });
+      return res.status(400).json({
+        status: false,
+        message: "Valid id is required"
+      });
     }
 
     const doc = await SalaryType.findById(id);
-    if (!doc || doc.isDeleted) {
-      return res.status(404).json({ status: false, message: "Salary type not found" });
+
+    if (!doc) {
+      return res.status(404).json({
+        status: false,
+        message: "Salary type not found"
+      });
     }
 
+    // 🚫 Already soft deleted
+    if (doc.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "This is already soft deleted."
+      });
+    }
+
+    // ✅ Soft delete
     doc.isDeleted = true;
     await doc.save();
 
@@ -1557,13 +1635,18 @@ exports.deleteSalaryType = async (req, res) => {
       status: true,
       message: "Salary type deleted successfully."
     });
+
   } catch (err) {
     console.error("deleteSalaryType error:", err);
-    return res.status(500).json({ status: false, message: "Server error" });
+    return res.status(500).json({
+      status: false,
+      message: "Server error",
+      error: err.message
+    });
   }
 };
 
-
+//get salary types for employer and job seeker
 exports.getSalaryTypeBasedOnRole = async (req, res) => {
   try {
     const role = req.user?.role;
@@ -1657,35 +1740,53 @@ exports.updateOtherField = async (req, res) => {
       return res.status(400).json({ status: false, message: "Valid id is required" });
     }
     if (!name) {
-      return res.status(400).json({ status: false, message: "name is required" });
+      return res.status(400).json({ status: false, message: "Name is required" });
     }
 
     const doc = await OtherField.findById(id);
-    if (!doc || doc.isDeleted) {
+
+    if (!doc) {
       return res.status(404).json({ status: false, message: "Other field not found" });
     }
 
-    // duplicate guard among active docs (case-insensitive)
-    const dupe = await OtherField.findOne({
-      _id: { $ne: id },
-      isDeleted: false,
-      name: { $regex: `^${escapeRegex(name)}$`, $options: "i" }
-    });
-    if (dupe) {
-      return res.status(409).json({ status: false, message: "Another other field with this name already exists" });
+    // 🚨 block updates on soft-deleted records
+    if (doc.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "This other field is already soft deleted and cannot be updated."
+      });
     }
 
     doc.name = name;
-    await doc.save();
+
+    try {
+      await doc.save(); // may throw E11000 duplicate key error
+    } catch (err) {
+      if (err.code === 11000) {
+        return res.status(409).json({
+          status: false,
+          message: "Another other field with this name already exists"
+        });
+      }
+      throw err;
+    }
 
     return res.status(200).json({
       status: true,
       message: "Other field updated successfully.",
-      data: doc
+      data: {
+        id: doc._id,
+        name: doc.name,
+        isDeleted: doc.isDeleted
+      }
     });
   } catch (err) {
     console.error("updateOtherField error:", err);
-    return res.status(500).json({ status: false, message: "Server error" });
+    return res.status(500).json({
+      status: false,
+      message: "Server error",
+      error: err.message
+    });
   }
 };
 
@@ -1697,8 +1798,16 @@ exports.deleteOtherField = async (req, res) => {
     }
 
     const doc = await OtherField.findById(id);
-    if (!doc || doc.isDeleted) {
+
+    if (!doc) {
       return res.status(404).json({ status: false, message: "Other field not found" });
+    }
+
+    if (doc.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "This is already soft deleted."
+      });
     }
 
     doc.isDeleted = true;
@@ -1706,14 +1815,19 @@ exports.deleteOtherField = async (req, res) => {
 
     return res.status(200).json({
       status: true,
-      message: "Other field deleted successfully."
+      message: "Other field soft deleted successfully."
     });
   } catch (err) {
     console.error("deleteOtherField error:", err);
-    return res.status(500).json({ status: false, message: "Server error" });
+    return res.status(500).json({
+      status: false,
+      message: "Server error",
+      error: err.message
+    });
   }
 };
 
+//get for admin
 exports.getOtherField = async (req, res) => {
   try {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
@@ -1743,6 +1857,7 @@ exports.getOtherField = async (req, res) => {
   }
 };
 
+//get for employer
 exports.getOtherFieldBasedOnRole = async (req, res) => {
   try {
     // verifyToken + verifyEmployerOnly already run at the route
