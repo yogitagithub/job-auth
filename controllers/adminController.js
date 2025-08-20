@@ -965,7 +965,7 @@ exports.deleteProfile = async (req, res) => {
   }
 };
 
-
+//get job profile for employer and job seeker
 exports.getJobProfileBasedOnRole = async (req, res) => {
   try {
     // verifyToken + verifyJobSeekerOnly already ran
@@ -1113,8 +1113,16 @@ exports.updateExperience = async (req, res) => {
     }
 
     const doc = await Experience.findById(id);
-    if (!doc || doc.isDeleted) {
+    if (!doc) {
       return res.status(404).json({ status: false, message: "Experience range not found" });
+    }
+
+    // ❌ Block updates on soft-deleted docs
+    if (doc.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "This job profile is already soft deleted and cannot be updated."
+      });
     }
 
     // Prevent duplicate name (case-insensitive) among non-deleted docs
@@ -1144,6 +1152,7 @@ exports.updateExperience = async (req, res) => {
   }
 };
 
+//get experience of admin
 exports.getExperience = async (req, res) => {
   try {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
@@ -1199,7 +1208,7 @@ exports.deleteExperience = async (req, res) => {
   }
 };
 
-
+//get experience for employer and job seeker
 exports.getExperienceRangeBasedOnRole = async (req, res) => {
   try {
     // verifyToken + verifyEmployerOnly already enforced at the route
