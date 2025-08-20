@@ -67,6 +67,11 @@ const companyProfileSchema = new mongoose.Schema({
     trim: true
   },
 
+  aboutCompany: {
+     type: String,
+    trim: true
+  },
+
    isDeleted: { 
     type: Boolean, 
     default: false 

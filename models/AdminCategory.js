@@ -11,6 +11,11 @@ const categorySchema = new mongoose.Schema({
       type: String, 
       required: false, 
       trim: true 
+    },
+
+        isDeleted: {
+        type: Boolean,
+        default: false
     }
     
 }, 

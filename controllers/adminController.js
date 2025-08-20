@@ -16,6 +16,10 @@ const JobSeekerProfile = require("../models/JobSeekerProfile");
 const User = require('../models/User');
 const JobPost = require("../models/JobPost");
 
+const fs = require("fs");
+const fsp = fs.promises;
+const path = require("path");
+
 const ADMIN_PHONE = '1234567809';
 const STATIC_OTP = '1111';
 
@@ -144,26 +148,43 @@ exports.verifyAdminOtp = async (req, res) => {
 exports.createCategory = async (req, res) => {
   try {
     const { name } = req.body;
-    if (!name) {
+
+    if (!name || !name.trim()) {
       return res.status(400).json({ status: false, message: "Name required" });
     }
 
-    const category = new Category({ name });
+    if (!req.file) {
+      return res.status(400).json({ status: false, message: "Image file is required." });
+    }
+
+    // Build absolute URL for the uploaded image
+    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
+    const imageUrl = `${baseUrl}/uploads/images/${req.file.filename}`;
+
+    const category = new Category({
+      name: name.trim(),
+      image: imageUrl
+    });
+
     await category.save();
 
-   
     const formattedCategory = {
       id: category._id,
-      name: category.name
+      name: category.name,
+      image: category.image
     };
 
-    res.status(201).json({
+    return res.status(201).json({
       status: true,
       message: "Category created",
       data: formattedCategory
     });
+
   } catch (err) {
-    res.status(500).json({
+    if (err?.code === 11000) {
+      return res.status(409).json({ status: false, message: "Category name already exists." });
+    }
+    return res.status(500).json({
       status: false,
       message: "Error creating category",
       error: err.message
@@ -171,52 +192,46 @@ exports.createCategory = async (req, res) => {
   }
 };
 
+//get categories of admin
 exports.getCategory = async (req, res) => {
   try {
-    const categories = await Category.find().sort({ name: 1 }).lean(); 
+    // pagination params
+    const pageRaw  = parseInt(req.query.page, 10);
+    const limitRaw = parseInt(req.query.limit, 10);
 
-    const formattedCategories = categories.map(cat => ({
+    const page  = Number.isFinite(pageRaw)  && pageRaw  > 0 ? pageRaw  : 1;
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : 10;
+    const skip  = (page - 1) * limit;
+
+    const filter = { isDeleted: false };
+
+    // 1) Count for pagination
+    const totalRecord = await Category.countDocuments(filter);
+    const totalPage   = Math.ceil(totalRecord / limit) || 1;
+
+    // 2) Fetch page
+    const categories = await Category.find(filter)
+      .sort({ name: 1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    // 3) Shape response
+    const data = categories.map(cat => ({
       id: cat._id,
-      name: cat.name
+      name: cat.name,
+      image: cat.image || null,
+      isDeleted: cat.isDeleted
     }));
 
-    res.status(200).json({
-      status: true,
-      message: "Categories fetched successfully.",
-      data: formattedCategories
-    });
-  } catch (err) {
-    res.status(500).json({
-      status: false,
-      message: "Error fetching categories",
-      error: err.message
-    });
-  }
-};
-
-
-exports.getCategoryBasedOnRole = async (req, res) => {
-  try {
-    const { role } = req.user;
-
-    if (!["employer", "job_seeker"].includes(role)) {
-      return res.status(403).json({
-        status: false,
-        message: "Access denied. Invalid role."
-      });
-    }
-
-    const categories = await Category.find().sort({ name: 1 }).lean();
-
-    const formattedCategories = categories.map(cat => ({
-      id: cat._id,
-      name: cat.name
-    }));
-
+    // 4) Respond
     return res.status(200).json({
       status: true,
-      message: `${role} categories fetched successfully.`,
-      data: formattedCategories
+      message: "Categories fetched successfully.",
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data
     });
 
   } catch (err) {
@@ -231,41 +246,168 @@ exports.getCategoryBasedOnRole = async (req, res) => {
 exports.updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name } = req.body;
 
-    const updated = await Category.findByIdAndUpdate(id, { name }, { new: true });
-    if (!updated) return res.status(404).json({ status: false, message: "Category not found" });
+    // 1) Find existing category
+    const category = await Category.findById(id);
+    if (!category) {
+      return res.status(404).json({ status: false, message: "Category not found" });
+    }
 
-    res.json({ status: true, message: "Updated successfully", data: updated });
+    // 2) Update name only if provided
+    if (req.body && typeof req.body.name === "string" && req.body.name.trim()) {
+      category.name = req.body.name.trim();
+    }
+
+    // 3) If a new image was uploaded, delete old file and set NEW URL
+    if (req.file) {
+      const uploadDir = path.join(__dirname, "..", "uploads", "images");
+      const baseUrl   = process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
+
+      // delete old file if present
+      if (category.image) {
+        const oldFilename = path.basename(category.image);
+        const oldPath     = path.join(uploadDir, oldFilename);
+        await fsp.unlink(oldPath).catch(err => {
+          if (err.code !== "ENOENT") throw err; // ignore 'file not found', rethrow others
+        });
+      }
+
+      // assign a NEW url based on the newly uploaded file
+      category.image = `${baseUrl}/uploads/images/${req.file.filename}`;
+    }
+
+    // 4) Save
+    await category.save();
+
+    return res.json({
+      status: true,
+      message: "Updated successfully",
+      data: {
+        id: category._id,
+        name: category.name,
+        image: category.image || null
+      }
+    });
+
   } catch (err) {
-    res.status(500).json({ status: false, message: "Error updating category" });
+    return res.status(500).json({
+      status: false,
+      message: "Error updating category",
+      error: err.message
+    });
   }
 };
 
 exports.deleteCategory = async (req, res) => {
   try {
     const { id } = req.params;
-    const deleted = await Category.findByIdAndDelete(id);
-    if (!deleted) return res.status(404).json({ status: false, message: "Not found" });
 
-    res.json({ status: true, message: "Category deleted" });
+    // Instead of deleting the document, mark it as deleted
+    const deleted = await Category.findByIdAndUpdate(
+      id,
+      { isDeleted: true },
+      { new: true }
+    );
+
+    if (!deleted) {
+      return res.status(404).json({ status: false, message: "Category not found" });
+    }
+
+    return res.json({
+      status: true,
+      message: "Category soft deleted successfully",
+    
+    });
   } catch (err) {
-    res.status(500).json({ status: false, message: "Error deleting category" });
+    console.error("Error soft deleting category:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Error soft deleting category",
+      error: err.message
+    });
   }
 };
 
-exports.getAllCategoriesPublic = async (req, res) => {
+//get categories of employer and job seeker
+exports.getCategoryBasedOnRole = async (req, res) => {
   try {
-    const page  = parseInt(req.query.page, 10)  || 1;
-    const limit = parseInt(req.query.limit, 10) || 10;
+    const { role } = req.user;
+
+    if (!["employer", "job_seeker"].includes(role)) {
+      return res.status(403).json({
+        status: false,
+        message: "Access denied. Invalid role."
+      });
+    }
+
+    // pagination params
+    const pageRaw  = parseInt(req.query.page, 10);
+    const limitRaw = parseInt(req.query.limit, 10);
+
+    const page  = Number.isFinite(pageRaw)  && pageRaw  > 0 ? pageRaw  : 1;
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : 10;
     const skip  = (page - 1) * limit;
 
-    // 1) Count for pagination
-    const totalRecord = await Category.countDocuments();
-    const totalPage   = Math.ceil(totalRecord / limit);
+    // only non-deleted categories
+    const filter = { isDeleted: false };
 
-    // 2) Fetch categories (sorted alphabetically)
-    const categories = await Category.find()
+    // 1) Count for pagination
+    const totalRecord = await Category.countDocuments(filter);
+    const totalPage   = Math.ceil(totalRecord / limit) || 1;
+
+    // 2) Fetch page
+    const categories = await Category.find(filter)
+      .sort({ name: 1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    // 3) Shape response (keep same fields as your original)
+    const data = categories.map(cat => ({
+      id: cat._id,
+      name: cat.name,
+         image: cat.image || null,
+      isDeleted: !!cat.isDeleted
+      
+    }));
+
+    // 4) Respond
+    return res.status(200).json({
+      status: true,
+      message: `${role} categories fetched successfully.`,
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data
+    });
+
+  } catch (err) {
+    return res.status(500).json({
+      status: false,
+      message: "Error fetching categories",
+      error: err.message
+    });
+  }
+};
+
+//get all categories without token
+exports.getAllCategoriesPublic = async (req, res) => {
+  try {
+    // pagination
+    const page  = Number.parseInt(req.query.page, 10)  || 1;
+    const limit = Number.parseInt(req.query.limit, 10) || 10;
+    const skip  = (page - 1) * limit;
+
+    // only non-deleted categories
+    const filter = { isDeleted: false };
+
+    // 1) Count (only non-deleted)
+    const totalRecord = await Category.countDocuments(filter);
+    const totalPage   = Math.max(1, Math.ceil(totalRecord / limit));
+
+    // 2) Fetch page
+    const categories = await Category.find(filter)
+      .select("_id name image isDeleted")
       .sort({ name: 1 })
       .skip(skip)
       .limit(limit)
@@ -274,7 +416,9 @@ exports.getAllCategoriesPublic = async (req, res) => {
     // 3) Shape response
     const data = categories.map(c => ({
       id: c._id,
-      name: c.name
+      name: c.name,
+      image: c.image || null,
+      isDeleted: !!c.isDeleted
     }));
 
     // 4) Respond
@@ -297,6 +441,91 @@ exports.getAllCategoriesPublic = async (req, res) => {
   }
 };
 
+//Get job list based on category
+exports.getJobPostsByCategoryPublic = async (req, res) => {
+  try {
+    const { categoryId } = req.params;
+
+    // Validate categoryId
+    if (!Types.ObjectId.isValid(categoryId)) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid categoryId.",
+      });
+    }
+
+    // Ensure category exists (optional but helpful)
+    const catExists = await Category.exists({ _id: categoryId });
+    if (!catExists) {
+      return res.status(404).json({
+        status: false,
+        message: "Category not found.",
+      });
+    }
+
+    // Pagination
+    const page  = parseInt(req.query.page, 10)  || 1;
+    const limit = parseInt(req.query.limit, 10) || 5;
+    const skip  = (page - 1) * limit;
+
+    // Filter only by category
+    const filter = { category: categoryId };
+
+    // Count & fetch
+    const totalRecord = await JobPost.countDocuments(filter);
+    const totalPage   = Math.ceil(totalRecord / limit);
+
+    const jobPosts = await JobPost.find(filter)
+      .select("-createdAt -updatedAt -__v")
+      .populate({ path: "companyId", select: "companyName image" })
+      .populate("category", "name")
+      .populate("industryType", "name")
+      .populate("state", "state")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const data = jobPosts.map((j) => ({
+      _id: j._id,
+      company: j.companyId?.companyName ?? null,
+      companyImage: j.companyId?.image ?? null,
+      category: j.category?.name ?? null,
+      industryType: j.industryType?.name ?? null,
+      jobTitle: j.jobTitle,
+      jobDescription: j.jobDescription,
+      salaryType: j.salaryType,
+      displayPhoneNumber: j.displayPhoneNumber,
+      displayEmail: j.displayEmail,
+      jobType: j.jobType,
+      skills: j.skills,
+      minSalary: j.minSalary,
+      maxSalary: j.maxSalary,
+      state: j.state?.state ?? null,
+      experience: j.experience,
+      otherField: j.otherField,
+      status: j.status,
+      expiredDate: j.expiredDate,
+      isDeleted: j.isDeleted,
+    }));
+
+    return res.status(200).json({
+      status: true,
+      message: "Job posts fetched successfully.",
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data,
+    });
+  } catch (error) {
+    console.error("Error fetching jobs by category:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to fetch job posts.",
+      error: error.message,
+    });
+  }
+};
 
 
 //Industry Type
@@ -1297,88 +1526,5 @@ exports.getOtherFieldBasedOnRole = async (req, res) => {
 };
 
 
-// GET /public-categories/:categoryId
-exports.getJobPostsByCategoryPublic = async (req, res) => {
-  try {
-    const { categoryId } = req.params;
 
-    // Validate categoryId
-    if (!Types.ObjectId.isValid(categoryId)) {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid categoryId.",
-      });
-    }
 
-    // Ensure category exists (optional but helpful)
-    const catExists = await Category.exists({ _id: categoryId });
-    if (!catExists) {
-      return res.status(404).json({
-        status: false,
-        message: "Category not found.",
-      });
-    }
-
-    // Pagination
-    const page  = parseInt(req.query.page, 10)  || 1;
-    const limit = parseInt(req.query.limit, 10) || 5;
-    const skip  = (page - 1) * limit;
-
-    // Filter only by category
-    const filter = { category: categoryId };
-
-    // Count & fetch
-    const totalRecord = await JobPost.countDocuments(filter);
-    const totalPage   = Math.ceil(totalRecord / limit);
-
-    const jobPosts = await JobPost.find(filter)
-      .select("-createdAt -updatedAt -__v")
-      .populate({ path: "companyId", select: "companyName image" })
-      .populate("category", "name")
-      .populate("industryType", "name")
-      .populate("state", "state")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean();
-
-    const data = jobPosts.map((j) => ({
-      _id: j._id,
-      company: j.companyId?.companyName ?? null,
-      companyImage: j.companyId?.image ?? null,
-      category: j.category?.name ?? null,
-      industryType: j.industryType?.name ?? null,
-      jobTitle: j.jobTitle,
-      jobDescription: j.jobDescription,
-      salaryType: j.salaryType,
-      displayPhoneNumber: j.displayPhoneNumber,
-      displayEmail: j.displayEmail,
-      jobType: j.jobType,
-      skills: j.skills,
-      minSalary: j.minSalary,
-      maxSalary: j.maxSalary,
-      state: j.state?.state ?? null,
-      experience: j.experience,
-      otherField: j.otherField,
-      status: j.status,
-      expiredDate: j.expiredDate,
-      isDeleted: j.isDeleted,
-    }));
-
-    return res.status(200).json({
-      status: true,
-      message: "Job posts fetched successfully.",
-      totalRecord,
-      totalPage,
-      currentPage: page,
-      data,
-    });
-  } catch (error) {
-    console.error("Error fetching jobs by category:", error);
-    return res.status(500).json({
-      status: false,
-      message: "Failed to fetch job posts.",
-      error: error.message,
-    });
-  }
-};

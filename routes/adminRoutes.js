@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const uploadImage = require('../middleware/uploadImage');
 
 const { sendAdminOtp, verifyAdminOtp, createCategory, getIndustry, getCategory,
   updateCategory,
@@ -18,9 +19,10 @@ router.post('/send-otp', sendAdminOtp);
 router.post('/verify-otp', verifyAdminOtp);
 
 //category crud
-router.post("/create-categories", verifyToken, verifyAdmin, createCategory);
+// router.post("/create-categories", verifyToken, verifyAdmin, createCategory);
+router.post("/create-categories", verifyToken, verifyAdmin, uploadImage.single("image"), createCategory);
 router.get('/categories', verifyToken, verifyAdmin, getCategory);
-router.put("/update-categories/:id", verifyToken, verifyAdmin, updateCategory);
+router.put("/update-categories/:id", uploadImage.single("image"), verifyToken, verifyAdmin, updateCategory);
 router.delete("/delete-categories/:id", verifyToken, verifyAdmin, deleteCategory);
 
 
