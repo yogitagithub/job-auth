@@ -816,24 +816,27 @@ exports.getAllIndustriesPublic = async (req, res) => {
 exports.createProfile = async (req, res) => {
   try {
     const { name } = req.body;
-    if (!name) {
+    if (!name || !name.trim()) {
       return res.status(400).json({ status: false, message: "Name required" });
     }
 
-    const profile = new JobProfile({ name });
+    const profile = new JobProfile({ name: name.trim() });
     await profile.save();
-
-    const formattedProfile = {
-      id: profile._id,
-      name: profile.name
-    };
 
     res.status(201).json({
       status: true,
       message: "Job profile created",
-      data: formattedProfile
+      data: {
+        id: profile._id,
+        name: profile.name,
+        isDeleted: profile.isDeleted   // <- will be false
+      }
     });
   } catch (err) {
+    // optional: handle duplicate key nicely
+    if (err?.code === 11000) {
+      return res.status(409).json({ status: false, message: "Job profile name already exists." });
+    }
     res.status(500).json({
       status: false,
       message: "Error creating profile",
@@ -842,22 +845,44 @@ exports.createProfile = async (req, res) => {
   }
 };
 
+//get job profile of admin
 exports.getProfile = async (req, res) => {
   try {
-    const profiles = await JobProfile.find().sort({ name: 1 }).lean();
+    const page  = parseInt(req.query.page, 10)  || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const skip  = (page - 1) * limit;
 
-    const formattedprofiles = profiles.map(profile => ({
-      id: profile._id,
-      name: profile.name
+    const filter = { isDeleted: false };
+
+    // 1) Count
+    const totalRecord = await JobProfile.countDocuments(filter);
+    const totalPage   = Math.ceil(totalRecord / limit);
+
+    // 2) Page
+    const profiles = await JobProfile.find(filter)
+      .sort({ name: 1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    // 3) Shape
+    const data = profiles.map(p => ({
+      id: p._id,
+      name: p.name,
+      isDeleted: p.isDeleted // optional, remove if you don't want to expose it
     }));
 
-    res.status(200).json({
+    // 4) Respond
+    return res.status(200).json({
       status: true,
       message: "Job profiles fetched successfully.",
-      data: formattedprofiles
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data
     });
   } catch (err) {
-    res.status(500).json({
+    return res.status(500).json({
       status: false,
       message: "Error fetching job profiles",
       error: err.message
@@ -865,30 +890,78 @@ exports.getProfile = async (req, res) => {
   }
 };
 
-
 exports.updateProfile = async (req, res) => {
   try {
     const { id } = req.params;
     const { name } = req.body;
 
-    const updated = await JobProfile.findByIdAndUpdate(id, { name }, { new: true });
-    if (!updated) return res.status(404).json({ status: false, message: "Job profile not found" });
+    // 1) Find existing profile
+    const profile = await JobProfile.findById(id);
+    if (!profile) {
+      return res.status(404).json({ status: false, message: "Job profile not found" });
+    }
 
-    res.json({ status: true, message: "Updated successfully", data: updated });
+    // 2) Check if already soft-deleted
+    if (profile.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "This job profile is already soft deleted and cannot be updated."
+      });
+    }
+
+    // 3) Update if valid
+    if (name && name.trim()) {
+      profile.name = name.trim();
+    }
+
+    await profile.save();
+
+    return res.json({
+      status: true,
+      message: "Updated successfully",
+      data: profile
+    });
+
   } catch (err) {
-    res.status(500).json({ status: false, message: "Error updating job profiles" });
+    console.error("Error updating job profile:", err);
+    res.status(500).json({ status: false, message: "Error updating job profile", error: err.message });
   }
 };
 
 exports.deleteProfile = async (req, res) => {
   try {
     const { id } = req.params;
-    const deleted = await JobProfile.findByIdAndDelete(id);
-    if (!deleted) return res.status(404).json({ status: false, message: "Not found" });
 
-    res.json({ status: true, message: "Job profile deleted" });
+    // 1) Find the profile first
+    const profile = await JobProfile.findById(id);
+    if (!profile) {
+      return res.status(404).json({ status: false, message: "Job profile not found" });
+    }
+
+    // 2) If already soft-deleted, block the request
+    if (profile.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "This job profile is already soft deleted."
+      });
+    }
+
+    // 3) Soft delete (mark isDeleted = true)
+    profile.isDeleted = true;
+    await profile.save();
+
+    return res.json({
+      status: true,
+      message: "Job profile soft deleted successfully"
+    });
+
   } catch (err) {
-    res.status(500).json({ status: false, message: "Error deleting job profile" });
+    console.error("Error soft deleting job profile:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Error soft deleting job profile",
+      error: err.message
+    });
   }
 };
 
@@ -899,16 +972,23 @@ exports.getJobProfileBasedOnRole = async (req, res) => {
     const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
 
+    // ✅ Only fetch non-deleted profiles
+    const query = { isDeleted: false };
+
     const [totalRecord, rows] = await Promise.all([
-      JobProfile.countDocuments({}),
-      JobProfile.find({})
+      JobProfile.countDocuments(query),
+      JobProfile.find(query)
         .sort({ name: 1 })
         .skip((page - 1) * limit)
         .limit(limit)
         .lean()
     ]);
 
-    const data = rows.map(p => ({ id: p._id, name: p.name }));
+    const data = rows.map(p => ({
+      id: p._id,
+      name: p.name,
+      isDeleted: p.isDeleted   // optional, can remove if you don't want to return it
+    }));
 
     return res.status(200).json({
       status: true,
@@ -929,6 +1009,44 @@ exports.getJobProfileBasedOnRole = async (req, res) => {
     });
   }
 };
+
+
+// exports.getJobProfileBasedOnRole = async (req, res) => {
+//   try {
+//     // verifyToken + verifyJobSeekerOnly already ran
+//     const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
+//     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
+
+//     const [totalRecord, rows] = await Promise.all([
+//       JobProfile.countDocuments({}),
+//       JobProfile.find({})
+//         .sort({ name: 1 })
+//         .skip((page - 1) * limit)
+//         .limit(limit)
+//         .lean()
+//     ]);
+
+//     const data = rows.map(p => ({ id: p._id, name: p.name }));
+
+//     return res.status(200).json({
+//       status: true,
+//       message: data.length
+//         ? "Job profiles fetched successfully."
+//         : "No job profiles found.",
+//       totalRecord,
+//       totalPage: Math.ceil(totalRecord / limit) || 0,
+//       currentPage: page,
+//       data
+//     });
+//   } catch (err) {
+//     console.error("getJobProfileBasedOnRole error:", err);
+//     return res.status(500).json({
+//       status: false,
+//       message: "Server error.",
+//       error: err.message
+//     });
+//   }
+// };
 
 
 
