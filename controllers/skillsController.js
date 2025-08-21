@@ -49,7 +49,6 @@ exports.createSkills = async (req, res) => {
   }
 };
 
-
 exports.getMySkills = async (req, res) => {
   try {
     const { userId, role } = req.user;
@@ -61,28 +60,42 @@ exports.getMySkills = async (req, res) => {
       });
     }
 
-    const skills = await Skill.find({ userId });
+    // Pagination
+    const pageRaw  = parseInt(req.query.page, 10);
+    const limitRaw = parseInt(req.query.limit, 10);
+    const page  = Number.isFinite(pageRaw)  && pageRaw  > 0 ? pageRaw  : 1;
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 50) : 5; // cap to 50
+    const skip  = (page - 1) * limit;
 
-    if (skills.length === 0) {
-      return res.status(404).json({
-        status: false,
-        message: "No skills found.",
-      });
-    }
+    // Exclude soft-deleted
+    const filter = { userId, isDeleted: { $ne: true } };
 
-    const formatted = skills.map((skill) => ({
-      id: skill._id,
-      skills: skill.skills ?? null,
+    // Count and fetch
+    const totalRecord = await Skill.countDocuments(filter);
+    const totalPage   = totalRecord === 0 ? 0 : Math.ceil(totalRecord / limit);
+
+    const skills = await Skill.find(filter)
+      .sort({ createdAt: -1, _id: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const data = skills.map((s) => ({
+      id: s._id,
+      skills: s.skills ?? null,
     }));
 
-    res.status(200).json({
+    return res.status(200).json({
       status: true,
-      message: "Skills fetched successfully.",
-      data: formatted,
+      message: totalRecord ? "Skills fetched successfully." : "No skills found.",
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data,
     });
   } catch (error) {
     console.error("Error fetching skills:", error);
-    res.status(500).json({
+    return res.status(500).json({
       status: false,
       message: "Server error.",
       error: error.message,
@@ -109,33 +122,45 @@ exports.updateSkillById = async (req, res) => {
       });
     }
 
-  
-    const sanitizedSkill = skills?.trim() === "" ? null : skills?.trim();
+    // Load first so we can check soft-delete state & ownership
+    const existing = await Skill.findOne({ _id: skillId, userId });
 
-    const skill = await Skill.findOneAndUpdate(
-      { _id: skillId, userId },
-      { skills: sanitizedSkill },
-      { new: true }
-    );
-
-    if (!skill) {
+    if (!existing) {
       return res.status(404).json({
         status: false,
         message: "Skill not found or unauthorized access.",
       });
     }
 
-    res.status(200).json({
+    // ⛔ Block updates to soft-deleted records
+    if (existing.isDeleted === true) {
+      return res.status(400).json({
+        status: false,
+        message: "This skill has been soft deleted and cannot be updated.",
+      });
+    }
+
+    // Sanitize input
+    if (typeof skills === "undefined") {
+      return res.status(400).json({
+        status: false,
+        message: "No valid fields provided to update.",
+      });
+    }
+    const sanitizedSkill = skills?.trim() === "" ? null : skills?.trim();
+
+    existing.skills = sanitizedSkill;
+    await existing.save();
+
+    return res.status(200).json({
       status: true,
-      message: "Skill updated successfully."
-      // data: {
-      //   id: skill._id,
-      //   skills: skill.skills,
-      // },
+      message: "Skill updated successfully.",
+      // If you want to return the updated doc:
+      // data: { id: existing._id, skills: existing.skills }
     });
   } catch (error) {
     console.error("Error updating skill:", error);
-    res.status(500).json({
+    return res.status(500).json({
       status: false,
       message: "Server error.",
       error: error.message,
@@ -162,33 +187,40 @@ exports.deleteSkillById = async (req, res) => {
       });
     }
 
-    
-    const skill = await Skill.findOneAndUpdate(
-      { _id: skillId, userId },
-      { $set: { isDeleted: true } },
-      { new: true }
-    );
+    // Fetch first to check ownership and soft-delete status
+    const existing = await Skill.findOne({ _id: skillId, userId })
+      .select("_id isDeleted");
 
-    if (!skill) {
+    if (!existing) {
       return res.status(404).json({
         status: false,
         message: "Skill not found or unauthorized access.",
       });
     }
 
-    res.status(200).json({
+    if (existing.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "This skill is already soft deleted.",
+      });
+    }
+
+    // Perform soft delete
+    await Skill.updateOne(
+      { _id: skillId, userId },
+      { $set: { isDeleted: true, deletedAt: new Date() } } // deletedAt optional
+    );
+
+    return res.status(200).json({
       status: true,
       message: "Skill deleted successfully (soft delete).",
     });
   } catch (error) {
     console.error("Error deleting skill:", error);
-    res.status(500).json({
+    return res.status(500).json({
       status: false,
       message: "Server error.",
       error: error.message,
     });
   }
 };
-
-
-

@@ -70,48 +70,64 @@ exports.getMyWorkExp = async (req, res) => {
       });
     }
 
-    const experiences = await WorkExperience.find({ userId });
+    // Pagination params
+    const pageRaw  = parseInt(req.query.page, 10);
+    const limitRaw = parseInt(req.query.limit, 10);
+    const page  = Number.isFinite(pageRaw)  && pageRaw  > 0 ? pageRaw  : 1;
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 50) : 5; // cap 50
+    const skip  = (page - 1) * limit;
 
-    if (experiences.length === 0) {
-      return res.status(200).json({
-        status: true,
-        message: "No work-experience records found.",
-      });
-    }
+    // Exclude soft-deleted
+    const filter = { userId, isDeleted: { $ne: true } };
 
-  
-    const formatDate = (date) => {
-      if (!date) return null;
-      const d = new Date(date);
-      const day = String(d.getUTCDate()).padStart(2, '0');
-      const month = String(d.getUTCMonth() + 1).padStart(2, '0');
-      const year = d.getUTCFullYear();
-      return `${day}-${month}-${year}`;
+    // Count and fetch
+    const totalRecord = await WorkExperience.countDocuments(filter);
+    const totalPage   = totalRecord === 0 ? 0 : Math.ceil(totalRecord / limit);
+
+    const experiences = await WorkExperience.find(filter)
+      .sort({ sessionFrom: -1, _id: -1 }) // newest first
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    // Format DD-MM-YYYY
+    const fmt = (d) => {
+      if (!d) return null;
+      const nd = new Date(d);
+      const dd = String(nd.getUTCDate()).padStart(2, "0");
+      const mm = String(nd.getUTCMonth() + 1).padStart(2, "0");
+      const yy = nd.getUTCFullYear();
+      return `${dd}-${mm}-${yy}`;
     };
 
-    const formatted = experiences.map((exp) => ({
+    const data = experiences.map((exp) => ({
       id: exp._id,
       companyName: exp.companyName,
       jobTitle: exp.jobTitle,
-      sessionFrom: formatDate(exp.sessionFrom),
-      sessionTo: formatDate(exp.sessionTo),
+      sessionFrom: fmt(exp.sessionFrom),
+      sessionTo: fmt(exp.sessionTo),
       roleDescription: exp.roleDescription,
     }));
 
-    res.status(200).json({
+    return res.status(200).json({
       status: true,
-      message: "Work-experience list fetched successfully.",
-      data: formatted,
+      message: totalRecord ? "Work-experience list fetched successfully." : "No work-experience records found.",
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data,
     });
   } catch (err) {
     console.error("Error fetching work experiences:", err);
-    res.status(500).json({
+    return res.status(500).json({
       status: false,
       message: "Server error.",
       error: err.message,
     });
   }
 };
+
+
 
 exports.getWorkExperienceById = async (req, res) => {
   try {
@@ -132,6 +148,7 @@ exports.getWorkExperienceById = async (req, res) => {
       });
     }
 
+    // Fetch without filtering isDeleted so we can detect soft-deleted state
     const experience = await WorkExperience.findOne({
       _id: experienceId,
       userId,
@@ -141,6 +158,14 @@ exports.getWorkExperienceById = async (req, res) => {
       return res.status(404).json({
         status: false,
         message: "Work experience not found or unauthorized access.",
+      });
+    }
+
+    // If soft-deleted, block access with 400
+    if (experience.isDeleted === true) {
+      return res.status(400).json({
+        status: false,
+        message: "This work experience has been soft deleted and cannot be viewed.",
       });
     }
 
@@ -157,20 +182,21 @@ exports.getWorkExperienceById = async (req, res) => {
       roleDescription: experience.roleDescription,
     };
 
-    res.status(200).json({
+    return res.status(200).json({
       status: true,
       message: "Work experience fetched successfully.",
       data: formatted,
     });
   } catch (err) {
     console.error("Error fetching work experience:", err);
-    res.status(500).json({
+    return res.status(500).json({
       status: false,
       message: "Server error.",
       error: err.message,
     });
   }
 };
+
 
 
 exports.updateWorkExperienceById = async (req, res) => {
@@ -192,6 +218,7 @@ exports.updateWorkExperienceById = async (req, res) => {
       });
     }
 
+    // Fetch doc so we can check soft-delete state
     const experience = await WorkExperience.findOne({
       _id: experienceId,
       userId,
@@ -204,6 +231,14 @@ exports.updateWorkExperienceById = async (req, res) => {
       });
     }
 
+    // ⛔ Block edits on soft-deleted records
+    if (experience.isDeleted === true) {
+      return res.status(400).json({
+        status: false,
+        message: "This work experience has been soft deleted and cannot be updated.",
+      });
+    }
+
     const allowedFields = [
       "companyName",
       "jobTitle",
@@ -212,22 +247,72 @@ exports.updateWorkExperienceById = async (req, res) => {
       "roleDescription",
     ];
 
-    allowedFields.forEach((field) => {
-      if (updateFields[field] !== undefined) {
-        const value = updateFields[field];
-        experience[field] =
-          typeof value === "string" && value.trim() === "" ? null : value;
+    // Optional: parse dates if strings are passed (DD-MM-YYYY or YYYY-MM-DD or ISO)
+    const parseDate = (raw) => {
+      if (raw == null) return raw; // allow null to clear
+      const s = String(raw).trim();
+      if (/^\d{2}-\d{2}-\d{4}$/.test(s)) {
+        const [dd, mm, yyyy] = s.split("-");
+        return new Date(`${yyyy}-${mm}-${dd}T00:00:00.000Z`);
       }
-    });
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+        return new Date(`${s}T00:00:00.000Z`);
+      }
+      const d = new Date(s);
+      return Number.isNaN(d.getTime()) ? null : d;
+    };
+
+    let changed = false;
+    for (const field of allowedFields) {
+      if (Object.prototype.hasOwnProperty.call(updateFields, field)) {
+        let value = updateFields[field];
+
+        // convert empty strings to null
+        if (typeof value === "string" && value.trim() === "") value = null;
+
+        if (field === "sessionFrom" || field === "sessionTo") {
+          if (value !== undefined) {
+            const parsed = parseDate(value);
+            if (value !== null && parsed === null) {
+              return res.status(400).json({
+                status: false,
+                message: `Invalid date for ${field}. Use DD-MM-YYYY or YYYY-MM-DD.`,
+              });
+            }
+            value = parsed; // Date or null
+          }
+        }
+
+        experience[field] = value;
+        changed = true;
+      }
+    }
+
+    if (!changed) {
+      return res.status(400).json({
+        status: false,
+        message: "No valid fields provided to update.",
+      });
+    }
+
+    // Optional: consistency check
+    if (experience.sessionFrom && experience.sessionTo) {
+      if (experience.sessionFrom > experience.sessionTo) {
+        return res.status(400).json({
+          status: false,
+          message: "sessionFrom cannot be after sessionTo.",
+        });
+      }
+    }
 
     await experience.save();
 
-   
+    // Format DD-MM-YYYY
     const formatDate = (date) => {
       if (!date) return null;
       const d = new Date(date);
-      const day = String(d.getUTCDate()).padStart(2, '0');
-      const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(d.getUTCDate()).padStart(2, "0");
+      const month = String(d.getUTCMonth() + 1).padStart(2, "0");
       const year = d.getUTCFullYear();
       return `${day}-${month}-${year}`;
     };
@@ -241,20 +326,21 @@ exports.updateWorkExperienceById = async (req, res) => {
       roleDescription: experience.roleDescription,
     };
 
-    res.status(200).json({
+    return res.status(200).json({
       status: true,
       message: "Work experience updated successfully.",
       data: formatted,
     });
   } catch (err) {
     console.error("Error updating work experience:", err);
-    res.status(500).json({
+    return res.status(500).json({
       status: false,
       message: "Server error.",
       error: err.message,
     });
   }
 };
+
 
 exports.deleteWorkExperienceById = async (req, res) => {
   try {
@@ -275,31 +361,42 @@ exports.deleteWorkExperienceById = async (req, res) => {
       });
     }
 
-    const experience = await WorkExperience.findOneAndUpdate(
-      { _id: experienceId, userId },
-      { $set: { isDeleted: true } },
-      { new: true }
-    );
+    // Fetch first to verify ownership and soft-delete status
+    const existing = await WorkExperience
+      .findOne({ _id: experienceId, userId })
+      .select("_id isDeleted");
 
-    if (!experience) {
+    if (!existing) {
       return res.status(404).json({
         status: false,
         message: "Work experience not found or unauthorized.",
       });
     }
 
-    res.status(200).json({
+    if (existing.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "This work experience is already soft deleted.",
+      });
+    }
+
+    // Soft delete
+    await WorkExperience.updateOne(
+      { _id: experienceId, userId },
+      { $set: { isDeleted: true, deletedAt: new Date() } }
+    );
+
+    return res.status(200).json({
       status: true,
       message: "Work experience deleted successfully (soft delete).",
     });
   } catch (err) {
     console.error("Error deleting work experience:", err);
-    res.status(500).json({
+    return res.status(500).json({
       status: false,
       message: "Server error.",
       error: err.message,
     });
   }
 };
-
 

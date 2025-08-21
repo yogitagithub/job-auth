@@ -9,6 +9,7 @@ const path = require("path");
 const mongoose = require("mongoose");
 
 
+
 exports.saveProfile = async (req, res) => {
   try {
     const { userId, role, phoneNumber } = req.user;
@@ -29,6 +30,14 @@ exports.saveProfile = async (req, res) => {
 
     // Get current profile early (helps city-only/state-only logic)
     let profile = await CompanyProfile.findOne({ userId });
+
+    // ⛔ Block updates if profile exists but is soft-deleted
+    if (profile && profile.isDeleted === true) {
+      return res.status(400).json({
+        status: false,
+        message: "This company profile has been soft deleted and cannot be updated."
+      });
+    }
 
     // aboutCompany: normalize only if key is present
     if (Object.prototype.hasOwnProperty.call(req.body, "aboutCompany")) {
@@ -127,7 +136,7 @@ exports.saveProfile = async (req, res) => {
     }
 
     // --------- Create or Update (partial allowed) ----------
-    const restrictedFields = ["_id", "userId", "phoneNumber", "__v", "image"];
+    const restrictedFields = ["_id", "userId", "phoneNumber", "__v", "image", "isDeleted", "deletedAt"];
     const isCreate = !profile;
 
     if (isCreate) {
@@ -186,9 +195,10 @@ exports.getProfile = async (req, res) => {
       });
     }
 
+    // Fetch without filtering isDeleted so we can detect soft-deleted state
     const profile = await CompanyProfile.findOne({ userId })
       .populate("industryType", "name")
-       .populate("state", "state");
+      .populate("state", "state");
 
     if (!profile) {
       return res.status(404).json({
@@ -197,34 +207,41 @@ exports.getProfile = async (req, res) => {
       });
     }
 
-    const profileObj = profile.toObject();
+    // If soft-deleted, send 400 with explicit message
+    if (profile.isDeleted === true) {
+      return res.status(400).json({
+        status: false,
+        message: "This company profile has been already soft deleted."
+      });
+    }
 
+    const p = profile.toObject();
     const responseData = {
-      id: profileObj._id,
-      userId: profileObj.userId,
-      phoneNumber: profileObj.phoneNumber,
-      companyName: profileObj.companyName,
-      industryType: profileObj.industryType?.name || null,
-      contactPersonName: profileObj.contactPersonName,
-      panCardNumber: profileObj.panCardNumber,
-      gstNumber: profileObj.gstNumber,
-      alternatePhoneNumber: profileObj.alternatePhoneNumber,
-      email: profileObj.email,
-      companyAddress: profileObj.companyAddress,
-      state: profileObj.state?.state || null,
-      city: profileObj.city,
-      pincode: profileObj.pincode,
-      image: profileObj.image
+      id: p._id,
+      userId: p.userId,
+      phoneNumber: p.phoneNumber,
+      companyName: p.companyName,
+      industryType: p.industryType?.name || null,
+      contactPersonName: p.contactPersonName,
+      panCardNumber: p.panCardNumber,
+      gstNumber: p.gstNumber,
+      alternatePhoneNumber: p.alternatePhoneNumber,
+      email: p.email,
+      companyAddress: p.companyAddress,
+      state: p.state?.state || null,
+      city: p.city,
+      pincode: p.pincode,
+      image: p.image
     };
 
-    return res.json({
+    return res.status(200).json({
       status: true,
       message: "Company profile fetched successfully.",
       data: responseData
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({
+    return res.status(500).json({
       status: false,
       message: "Server error.",
       error: error.message
@@ -232,12 +249,14 @@ exports.getProfile = async (req, res) => {
   }
 };
 
+
+
 exports.deleteCompanyProfile = async (req, res) => {
   try {
     const { role, userId } = req.user;
     const { id } = req.body;
 
-   
+    // AuthZ: only employers
     if (role !== "employer") {
       return res.status(403).json({
         status: false,
@@ -245,15 +264,15 @@ exports.deleteCompanyProfile = async (req, res) => {
       });
     }
 
-   
-    if (!id) {
+    // Validate ID
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         status: false,
-        message: "Company profile ID is required."
+        message: "Valid company profile ID is required."
       });
     }
 
-   
+    // Load the profile
     const profile = await CompanyProfile.findById(id);
     if (!profile) {
       return res.status(404).json({
@@ -262,27 +281,34 @@ exports.deleteCompanyProfile = async (req, res) => {
       });
     }
 
-   
-    if (profile.userId.toString() !== userId) {
+    // Ownership check
+    if (profile.userId.toString() !== userId.toString()) {
       return res.status(403).json({
         status: false,
         message: "You are not authorized to delete this profile."
       });
     }
 
-    
+    // Already soft-deleted?
+    if (profile.isDeleted === true) {
+      return res.status(400).json({
+        status: false,
+        message: "This company profile is already soft deleted."
+      });
+    }
+
+    // Soft delete
     profile.isDeleted = true;
-    profile.deletedAt = new Date();
+    profile.deletedAt = new Date(); // will be saved only if 'deletedAt' exists in schema
     await profile.save();
 
     return res.status(200).json({
       status: true,
       message: "Company profile soft deleted successfully."
     });
-
   } catch (error) {
     console.error("Error soft deleting company profile:", error);
-    res.status(500).json({
+    return res.status(500).json({
       status: false,
       message: "Server error.",
       error: error.message

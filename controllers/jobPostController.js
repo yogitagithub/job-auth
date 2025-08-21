@@ -9,6 +9,8 @@ const JobType = require("../models/AdminJobType");
 const Experience = require("../models/AdminExperienceRange");     
 const OtherField = require("../models/AdminOtherField");
 
+const mongoose = require("mongoose");
+
 
 // Return "X day(s) ago)" — minutes/hours ignored
 const daysAgo = (date) => {
@@ -265,9 +267,19 @@ exports.getAllJobPosts = async (req, res) => {
   }
 };
 
+
+
 exports.getJobPostById = async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Validate id format
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid job post ID format."
+      });
+    }
 
     let jobPost = await JobPost.findById(id)
       .select("-updatedAt -__v")
@@ -287,6 +299,14 @@ exports.getJobPostById = async (req, res) => {
       });
     }
 
+    // If soft-deleted, block access with 400
+    if (jobPost.isDeleted === true) {
+      return res.status(400).json({
+        status: false,
+        message: "This job post has been already soft deleted."
+      });
+    }
+
     // Auto-mark expired if needed (compare by date only)
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -294,6 +314,16 @@ exports.getJobPostById = async (req, res) => {
       jobPost.status = "expired";
       await jobPost.save();
     }
+
+    // Helper for "x days ago"
+    const daysAgo = (d) => {
+      if (!d) return null;
+      const oneDay = 24 * 60 * 60 * 1000;
+      const diff = Math.floor((Date.now() - new Date(d).getTime()) / oneDay);
+      if (diff <= 0) return "today";
+      if (diff === 1) return "1 day ago";
+      return `${diff} days ago`;
+    };
 
     // Build clean response with friendly names
     const data = {
@@ -329,7 +359,7 @@ exports.getJobPostById = async (req, res) => {
       jobPosted: daysAgo(jobPost.createdAt)
     };
 
-    return res.json({
+    return res.status(200).json({
       status: true,
       message: "Job post fetched successfully.",
       data
@@ -345,7 +375,6 @@ exports.getJobPostById = async (req, res) => {
   }
 };
 
-//get all job list without token filter by jobTitle and state
 exports.getAllJobPostsPublic = async (req, res) => {
   try {
     const page  = parseInt(req.query.page, 10)  || 1;
@@ -450,88 +479,84 @@ exports.getAllJobPostsPublic = async (req, res) => {
 };
 
 
+
 exports.updateJobPostById = async (req, res) => {
   try {
     const { id, category, industryType, state, expiredDate, status, ...updateData } = req.body;
     const { userId } = req.user;
 
-    if (!id) {
+    // Validate ID
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ status: false, message: "Valid job post ID is required." });
+    }
+
+    // Load post
+    const jobPost = await JobPost.findById(id);
+    if (!jobPost) {
+      return res.status(404).json({ status: false, message: "Job post not found." });
+    }
+
+    // Ownership check
+    if (jobPost.userId.toString() !== userId.toString()) {
+      return res.status(403).json({ status: false, message: "You are not authorized to update this job post." });
+    }
+
+    // ⛔ Block updates to soft-deleted posts
+    if (jobPost.isDeleted === true) {
       return res.status(400).json({
         status: false,
-        message: "Job post ID is required."
-      });
-    }
-
-    const jobPost = await JobPost.findById(id);
-
-    if (!jobPost) {
-      return res.status(404).json({
-        status: false,
-        message: "Job post not found."
-      });
-    }
-
-    if (jobPost.userId.toString() !== userId.toString()) {
-      return res.status(403).json({
-        status: false,
-        message: "You are not authorized to update this job post."
+        message: "This job post has been soft deleted and cannot be updated."
       });
     }
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-   
-    const restrictedFields = ["_id", "userId", "companyId", "__v"];
+    // Update allowed fields only
+    const restrictedFields = ["_id", "userId", "companyId", "__v", "isDeleted", "deletedAt"];
     Object.keys(updateData).forEach((field) => {
       if (!restrictedFields.includes(field)) {
         jobPost[field] = updateData[field];
       }
     });
 
-   
+    // Resolve category by name (optional)
     if (category) {
       const categoryDoc = await Category.findOne({ name: category });
-      if (!categoryDoc) {
-        return res.status(400).json({ status: false, message: "Invalid category name." });
-      }
+      if (!categoryDoc) return res.status(400).json({ status: false, message: "Invalid category name." });
       jobPost.category = categoryDoc._id;
     }
 
-   
+    // Resolve industryType by name (optional)
     if (industryType) {
       const industryTypeDoc = await IndustryType.findOne({ name: industryType });
-      if (!industryTypeDoc) {
-        return res.status(400).json({ status: false, message: "Invalid industry type name." });
-      }
+      if (!industryTypeDoc) return res.status(400).json({ status: false, message: "Invalid industry type name." });
       jobPost.industryType = industryTypeDoc._id;
     }
 
-   
+    // Resolve state by name (optional)
     if (state) {
-      const stateDoc = await StateCity.findOne({ state: state });
-      if (!stateDoc) {
-        return res.status(400).json({ status: false, message: "Invalid state name." });
-      }
+      const stateDoc = await StateCity.findOne({ state });
+      if (!stateDoc) return res.status(400).json({ status: false, message: "Invalid state name." });
       jobPost.state = stateDoc._id;
     }
 
-   
+    // Expiry logic
     if (expiredDate) {
-  const [year, month, day] = expiredDate.split("-");
-  const formattedExpiry = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+      // Expecting "YYYY-MM-DD"
+      const [year, month, day] = expiredDate.split("-");
+      const formattedExpiry = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+
+      if (isNaN(formattedExpiry.getTime())) {
+        return res.status(400).json({ status: false, message: "Invalid expiredDate format. Use YYYY-MM-DD." });
+      }
 
       jobPost.expiredDate = formattedExpiry;
       jobPost.markModified("expiredDate");
 
-   
-      if (formattedExpiry < today) {
-        jobPost.status = "expired";
-      } else {
-        jobPost.status = "active";
-      }
+      jobPost.status = formattedExpiry < today ? "expired" : "active";
     } else {
-      
+      // Default to +30 days if not provided
       const defaultExpiry = new Date();
       defaultExpiry.setDate(defaultExpiry.getDate() + 30);
       defaultExpiry.setHours(0, 0, 0, 0);
@@ -540,7 +565,7 @@ exports.updateJobPostById = async (req, res) => {
       jobPost.status = "active";
     }
 
-  
+    // Manual status override (if no expiredDate change provided)
     if (status && !expiredDate) {
       if (status === "active" && jobPost.status === "expired") {
         return res.status(400).json({
@@ -553,7 +578,7 @@ exports.updateJobPostById = async (req, res) => {
 
     await jobPost.save();
 
-    
+    // Re-fetch populated
     const populatedJobPost = await JobPost.findById(jobPost._id)
       .populate("category", "name")
       .populate("industryType", "name")
@@ -564,16 +589,31 @@ exports.updateJobPostById = async (req, res) => {
     populatedJobPost.industryType = populatedJobPost.industryType?.name || null;
     populatedJobPost.state = populatedJobPost.state?.state || null;
 
-   
     if (populatedJobPost.expiredDate) {
       populatedJobPost.expiredDate = new Date(populatedJobPost.expiredDate).toISOString().split("T")[0];
     }
 
-    //add this: compute "X days ago" from createdAt
-const createdAt = populatedJobPost.createdAt || createdAtFromObjectId(populatedJobPost._id);
-populatedJobPost.jobPosted = daysAgo(createdAt);
+    // Helpers
+    const createdAtFromObjectId = (oid) => {
+      try {
+        return new Date(parseInt(String(oid).substring(0, 8), 16) * 1000);
+      } catch {
+        return null;
+      }
+    };
+    const daysAgo = (d) => {
+      if (!d) return null;
+      const oneDay = 24 * 60 * 60 * 1000;
+      const diff = Math.floor((Date.now() - new Date(d).getTime()) / oneDay);
+      if (diff <= 0) return "today";
+      if (diff === 1) return "1 day ago";
+      return `${diff} days ago`;
+    };
 
-    res.json({
+    const createdAt = populatedJobPost.createdAt || createdAtFromObjectId(populatedJobPost._id);
+    populatedJobPost.jobPosted = daysAgo(createdAt);
+
+    return res.status(200).json({
       status: true,
       message: "Job post updated successfully.",
       data: populatedJobPost
@@ -581,7 +621,7 @@ populatedJobPost.jobPosted = daysAgo(createdAt);
 
   } catch (error) {
     console.error("Error updating job post:", error);
-    res.status(500).json({
+    return res.status(500).json({
       status: false,
       message: "Failed to update job post.",
       error: error.message
@@ -706,7 +746,7 @@ exports.deleteJobPostById = async (req, res) => {
     if (!jobPost) {
       return res.status(404).json({
         status: false,
-        message: "Job post not found or already deleted."
+        message: "Job post is already deleted."
       });
     }
 

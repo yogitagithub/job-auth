@@ -3,7 +3,6 @@ const fs = require("fs");
 const path = require("path");
 const JobSeekerProfile = require("../models/JobSeekerProfile");
 
-
 exports.createResume = async (req, res) => {
   try {
     const { userId, role } = req.user;
@@ -30,17 +29,37 @@ exports.createResume = async (req, res) => {
       });
     }
 
+    // Fetch regardless of isDeleted so we can detect soft-deleted state
     const existingResume = await Resume.findOne({ userId });
 
+    // If a resume exists but is soft-deleted, block the update
+    if (existingResume && existingResume.isDeleted === true) {
+      return res.status(400).json({
+        status: false,
+        message: "This resume has been soft deleted and cannot be updated. Please create a new resume entry.",
+      });
+    }
+
     if (existingResume) {
-     
-      const oldFilePath = path.join(__dirname, "..", "uploads", "resumes", path.basename(existingResume.fileUrl));
-      if (fs.existsSync(oldFilePath)) {
-        fs.unlinkSync(oldFilePath);
+      // Delete old file if present (best-effort)
+      try {
+        const oldFilePath = path.join(
+          __dirname,
+          "..",
+          "uploads",
+          "resumes",
+          path.basename(existingResume.fileUrl || "")
+        );
+        if (oldFilePath && fs.existsSync(oldFilePath)) {
+          fs.unlinkSync(oldFilePath);
+        }
+      } catch (e) {
+        // don't fail the request because of filesystem issues
+        console.warn("Warning: Could not remove old resume file:", e.message);
       }
 
-     
-      existingResume.fileUrl = `${process.env.BASE_URL}/uploads/resumes/${req.file.filename}`;
+      // Update metadata
+      existingResume.fileUrl  = `${process.env.BASE_URL}/uploads/resumes/${req.file.filename}`;
       existingResume.fileName = req.file.originalname;
       existingResume.fileType = req.file.mimetype;
       existingResume.fileSize = req.file.size;
@@ -54,7 +73,7 @@ exports.createResume = async (req, res) => {
       });
     }
 
-  
+    // No previous resume -> create new
     const fileUrl = `${process.env.BASE_URL}/uploads/resumes/${req.file.filename}`;
     const newResume = new Resume({
       userId,
@@ -67,7 +86,7 @@ exports.createResume = async (req, res) => {
 
     await newResume.save();
 
-    res.status(201).json({
+    return res.status(201).json({
       status: true,
       message: "Resume uploaded successfully.",
       data: { resume: newResume.fileUrl },
@@ -75,14 +94,13 @@ exports.createResume = async (req, res) => {
 
   } catch (error) {
     console.error("Error uploading resume:", error);
-    res.status(500).json({
+    return res.status(500).json({
       status: false,
       message: "Server error.",
       error: error.message,
     });
   }
 };
-
 
 exports.getMyResume = async (req, res) => {
   try {
@@ -95,12 +113,21 @@ exports.getMyResume = async (req, res) => {
       });
     }
 
+    // Fetch without filtering isDeleted so we can detect soft-deleted state
     const resume = await Resume.findOne({ userId }).lean();
 
     if (!resume) {
       return res.status(200).json({
         status: false,
         message: "No resume found for this user.",
+      });
+    }
+
+    // Soft-deleted? -> block with 400
+    if (resume.isDeleted === true) {
+      return res.status(400).json({
+        status: false,
+        message: "This resume has been soft deleted and cannot be viewed.",
       });
     }
 
@@ -131,7 +158,6 @@ exports.getMyResume = async (req, res) => {
   }
 };
 
-
 exports.deleteResume = async (req, res) => {
   try {
     const { userId, role } = req.user;
@@ -143,25 +169,34 @@ exports.deleteResume = async (req, res) => {
       });
     }
 
-   
-    const resume = await Resume.findOne({ userId, isDeleted: false });
+    // Fetch regardless of isDeleted so we can detect the soft-deleted state
+    const resume = await Resume.findOne({ userId });
 
     if (!resume) {
       return res.status(404).json({
         status: false,
-        message: "No active resume found for this user.",
+        message: "Resume not found for this user.",
       });
     }
 
-    
+    // Already soft-deleted?
+    if (resume.isDeleted === true) {
+      return res.status(400).json({
+        status: false,
+        message: "This resume has already been soft deleted.",
+      });
+    }
+
+    // Soft delete
     resume.isDeleted = true;
+    // if your schema supports it, also store a timestamp:
+    resume.deletedAt = new Date(); // add deletedAt: { type: Date } in schema if you want
     await resume.save();
 
     return res.status(200).json({
       status: true,
       message: "Resume deleted successfully (soft delete).",
     });
-
   } catch (error) {
     console.error("Error deleting resume:", error);
     return res.status(500).json({
@@ -171,3 +206,4 @@ exports.deleteResume = async (req, res) => {
     });
   }
 };
+
