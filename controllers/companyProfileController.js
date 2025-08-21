@@ -6,6 +6,9 @@ const fs = require("fs");
 const fsp = fs.promises;
 const path = require("path");
 
+const mongoose = require("mongoose");
+
+
 exports.saveProfile = async (req, res) => {
   try {
     const { userId, role, phoneNumber } = req.user;
@@ -24,58 +27,120 @@ exports.saveProfile = async (req, res) => {
       });
     }
 
-    // 🔹 Normalize aboutCompany
-    if (!req.body.aboutCompany || !req.body.aboutCompany.trim()) {
-      req.body.aboutCompany = null;
+    // Get current profile early (helps city-only/state-only logic)
+    let profile = await CompanyProfile.findOne({ userId });
+
+    // aboutCompany: normalize only if key is present
+    if (Object.prototype.hasOwnProperty.call(req.body, "aboutCompany")) {
+      const v = req.body.aboutCompany;
+      req.body.aboutCompany = v && String(v).trim() ? String(v).trim() : null;
     }
 
-    // 🔹 Handle industryType by name
-    if (req.body.industryType) {
-      const industry = await IndustryType.findOne({ name: req.body.industryType });
-      if (!industry) {
+    // --------- industryType (optional) ----------
+    if (Object.prototype.hasOwnProperty.call(req.body, "industryType")) {
+      const val = req.body.industryType;
+      let industryDoc = null;
+
+      if (mongoose.Types.ObjectId.isValid(val)) {
+        industryDoc = await IndustryType.findById(val);
+      }
+      if (!industryDoc && typeof val === "string") {
+        industryDoc = await IndustryType.findOne({ name: val.trim() });
+      }
+      if (!industryDoc) {
         return res.status(400).json({
           status: false,
-          message: "Invalid industry type name."
+          message: "Invalid industry type (use valid name or id)."
         });
       }
-      req.body.industryType = industry._id;
+      req.body.industryType = industryDoc._id;
     }
 
-    // 🔹 Handle state + city
-    if (req.body.state && req.body.city) {
-      const stateDoc = await StateCity.findOne({ state: req.body.state });
+    // --------- state & city (optional, flexible) ----------
+    const hasState = Object.prototype.hasOwnProperty.call(req.body, "state");
+    const hasCity  = Object.prototype.hasOwnProperty.call(req.body, "city");
+
+    // Helper: resolve a state by name or id
+    const resolveState = async (input) => {
+      if (mongoose.Types.ObjectId.isValid(input)) {
+        return StateCity.findById(input);
+      }
+      return StateCity.findOne({ state: input });
+    };
+
+    // Case A: state provided (with or without city)
+    if (hasState) {
+      const stateDoc = await resolveState(req.body.state);
+      if (!stateDoc) {
+        return res.status(400).json({ status: false, message: "Invalid state." });
+      }
+
+      // If city is also provided, validate against this state
+      if (hasCity) {
+        if (!req.body.city || !stateDoc.cities.includes(req.body.city)) {
+          return res.status(400).json({
+            status: false,
+            message: "Invalid city for the selected state."
+          });
+        }
+      } else {
+        // state-only update: if existing city is now invalid for new state, clear it
+        const existingCity = profile?.city;
+        if (existingCity && !stateDoc.cities.includes(existingCity)) {
+          req.body.city = null; // keep data consistent
+        }
+      }
+
+      req.body.state = stateDoc._id; // store as ObjectId
+    }
+
+    // Case B: only city provided (no state key in body)
+    if (!hasState && hasCity) {
+      if (!profile) {
+        // On create, cannot validate city without knowing state
+        return res.status(400).json({
+          status: false,
+          message: "Cannot update only city on create. Provide state as well."
+        });
+      }
+      if (!profile.state) {
+        return res.status(400).json({
+          status: false,
+          message: "Cannot update city because state is missing in profile."
+        });
+      }
+
+      const stateDoc = await StateCity.findById(profile.state);
       if (!stateDoc) {
         return res.status(400).json({
           status: false,
-          message: "Invalid state name."
+          message: "Stored state not found."
         });
       }
-      if (!stateDoc.cities.includes(req.body.city)) {
+      if (!req.body.city || !stateDoc.cities.includes(req.body.city)) {
         return res.status(400).json({
           status: false,
-          message: "Invalid city for the selected state."
+          message: "Invalid city for the stored state."
         });
       }
-      req.body.state = stateDoc._id;
-    } else {
-      return res.status(400).json({
-        status: false,
-        message: "State and city are required."
-      });
+      // nothing else to change; city will be set below
     }
 
-    // 🔹 Create or Update
-    let profile = await CompanyProfile.findOne({ userId });
+    // --------- Create or Update (partial allowed) ----------
+    const restrictedFields = ["_id", "userId", "phoneNumber", "__v", "image"];
+    const isCreate = !profile;
 
-    if (!profile) {
+    if (isCreate) {
       profile = new CompanyProfile({
         userId,
         phoneNumber,
-        ...req.body
+        ...Object.keys(req.body).reduce((acc, k) => {
+          if (!restrictedFields.includes(k)) acc[k] = req.body[k];
+          return acc;
+        }, {})
       });
       await profile.save();
     } else {
-      const restrictedFields = ["_id", "userId", "phoneNumber", "__v", "image"];
       Object.keys(req.body).forEach((field) => {
         if (!restrictedFields.includes(field)) {
           profile[field] = req.body[field];
@@ -84,26 +149,25 @@ exports.saveProfile = async (req, res) => {
       await profile.save();
     }
 
-    // 🔹 Populate response
-    const populatedProfile = await CompanyProfile.findById(profile._id)
+    // --------- Populate & respond ----------
+    const populated = await CompanyProfile.findById(profile._id)
       .populate("state", "state")
       .populate("industryType", "name");
 
     return res.status(200).json({
       status: true,
-      message: "Company profile saved successfully.",
+      message: `Company profile ${isCreate ? "created" : "updated"} successfully.`,
       data: {
-        ...populatedProfile.toObject(),
-        state: populatedProfile.state?.state || null,
-        city: populatedProfile.city,
-        industryType: populatedProfile.industryType?.name || null,
-        aboutCompany: populatedProfile.aboutCompany || null   // ✅ ensure always in response
+        ...populated.toObject(),
+        state: populated.state?.state || null,
+        city: populated.city ?? null,
+        industryType: populated.industryType?.name || null,
+        aboutCompany: populated.aboutCompany ?? null
       }
     });
-
   } catch (error) {
     console.error("Error creating/updating company profile:", error);
-    res.status(500).json({
+    return res.status(500).json({
       status: false,
       message: "Server error.",
       error: error.message
@@ -346,6 +410,7 @@ exports.getProfileImage = async (req, res) => {
   }
 };
 
+//without token
 exports.getAllCompanies = async (req, res) => {
   try {
   

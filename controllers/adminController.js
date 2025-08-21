@@ -24,6 +24,8 @@ const ADMIN_PHONE = '1234567809';
 const STATIC_OTP = '1111';
 
 
+
+
 //Authentication
 exports.sendAdminOtp = async (req, res) => {
   const { phoneNumber } = req.body;
@@ -354,6 +356,7 @@ exports.deleteCategory = async (req, res) => {
   }
 };
 
+//get for employer and job seeker
 exports.getCategoryBasedOnRole = async (req, res) => {
   try {
     const { role } = req.user;
@@ -479,7 +482,7 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
       });
     }
 
-    // Ensure category exists (optional but helpful)
+    // Ensure category exists
     const catExists = await Category.exists({ _id: categoryId });
     if (!catExists) {
       return res.status(404).json({
@@ -493,7 +496,7 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
     const limit = parseInt(req.query.limit, 10) || 5;
     const skip  = (page - 1) * limit;
 
-    // Filter only by category
+    // Filter only by category (add your own public filters if needed)
     const filter = { category: categoryId };
 
     // Count & fetch
@@ -502,14 +505,31 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
 
     const jobPosts = await JobPost.find(filter)
       .select("-createdAt -updatedAt -__v")
-      .populate({ path: "companyId", select: "companyName image" })
-      .populate("category", "name")
-      .populate("industryType", "name")
-      .populate("state", "state")
+      .populate({ path: "companyId",    select: "companyName image" })
+      .populate({ path: "category",     select: "name" })
+      .populate({ path: "industryType", select: "name" })
+      .populate({ path: "state",        select: "state" })
+      .populate({ path: "salaryType",   select: "name label title value" }) // added
+      .populate({ path: "jobType",      select: "name label title value" }) // added
+      .populate({ path: "experience",   select: "name range label" })       // added
+      .populate({ path: "otherField",   select: "name label title" })       // added
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean();
+
+    // Generic display-name picker for referenced docs
+    const pickDisplay = (doc) => {
+      if (!doc) return null;
+      return (
+        doc.name ??
+        doc.label ??
+        doc.title ??
+        doc.range ??
+        doc.value ??
+        null
+      );
+    };
 
     const data = jobPosts.map((j) => ({
       _id: j._id,
@@ -519,16 +539,16 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
       industryType: j.industryType?.name ?? null,
       jobTitle: j.jobTitle,
       jobDescription: j.jobDescription,
-      salaryType: j.salaryType,
+      salaryType: pickDisplay(j.salaryType), // now human-readable
       displayPhoneNumber: j.displayPhoneNumber,
       displayEmail: j.displayEmail,
-      jobType: j.jobType,
+      jobType: pickDisplay(j.jobType),       // now human-readable
       skills: j.skills,
       minSalary: j.minSalary,
       maxSalary: j.maxSalary,
       state: j.state?.state ?? null,
-      experience: j.experience,
-      otherField: j.otherField,
+      experience: pickDisplay(j.experience), // now human-readable
+      otherField: pickDisplay(j.otherField), // now human-readable
       status: j.status,
       expiredDate: j.expiredDate,
       isDeleted: j.isDeleted,
@@ -552,8 +572,7 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
   }
 };
 
-
-//Industry Type
+//industry type
 exports.createIndustry = async (req, res) => {
   try {
     const { name } = req.body;
