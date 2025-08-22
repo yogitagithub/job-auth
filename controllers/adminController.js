@@ -442,15 +442,33 @@ exports.getAllCategoriesPublic = async (req, res) => {
       .limit(limit)
       .lean();
 
-    // 3) Shape response
+    // 3) Build job counts for this page (active + non-deleted jobs)
+    const categoryIds = categories.map(c => c._id);
+    const countMap = {};
+
+    await Promise.all(
+      categoryIds.map(async (id) => {
+        const n = await JobPost.countDocuments({
+          isDeleted: false,
+          status: "active",          // only active jobs
+          category: id
+          // If your system doesn't flip status to "expired" automatically,
+          // also enforce: expiredDate: { $gt: new Date() }
+        });
+        countMap[id.toString()] = n;
+      })
+    );
+
+    // 4) Shape response
     const data = categories.map(c => ({
       id: c._id,
       name: c.name,
       image: c.image || null,
-      isDeleted: !!c.isDeleted
+      isDeleted: !!c.isDeleted,
+      jobCount: countMap[c._id.toString()] || 0
     }));
 
-    // 4) Respond
+    // 5) Respond
     return res.status(200).json({
       status: true,
       message: "Categories fetched successfully.",
@@ -470,7 +488,7 @@ exports.getAllCategoriesPublic = async (req, res) => {
   }
 };
 
-//Get job list based on category
+
 exports.getJobPostsByCategoryPublic = async (req, res) => {
   try {
     const { categoryId } = req.params;
