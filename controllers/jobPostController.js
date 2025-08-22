@@ -242,6 +242,7 @@ exports.getAllJobPosts = async (req, res) => {
       hourlyRate:   job.hourlyRate ?? null,
       status:       job.status ?? null,
       isApplied:    !!job.isApplied,
+      isDeleted: !!job.isDeleted,
 
       expiredDate:  job.expiredDate ? job.expiredDate.toISOString().split("T")[0] : null,
       createdAt:    job.createdAt,
