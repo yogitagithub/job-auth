@@ -12,6 +12,7 @@ const OtherField = require("../models/AdminOtherField");
 
 const CompanyProfile = require("../models/CompanyProfile");
 const JobSeekerProfile = require("../models/JobSeekerProfile");
+const FeaturedCompany = require("../models/FeaturedCompany");
 
 const User = require('../models/User');
 const JobPost = require("../models/JobPost");
@@ -1383,6 +1384,7 @@ exports.updateJobType = async (req, res) => {
   }
 };
 
+//get job type for admin
 exports.getJobTypes = async (req, res) => {
   try {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
@@ -1709,7 +1711,6 @@ exports.getSalaryTypeBasedOnRole = async (req, res) => {
 
 
 //other field
-
 exports.createOtherField = async (req, res) => {
   try {
     const name = (req.body?.name || "").trim();
@@ -1916,6 +1917,532 @@ exports.getOtherFieldBasedOnRole = async (req, res) => {
   }
 };
 
+//get companies list for admin
+exports.getCompanyProfiles = async (req, res) => {
+  try {
+    const page  = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const skip  = (page - 1) * limit;
+
+    // Count only non-deleted
+    const totalRecord = await CompanyProfile.countDocuments({ isDeleted: false });
+
+    // Fetch only non-deleted
+    const companies = await CompanyProfile.find({ isDeleted: false })
+      .populate("industryType", "name")
+      .populate("state", "state")
+      .sort({ createdAt: -1 }) // fixed sort: newest first
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    if (!companies || companies.length === 0) {
+      return res.status(404).json({
+        status: false,
+        message: "No company profiles found."
+      });
+    }
+
+    const data = companies.map(company => ({
+      id: company._id,
+      userId: company.userId,
+      phoneNumber: company.phoneNumber,
+      companyName: company.companyName,
+      industryType: company.industryType?.name || null,
+      contactPersonName: company.contactPersonName,
+      panCardNumber: company.panCardNumber,
+      gstNumber: company.gstNumber,
+      alternatePhoneNumber: company.alternatePhoneNumber,
+      email: company.email,
+      companyAddress: company.companyAddress,
+      state: company.state?.state || null,
+      city: company.city,
+      pincode: company.pincode,
+      image: company.image
+    }));
+
+    return res.status(200).json({
+      status: true,
+      message: "Company profiles fetched successfully.",
+      totalRecord,
+      currentPage: page,
+      totalPages: Math.ceil(totalRecord / limit),
+      data
+    });
+  } catch (error) {
+    console.error("getCompanyProfiles error:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: error.message
+    });
+  }
+};
 
 
+//get job seeker list for admin
+exports.getJobSeekerProfiles = async (req, res) => {
+  try {
+    const page  = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const skip  = (page - 1) * limit;
 
+    // Count only non-deleted
+    const totalRecord = await JobSeekerProfile.countDocuments({ isDeleted: false });
+
+    // Fetch only non-deleted
+    const seeker = await JobSeekerProfile.find({ isDeleted: false })
+      .populate("jobProfile", "name")
+      .populate("industryType", "name")
+      .populate("state", "state")
+      .sort({ createdAt: -1 }) // fixed sort: newest first
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    if (!seeker || seeker.length === 0) {
+      return res.status(404).json({
+        status: false,
+        message: "No job seeker profiles found."
+      });
+    }
+
+    const data = seeker.map(seeker => ({
+      id: seeker._id,
+      userId: seeker.userId,
+      phoneNumber: seeker.phoneNumber,
+      jobSeekerName: seeker.name,
+      industryType: seeker.industryType?.name || null,
+       jobprofile: seeker.jobProfile?.name || null,
+      dateOfBirth: seeker.dateOfBirth,
+      panCardNumber: seeker.panCardNumber,
+      gender: seeker.gender,
+      alternatePhoneNumber: seeker.alternatePhoneNumber,
+      email: seeker.email,
+      jobSeekerAddress: seeker.address,
+      state: seeker.state?.state || null,
+      city: seeker.city,
+      pincode: seeker.pincode,
+      image: seeker.image
+    }));
+
+    return res.status(200).json({
+      status: true,
+      message: "Job seeker profiles fetched successfully.",
+      totalRecord,
+      currentPage: page,
+      totalPages: Math.ceil(totalRecord / limit),
+      data
+    });
+  } catch (error) {
+    console.error("getJobSeekerProfiles error:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: error.message
+    });
+  }
+};
+
+//featured companies
+exports.addFeaturedCompanies = async (req, res) => {
+  try {
+    const { companyId, orderNo } = req.body || {};
+
+    // Basic validation
+    if (!companyId || !mongoose.isValidObjectId(companyId)) {
+      return res.status(400).json({ status: false, message: "Valid companyId is required." });
+    }
+    const orderNoNum = parseInt(orderNo, 10);
+    if (!Number.isFinite(orderNoNum)) {
+      return res.status(400).json({ status: false, message: "Valid orderNo is required." });
+    }
+
+    // Make sure the source company exists and is not soft-deleted
+    const company = await CompanyProfile.findOne({ _id: companyId, isDeleted: false })
+      .populate("industryType", "name")
+      .populate("state", "state")
+      .lean();
+
+    if (!company) {
+      return res.status(404).json({
+        status: false,
+        message: "Company not found or is soft-deleted."
+      });
+    }
+
+    // Prevent duplicate active featured for the same company
+    const existingActive = await FeaturedCompany.findOne({ companyId, isDeleted: false }).lean();
+    if (existingActive) {
+      return res.status(409).json({
+        status: false,
+        message: "This company is already featured."
+      });
+    }
+
+    // Ensure orderNo is unique among active featured items
+    const orderClash = await FeaturedCompany.findOne({ orderNo: orderNoNum, isDeleted: false }).lean();
+    if (orderClash) {
+      return res.status(409).json({
+        status: false,
+        message: `Order number ${orderNoNum} is already in use.`
+      });
+    }
+
+    // If there is a soft-deleted record for the same company, revive it (optional convenience)
+    let doc = await FeaturedCompany.findOne({ companyId }).exec();
+    if (doc && doc.isDeleted === true) {
+      doc.orderNo = orderNoNum;
+      doc.isDeleted = false;
+      await doc.save();
+    } else if (!doc) {
+      doc = await FeaturedCompany.create({
+        companyId,
+        orderNo: orderNoNum
+      });
+    }
+
+    // Build response with full company details + chosen order number
+    return res.status(201).json({
+      status: true,
+      message: "Featured company added.",
+      data: {
+        id: doc._id,
+        orderNo: doc.orderNo,
+        isDeleted: doc.isDeleted,
+        companyId: company._id,
+        userId: company.userId,
+        phoneNumber: company.phoneNumber,
+        companyName: company.companyName,
+        industryType: company.industryType?.name || null,
+        contactPersonName: company.contactPersonName,
+        panCardNumber: company.panCardNumber,
+        gstNumber: company.gstNumber,
+        alternatePhoneNumber: company.alternatePhoneNumber,
+        email: company.email,
+        companyAddress: company.companyAddress,
+        state: company.state?.state || null,
+        city: company.city,
+        pincode: company.pincode,
+        image: company.image,
+        createdAt: doc.createdAt,
+        updatedAt: doc.updatedAt
+      }
+    });
+  } catch (err) {
+    console.error("addFeaturedCompany error:", err);
+    return res.status(500).json({ status: false, message: "Server error", error: err.message });
+  }
+};
+
+//for admin only
+exports.getFeaturedCompanies = async (req, res) => {
+  try {
+    const page  = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const skip  = (page - 1) * limit;
+
+    const result = await FeaturedCompany.aggregate([
+      { $match: { isDeleted: false } }, // only active featured rows
+
+      // Join company details
+      {
+        $lookup: {
+          from: "companyprofiles", // adjust if your collection name differs
+          localField: "companyId",
+          foreignField: "_id",
+          as: "company"
+        }
+      },
+      { $unwind: "$company" },
+
+      // Exclude companies that are soft-deleted
+      { $match: { "company.isDeleted": false } },
+
+      // Join state (optional, for readable name)
+      {
+        $lookup: {
+          from: "states",
+          localField: "company.state",
+          foreignField: "_id",
+          as: "stateDoc"
+        }
+      },
+
+      // Derive stateName and null-safe aboutCompany
+      {
+        $addFields: {
+          stateName: { $ifNull: [{ $arrayElemAt: ["$stateDoc.state", 0] }, null] },
+          aboutCompany: { $ifNull: ["$company.aboutCompany", null] }
+        }
+      },
+
+      // Only keep fields we want to return
+      {
+        $project: {
+          _id: 1,
+          orderNo: 1,
+          isDeleted: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          stateName: 1,
+          aboutCompany: 1,
+          "company._id": 1,
+          "company.companyName": 1,
+          "company.companyAddress": 1,
+          "company.city": 1,
+          "company.pincode": 1,
+          "company.image": 1
+          // Note: userId/phoneNumber intentionally excluded
+        }
+      },
+
+      // Sort, then paginate with total
+      { $sort: { orderNo: 1, createdAt: 1 } },
+      {
+        $facet: {
+          meta: [{ $count: "total" }],
+          data: [{ $skip: skip }, { $limit: limit }]
+        }
+      }
+    ]);
+
+    const totalRecord = result?.[0]?.meta?.[0]?.total || 0;
+    const rows = result?.[0]?.data || [];
+
+    if (rows.length === 0) {
+      return res.status(404).json({ status: false, message: "No featured companies found." });
+    }
+
+    const data = rows.map(doc => ({
+      id: doc._id,
+      orderNo: doc.orderNo,
+      isDeleted: doc.isDeleted,
+
+      companyId: doc.company._id,
+      companyName: doc.company.companyName,
+      aboutCompany: doc.aboutCompany,              // ✅ included, null-safe
+      companyAddress: doc.company.companyAddress,
+      state: doc.stateName,
+      city: doc.company.city,
+      pincode: doc.company.pincode,
+      image: doc.company.image,
+
+      createdAt: doc.createdAt,
+      updatedAt: doc.updatedAt
+    }));
+
+    return res.status(200).json({
+      status: true,
+      message: "Featured companies fetched successfully.",
+      totalRecord,
+      currentPage: page,
+      totalPages: Math.ceil(totalRecord / limit),
+      data
+    });
+  } catch (err) {
+    console.error("getFeaturedCompanies error:", err);
+    return res.status(500).json({ status: false, message: "Server error", error: err.message });
+  }
+};
+
+
+exports.deleteFeaturedCompanies = async (req, res) => {
+  try {
+    const { id } = req.body || {};
+
+    if (!id || !mongoose.isValidObjectId(id)) {
+      return res.status(400).json({
+        status: false,
+        message: "Valid id is required."
+      });
+    }
+
+    const doc = await FeaturedCompany.findById(id);
+    if (!doc) {
+      return res.status(404).json({
+        status: false,
+        message: "Featured company not found."
+      });
+    }
+
+    if (doc.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "This is already soft deleted."
+      });
+    }
+
+    doc.isDeleted = true;
+    await doc.save();
+
+    return res.status(200).json({
+      status: true,
+      message: "Featured company soft deleted successfully."
+    });
+  } catch (err) {
+    console.error("deleteFeaturedCompanies error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: err.message
+    });
+  }
+};
+
+exports.updateFeaturedCompanies = async (req, res) => {
+  try {
+    const { id, companyId, orderNo } = req.body || {};
+
+    // Basic validation
+    if (!id || !mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ status: false, message: "Valid id is required." });
+    }
+    if (!companyId || !mongoose.isValidObjectId(companyId)) {
+      return res.status(400).json({ status: false, message: "Valid companyId is required." });
+    }
+    const orderNoNum = parseInt(orderNo, 10);
+    if (!Number.isFinite(orderNoNum)) {
+      return res.status(400).json({ status: false, message: "Valid orderNo is required." });
+    }
+
+    // Fetch the featured row
+    const doc = await FeaturedCompany.findById(id);
+    if (!doc) {
+      return res.status(404).json({ status: false, message: "Featured company not found." });
+    }
+
+    // Soft-deleted rows cannot be updated
+    if (doc.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "This is already soft deleted."
+      });
+    }
+
+    // Ensure the provided companyId matches the record
+    if (String(doc.companyId) !== String(companyId)) {
+      return res.status(400).json({
+        status: false,
+        message: "companyId does not match the featured record."
+      });
+    }
+
+    // Avoid order number collision among active featured items
+    const clash = await FeaturedCompany.findOne({
+      _id: { $ne: id },
+      isDeleted: false,
+      orderNo: orderNoNum
+    }).lean();
+
+    if (clash) {
+      return res.status(409).json({
+        status: false,
+        message: `Order number ${orderNoNum} is already in use.`
+      });
+    }
+
+    // If no change, return OK quickly
+    if (doc.orderNo === orderNoNum) {
+      return res.status(200).json({
+        status: true,
+        message: "No changes applied (orderNo is the same).",
+        data: { id: doc._id, companyId: doc.companyId, orderNo: doc.orderNo }
+      });
+    }
+
+    // Update and save
+    doc.orderNo = orderNoNum;
+    await doc.save();
+
+    return res.status(200).json({
+      status: true,
+      message: "Featured company updated successfully.",
+      data: {
+        id: doc._id,
+        companyId: doc.companyId,
+        orderNo: doc.orderNo,
+        isDeleted: doc.isDeleted,
+        updatedAt: doc.updatedAt
+      }
+    });
+  } catch (err) {
+    console.error("updateFeaturedCompanies error:", err);
+    return res.status(500).json({ status: false, message: "Server error.", error: err.message });
+  }
+};
+
+//featured companies list without token
+exports.getFeaturedCompaniesPublic = async (req, res) => {
+  try {
+    const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+    const skip  = (page - 1) * limit;
+
+    // 1) Find all companyIds that are currently featured (not soft-deleted)
+    const featuredIds = await FeaturedCompany.find({ isDeleted: false }).distinct("companyId");
+    if (featuredIds.length === 0) {
+      return res.status(404).json({ status: false, message: "No featured companies found." });
+    }
+
+    // 2) Keep only companies that are NOT soft-deleted
+    const activeCompanyIds = await CompanyProfile
+      .find({ _id: { $in: featuredIds }, isDeleted: false })
+      .distinct("_id");
+
+    if (activeCompanyIds.length === 0) {
+      return res.status(404).json({ status: false, message: "No featured companies found." });
+    }
+
+    // 3) Count & fetch paginated featured records filtered by active companies
+    const [totalRecord, rows] = await Promise.all([
+      FeaturedCompany.countDocuments({ isDeleted: false, companyId: { $in: activeCompanyIds } }),
+      FeaturedCompany.find({ isDeleted: false, companyId: { $in: activeCompanyIds } })
+        .sort({ orderNo: 1, createdAt: 1 })
+        .skip(skip)
+        .limit(limit)
+        .populate({
+          path: "companyId",
+          select: "companyName aboutCompany companyAddress state city pincode image isDeleted",
+          populate: { path: "state", select: "state" }
+        })
+        .lean()
+    ]);
+
+    // Filter out any rare race conditions where populated company is missing/soft-deleted
+    const filtered = (rows || []).filter(r => r.companyId && r.companyId.isDeleted === false);
+
+    if (filtered.length === 0) {
+      return res.status(404).json({ status: false, message: "No featured companies found." });
+    }
+
+    const data = filtered.map(doc => ({
+      id: doc._id,
+      orderNo: doc.orderNo,
+
+      companyId: doc.companyId?._id,
+      companyName: doc.companyId?.companyName || null,
+      aboutCompany: doc.companyId?.aboutCompany ?? null,
+      companyAddress: doc.companyId?.companyAddress ?? null,
+      state: doc.companyId?.state?.state ?? null,   // readable state name or null
+      city: doc.companyId?.city ?? null,
+      pincode: doc.companyId?.pincode ?? null,
+      image: doc.companyId?.image ?? null,
+
+      createdAt: doc.createdAt,
+      updatedAt: doc.updatedAt
+    }));
+
+    return res.status(200).json({
+      status: true,
+      message: "Featured companies fetched successfully.",
+      totalRecord,
+      currentPage: page,
+      totalPages: Math.ceil(totalRecord / limit),
+      data
+    });
+  } catch (err) {
+    console.error("getPublicFeaturedCompanies error:", err);
+    return res.status(500).json({ status: false, message: "Server error", error: err.message });
+  }
+};

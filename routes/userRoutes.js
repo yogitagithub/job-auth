@@ -6,7 +6,7 @@ const { getIndustryBasedOnRole, getCategoryBasedOnRole,
     getExperienceRangeBasedOnRole, getJobTypeBasedOnRole, 
     getOtherFieldBasedOnRole, 
     getJobPostsByCategoryPublic, getAllCategoriesPublic,
-getAllIndustriesPublic } = require('../controllers/adminController');
+getAllIndustriesPublic, getFeaturedCompaniesPublic } = require('../controllers/adminController');
     
 const { verifyToken, verifyJobSeekerOnly, verifyEmployerOnly } = require('../middleware/authMiddleware');
 
@@ -45,6 +45,10 @@ router.get("/salary-type", verifyToken, getSalaryTypeBasedOnRole);
 
 //get job list based on category 
 router.get("/public-categories/:categoryId", getJobPostsByCategoryPublic);
+
+//featured companies list without token
+router.get("/public-featured-companies", getFeaturedCompaniesPublic);
+
 
 
 module.exports = router;

@@ -439,21 +439,19 @@ exports.getProfileImage = async (req, res) => {
 //without token
 exports.getAllCompanies = async (req, res) => {
   try {
-  
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 5;
+    const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
-  
-    const totalCompanies = await CompanyProfile.countDocuments();
+    // Count only non-deleted companies
+    const totalCompanies = await CompanyProfile.countDocuments({ isDeleted: false });
 
-   
-    const companies = await CompanyProfile.find()
+    const companies = await CompanyProfile.find({ isDeleted: false }) // ✅ filter here
       .populate("industryType", "name")
-       .populate("state", "state")
+      .populate("state", "state")
       .skip(skip)
       .limit(limit)
-      .sort({ createdAt: -1 }); 
+      .sort({ createdAt: -1 });
 
     if (!companies || companies.length === 0) {
       return res.status(404).json({
@@ -462,7 +460,6 @@ exports.getAllCompanies = async (req, res) => {
       });
     }
 
-   
     const responseData = companies.map(company => ({
       id: company._id,
       userId: company.userId,
@@ -498,8 +495,3 @@ exports.getAllCompanies = async (req, res) => {
     });
   }
 };
-
-
-
-
-

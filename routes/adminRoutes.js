@@ -10,7 +10,9 @@ const { sendAdminOtp, verifyAdminOtp, createCategory, getIndustry, getCategory,
   deleteIndustry, createProfile, getProfile, updateProfile, deleteProfile,
   createExperience, getExperience, updateExperience, deleteExperience,
   getJobTypes, deleteJobType, updateJobType, createJobType, deleteSalaryType, createSalaryType, getSalaryTypes, updateSalaryType,
-getOtherField, deleteOtherField, updateOtherField, createOtherField } = require('../controllers/adminController');
+getOtherField, deleteOtherField, updateOtherField, createOtherField,
+getCompanyProfiles, getJobSeekerProfiles, addFeaturedCompanies, getFeaturedCompanies,
+updateFeaturedCompanies, deleteFeaturedCompanies } = require('../controllers/adminController');
 
 const { verifyToken, verifyAdmin, verifyEmployerOnly, verifyJobSeekerOnly } = require('../middleware/authMiddleware');
 
@@ -63,6 +65,19 @@ router.post("/create-other-field", verifyToken, verifyAdmin, createOtherField);
 router.put("/update-other-field", verifyToken, verifyAdmin, updateOtherField);
 router.delete("/delete-other-field", verifyToken, verifyAdmin, deleteOtherField);
 router.get("/get-other-field", verifyToken, verifyAdmin, getOtherField);
+
+//company profiles list
+router.get("/company-profiles", verifyToken, verifyAdmin, getCompanyProfiles);
+
+//job seeker profile list
+router.get("/job-seeker", verifyToken, verifyAdmin, getJobSeekerProfiles);
+
+//featured companies
+router.post("/add-featured-companies", verifyToken, verifyAdmin, addFeaturedCompanies);
+ router.put("/update-featured-companies", verifyToken, verifyAdmin, updateFeaturedCompanies);
+ router.delete("/delete-featured-companies", verifyToken, verifyAdmin, deleteFeaturedCompanies);
+ router.get("/get-featured-companies", verifyToken, verifyAdmin, getFeaturedCompanies);
+
 
 
 module.exports = router;
