@@ -420,6 +420,8 @@ exports.getCategoryBasedOnRole = async (req, res) => {
 };
 
 //get all categories without token
+
+
 // exports.getAllCategoriesPublic = async (req, res) => {
 //   try {
 //     // Pagination
