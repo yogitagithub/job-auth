@@ -32,7 +32,7 @@ router.get("/public-industries", getAllIndustriesPublic);
 router.get("/job-profile", verifyToken, verifyJobSeekerOnly, getJobProfileBasedOnRole);
 
 //get exp range list for employer
-router.get("/experience-range", verifyToken, verifyEmployerOnly, getExperienceRangeBasedOnRole);
+router.get("/experience-range", verifyToken, getExperienceRangeBasedOnRole);
 
 //get other field list for employer
 router.get("/other-field", verifyToken, verifyEmployerOnly, getOtherFieldBasedOnRole);

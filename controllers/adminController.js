@@ -1353,7 +1353,7 @@ exports.getExperienceRangeBasedOnRole = async (req, res) => {
       data
     });
   } catch (err) {
-    console.error("getExperienceForEmployer error:", err);
+    console.error("getExperienceRangeBasedOnRole error:", err);
     return res.status(500).json({
       status: false,
       message: "Server error.",
