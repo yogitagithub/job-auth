@@ -12,7 +12,8 @@ const { sendAdminOtp, verifyAdminOtp, createCategory, getIndustry, getCategory,
   getJobTypes, deleteJobType, updateJobType, createJobType, deleteSalaryType, createSalaryType, getSalaryTypes, updateSalaryType,
 getOtherField, deleteOtherField, updateOtherField, createOtherField,
 getCompanyProfiles, getJobSeekerProfiles, addFeaturedCompanies, getFeaturedCompanies,
-updateFeaturedCompanies, deleteFeaturedCompanies } = require('../controllers/adminController');
+updateFeaturedCompanies, deleteFeaturedCompanies, createCurrentSalary,
+getCurrentSalary, deleteCurrentSalary, updateCurrentSalary } = require('../controllers/adminController');
 
 const { verifyToken, verifyAdmin, verifyEmployerOnly, verifyJobSeekerOnly } = require('../middleware/authMiddleware');
 
@@ -78,6 +79,11 @@ router.post("/add-featured-companies", verifyToken, verifyAdmin, addFeaturedComp
  router.delete("/delete-featured-companies", verifyToken, verifyAdmin, deleteFeaturedCompanies);
  router.get("/get-featured-companies", verifyToken, verifyAdmin, getFeaturedCompanies);
 
+ // current salary
+router.post("/create-current-salary", verifyToken, verifyAdmin, createCurrentSalary);
+router.put("/update-current-salary", verifyToken, verifyAdmin, updateCurrentSalary);
+ router.delete("/delete-current-salary", verifyToken, verifyAdmin, deleteCurrentSalary);
+router.get("/get-current-salary", verifyToken, verifyAdmin, getCurrentSalary);
 
 
 module.exports = router;

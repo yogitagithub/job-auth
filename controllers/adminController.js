@@ -9,6 +9,8 @@ const JobType = require("../models/AdminJobType");
 const JobProfile = require("../models/AdminJobProfile");
 const SalaryType = require("../models/AdminSalaryType");
 const OtherField = require("../models/AdminOtherField");
+const CurrentSalary = require("../models/AdminCurrentSalary");
+
 
 const CompanyProfile = require("../models/CompanyProfile");
 const JobSeekerProfile = require("../models/JobSeekerProfile");
@@ -421,7 +423,7 @@ exports.getCategoryBasedOnRole = async (req, res) => {
 
 //get all categories without token
 
-
+//without job count
 // exports.getAllCategoriesPublic = async (req, res) => {
 //   try {
 //     // Pagination
@@ -471,6 +473,8 @@ exports.getCategoryBasedOnRole = async (req, res) => {
 //   }
 // };
 
+
+//job count
 exports.getAllCategoriesPublic = async (req, res) => {
   try {
     // pagination
@@ -2515,3 +2519,172 @@ exports.getFeaturedCompaniesPublic = async (req, res) => {
     return res.status(500).json({ status: false, message: "Server error", error: err.message });
   }
 };
+
+
+//current salary
+exports.createCurrentSalary = async (req, res) => {
+  try {
+    const name = (req.body?.name || "").trim();
+    if (!name) return res.status(400).json({ status: false, message: "name is required" });
+
+    // find by name (case-insensitive), even if soft-deleted
+    const existing = await CurrentSalary.findOne({
+      name: { $regex: `^${escapeRegex(name)}$`, $options: "i" }
+    });
+
+    if (existing) {
+      if (existing.isDeleted) {
+        // restore soft-deleted record
+        existing.isDeleted = false;
+        existing.name = name; // normalize casing/spacing
+        await existing.save();
+        return res.status(200).json({
+          status: true,
+          message: "Current salary restored successfully.",
+          data: existing
+        });
+      }
+      return res.status(409).json({ status: false, message: "Current salary already exists" });
+    }
+
+    const doc = await CurrentSalary.create({ name });
+    return res.status(201).json({
+      status: true,
+      message: "Current salary created successfully.",
+      data: doc
+    });
+  } catch (err) {
+    if (err?.code === 11000) {
+      return res.status(409).json({ status: false, message: "Current salary already exists" });
+    }
+    console.error("createCurrentSalary error:", err);
+    return res.status(500).json({ status: false, message: "Server error" });
+  }
+};
+
+exports.updateCurrentSalary = async (req, res) => {
+  try {
+    const { id } = req.body || {};
+    const name = (req.body?.name || "").trim();
+
+    if (!id || !mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ status: false, message: "Valid id is required" });
+    }
+    if (!name) {
+      return res.status(400).json({ status: false, message: "Name is required" });
+    }
+
+    const doc = await CurrentSalary.findById(id);
+
+    if (!doc) {
+      return res.status(404).json({ status: false, message: "Current salary not found" });
+    }
+
+    // 🚨 block updates on soft-deleted records
+    if (doc.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "This current salary is already soft deleted and cannot be updated."
+      });
+    }
+
+    doc.name = name;
+
+    try {
+      await doc.save(); // may throw E11000 duplicate key error
+    } catch (err) {
+      if (err.code === 11000) {
+        return res.status(409).json({
+          status: false,
+          message: "Another current salary with this name already exists"
+        });
+      }
+      throw err;
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "Current salary updated successfully.",
+      data: {
+        id: doc._id,
+        name: doc.name,
+        isDeleted: doc.isDeleted
+      }
+    });
+  } catch (err) {
+    console.error("updateCurrentSalary error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Server error",
+      error: err.message
+    });
+  }
+};
+
+exports.deleteCurrentSalary = async (req, res) => {
+  try {
+    const { id } = req.body || {};
+    if (!id || !mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ status: false, message: "Valid id is required" });
+    }
+
+    const doc = await CurrentSalary.findById(id);
+
+    if (!doc) {
+      return res.status(404).json({ status: false, message: "Current salary not found" });
+    }
+
+    if (doc.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "This is already soft deleted."
+      });
+    }
+
+    doc.isDeleted = true;
+    await doc.save();
+
+    return res.status(200).json({
+      status: true,
+      message: "Current salary soft deleted successfully."
+    });
+  } catch (err) {
+    console.error("deleteCurrentSalary error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Server error",
+      error: err.message
+    });
+  }
+};
+
+//get for admin
+exports.getCurrentSalary = async (req, res) => {
+  try {
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+    const filter = { isDeleted: false };
+
+    const [totalRecord, data] = await Promise.all([
+      CurrentSalary.countDocuments(filter),
+      CurrentSalary.find(filter)
+        .sort({ createdAt: -1, _id: 1 }) // stable internal order
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean()
+    ]);
+
+    return res.status(200).json({
+      status: true,
+      message: "Current salaries fetched successfully.",
+      totalRecord,
+      totalPage: Math.ceil(totalRecord / limit) || 0,
+      currentPage: page,
+      data
+    });
+  } catch (err) {
+    console.error("getCurrentSalary error:", err);
+    return res.status(500).json({ status: false, message: "Server error" });
+  }
+};
+

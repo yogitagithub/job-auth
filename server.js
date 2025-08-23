@@ -16,6 +16,7 @@ const resumeRoutes = require("./routes/resumeRoutes");
 const skillsRoutes = require("./routes/skillsRoutes");
 const applyJobRoutes = require("./routes/applyJobRoutes");
 const stateCityRoutes = require("./routes/stateCityRoutes");
+const CareerPreferenceRoutes = require("./routes/careerRoutes");
 
 const reviewRoutes = require("./routes/reviewRoutes");
 const screenRoutes = require("./routes/splashScreenRoutes");
@@ -51,6 +52,7 @@ app.use('/api/auth', skillsRoutes);
 app.use('/api/auth', applyJobRoutes);
 app.use('/api/auth', reviewRoutes);
 app.use('/api/auth', stateCityRoutes);
+app.use('/api/auth', CareerPreferenceRoutes);
 
 app.use('/api/auth', screenRoutes);
 app.use('/api/auth/admin', adminRoutes);
