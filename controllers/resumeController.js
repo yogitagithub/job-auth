@@ -86,7 +86,7 @@ exports.createResume = async (req, res) => {
 
     await newResume.save();
 
-    return res.status(201).json({
+    return res.status(200).json({
       status: true,
       message: "Resume uploaded successfully.",
       data: { resume: newResume.fileUrl },
