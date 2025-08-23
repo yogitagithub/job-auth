@@ -93,6 +93,12 @@ const jobPostSchema = new mongoose.Schema(
       required: true
     },
 
+     workingShift: {
+     type: mongoose.Schema.Types.ObjectId,
+      ref: "WorkingShift",
+      required: true
+    },
+
     status: {
       type: String,
       enum: ['active', 'expired', 'inactive'],

@@ -13,7 +13,8 @@ const { sendAdminOtp, verifyAdminOtp, createCategory, getIndustry, getCategory,
 getOtherField, deleteOtherField, updateOtherField, createOtherField,
 getCompanyProfiles, getJobSeekerProfiles, addFeaturedCompanies, getFeaturedCompanies,
 updateFeaturedCompanies, deleteFeaturedCompanies, createCurrentSalary,
-getCurrentSalary, deleteCurrentSalary, updateCurrentSalary } = require('../controllers/adminController');
+getCurrentSalary, deleteCurrentSalary, updateCurrentSalary, createWorkingShift,
+updateWorkingShift, deleteWorkingShift, getWorkingShift } = require('../controllers/adminController');
 
 const { verifyToken, verifyAdmin, verifyEmployerOnly, verifyJobSeekerOnly } = require('../middleware/authMiddleware');
 
@@ -84,6 +85,13 @@ router.post("/create-current-salary", verifyToken, verifyAdmin, createCurrentSal
 router.put("/update-current-salary", verifyToken, verifyAdmin, updateCurrentSalary);
  router.delete("/delete-current-salary", verifyToken, verifyAdmin, deleteCurrentSalary);
 router.get("/get-current-salary", verifyToken, verifyAdmin, getCurrentSalary);
+
+
+ // working shift
+router.post("/create-working-shift", verifyToken, verifyAdmin, createWorkingShift);
+router.put("/update-working-shift", verifyToken, verifyAdmin, updateWorkingShift);
+ router.delete("/delete-working-shift", verifyToken, verifyAdmin, deleteWorkingShift);
+router.get("/get-working-shift", verifyToken, verifyAdmin, getWorkingShift);
 
 
 module.exports = router;
