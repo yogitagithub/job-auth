@@ -3,6 +3,11 @@ const IndustryType = require("../models/AdminIndustry");
 const JobProfile = require("../models/AdminJobProfile");
 const StateCity = require("../models/StateCity");
 
+const JobSeekerEducation = require("../models/Education");
+const WorkExperience = require("../models/WorkExperience");
+const Skill = require("../models/Skills");
+const Resume = require("../models/Resume");
+
 const fs = require("fs");
 const fsp = fs.promises;
 const path = require("path");
@@ -162,13 +167,20 @@ exports.saveProfile = async (req, res) => {
     }
 
     // ---------- Create or Update (partial allowed) ----------
-    const restrictedFields = ["_id", "userId", "phoneNumber", "__v", "image", "isDeleted", "deletedAt"];
+    const restrictedFields = ["_id", "userId", "phoneNumber", "__v", "image", "isDeleted", "deletedAt", "isResumeAdded", "isEducationAdded", "isSkillsAdded", "isExperienceAdded"];
     const isCreate = !profile;
 
     if (isCreate) {
       profile = new JobSeekerProfile({
         userId,
         phoneNumber,
+
+         isResumeAdded:     false,
+    isEducationAdded:  false,
+    isSkillsAdded:     false,
+    isExperienceAdded: false,
+
+
         ...Object.keys(req.body).reduce((acc, k) => {
           if (!restrictedFields.includes(k)) acc[k] = req.body[k];
           return acc;
@@ -201,7 +213,12 @@ exports.saveProfile = async (req, res) => {
         city: populated.city ?? null,
         dateOfBirth: populated.dateOfBirth
           ? populated.dateOfBirth.toISOString().split("T")[0]
-          : null
+          : null,
+
+           isResumeAdded:     !!populated.isResumeAdded,
+        isEducationAdded:  !!populated.isEducationAdded,
+        isSkillsAdded:     !!populated.isSkillsAdded,
+        isExperienceAdded: !!populated.isExperienceAdded
       }
     });
   } catch (error) {
@@ -214,6 +231,7 @@ exports.saveProfile = async (req, res) => {
   }
 };
 
+
 exports.getProfile = async (req, res) => {
   try {
     const { userId, role } = req.user;
@@ -225,7 +243,7 @@ exports.getProfile = async (req, res) => {
       });
     }
 
-    // Fetch the profile (don't filter isDeleted so we can detect it explicitly)
+    // fetch the profile (don't filter isDeleted so we can detect explicitly)
     const profile = await JobSeekerProfile.findOne({ userId })
       .populate("industryType", "name")
       .populate("jobProfile", "name")
@@ -238,51 +256,71 @@ exports.getProfile = async (req, res) => {
       });
     }
 
-    // If soft-deleted, block access with a clear status code
     if (profile.isDeleted === true) {
       return res.status(410).json({
         status: false,
         message: "This profile has been soft deleted and cannot be viewed."
       });
-      // If you prefer 404/400/409, change the status above accordingly.
     }
 
-    function formatDate(date) {
+    // ---- Compute section-completion flags from child collections ----
+    const [eduCount, expCount, skillCount, resumeDoc] = await Promise.all([
+      JobSeekerEducation.countDocuments({ userId, isDeleted: false }),
+      WorkExperience.countDocuments({ userId, isDeleted: false }),
+      Skill.countDocuments({ userId, isDeleted: false, skills: { $exists: true, $ne: "" } }),
+      Resume.findOne({ userId, isDeleted: false })
+    ]);
+
+    const isEducationAdded  = eduCount  > 0;
+    const isExperienceAdded = expCount  > 0;
+    const isSkillsAdded     = skillCount > 0;
+    const isResumeAdded     = !!resumeDoc;
+
+    // (optional) keep the flags in the profile document in sync
+    // await JobSeekerProfile.updateOne(
+    //   { _id: profile._id },
+    //   { $set: { isEducationAdded, isExperienceAdded, isSkillsAdded, isResumeAdded } }
+    // );
+
+    const formatDate = (date) => {
       if (!date) return null;
       const d = new Date(date);
       const day = String(d.getUTCDate()).padStart(2, "0");
       const month = String(d.getUTCMonth() + 1).padStart(2, "0");
       const year = d.getUTCFullYear();
-      return `${year}-${month}-${day}`; // YYYY-MM-DD
-    }
-
-    const profileObj = profile.toObject();
-
-    const responseData = {
-      id: profileObj._id,
-      userId: profileObj.userId,
-      phoneNumber: profileObj.phoneNumber,
-      name: profileObj.name,
-      dateOfBirth: formatDate(profileObj.dateOfBirth),
-      gender: profileObj.gender,
-      email: profileObj.email,
-      industryType: profileObj.industryType?.name || null,
-      jobProfile: profileObj.jobProfile?.name || null,
-      address: profileObj.address,
-      state: profileObj.state?.state || null,
-      city: profileObj.city,
-      pincode: profileObj.pincode,
-      panCardNumber: profileObj.panCardNumber,
-      alternatePhoneNumber: profileObj.alternatePhoneNumber,
-      image: profileObj.image
+      return `${year}-${month}-${day}`;
     };
+
+    const p = profile.toObject();
 
     return res.status(200).json({
       status: true,
       message: "Job seeker profile fetched successfully.",
-      data: responseData
-    });
+      data: {
+        id: p._id,
+        userId: p.userId,
+        phoneNumber: p.phoneNumber,
+        name: p.name,
+        dateOfBirth: formatDate(p.dateOfBirth),
+        gender: p.gender,
+        email: p.email,
+        industryType: p.industryType?.name || null,
+        jobProfile: p.jobProfile?.name || null,
+        address: p.address,
+        state: p.state?.state || null,
+        city: p.city,
+        pincode: p.pincode,
+        panCardNumber: p.panCardNumber,
+        alternatePhoneNumber: p.alternatePhoneNumber,
+        image: p.image,
 
+        // ✅ flags computed from actual data
+        isResumeAdded,
+        isEducationAdded,
+        isSkillsAdded,
+        isExperienceAdded
+      }
+    });
   } catch (error) {
     console.error(error);
     return res.status(500).json({
@@ -483,65 +521,4 @@ exports.deleteProfile = async (req, res) => {
     });
   }
 };
-
-
-// exports.deleteProfile = async (req, res) => {
-//   try {
-//     const { userId, role } = req.user;
-//     const { id } = req.body;
-
-//     if (role !== "job_seeker") {
-//       return res.status(403).json({
-//         status: false,
-//         message: "Only job seekers can delete their profiles."
-//       });
-//     }
-
-//     if (!id) {
-//       return res.status(400).json({
-//         status: false,
-//         message: "Profile ID is required."
-//       });
-//     }
-
-   
-//     const profile = await JobSeekerProfile.findById(id);
-
-//     if (!profile) {
-//       return res.status(404).json({
-//         status: false,
-//         message: "Job seeker profile not found."
-//       });
-//     }
-
-   
-//     if (profile.userId.toString() !== userId.toString()) {
-//       return res.status(403).json({
-//         status: false,
-//         message: "You are not authorized to delete this profile."
-//       });
-//     }
-
-   
-//     profile.isDeleted = true;
-//     await profile.save();
-
-//     return res.status(200).json({
-//       status: true,
-//       message: "Job seeker profile deleted successfully (soft delete)."
-//     });
-
-//   } catch (error) {
-//     console.error("Error deleting job seeker profile:", error);
-//     res.status(500).json({
-//       status: false,
-//       message: "Server error.",
-//       error: error.message
-//     });
-//   }
-// };
-
-
-
-
 

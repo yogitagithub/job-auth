@@ -85,7 +85,12 @@ const profileSchema = new mongoose.Schema(
       isDeleted: { 
     type: Boolean, 
     default: false 
-  }
+  },
+
+   isResumeAdded:     { type: Boolean, default: false },
+    isEducationAdded:  { type: Boolean, default: false },
+    isSkillsAdded:     { type: Boolean, default: false },
+    isExperienceAdded: { type: Boolean, default: false },
   
   },
   { timestamps: true }
