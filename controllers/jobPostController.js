@@ -12,7 +12,6 @@ const WorkingShift   = require("../models/AdminWorkingShift");
 
 const mongoose = require("mongoose");
 
-
 // Return "X day(s) ago)" — minutes/hours ignored
 const daysAgo = (date) => {
   if (!date) return null;
@@ -24,12 +23,11 @@ const daysAgo = (date) => {
   return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
 };
 
-
 const escapeRegex = (str = "") =>
   str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-
-exports.createJobPost = async (req, res) => {
+//correct
+ exports.createJobPost = async (req, res) => {
   try {
     const userId = req.user.userId;
 
@@ -42,7 +40,7 @@ exports.createJobPost = async (req, res) => {
       });
     }
 
-    // read NAMES from body (not ids)
+    
     const {
       category,
       industryType,
@@ -93,6 +91,7 @@ workingShift,
       otherFieldDoc,
       workingShiftDoc
     ] = await Promise.all([
+
       Category.findOne({ name: category }),
       IndustryType.findOne({ name: industryType }),
       SalaryType.findOne({ name: salaryType, isDeleted: false }),
@@ -141,7 +140,12 @@ if (!workingShiftDoc)   return res.status(400).json({ status: false, message: "I
       displayEmail,
       hourlyRate,
       expiredDate: expiry,
-      status: "active" // schema will keep isApplied=false by default
+      status: "active",
+
+        isAdminApproved: false,
+      isActive: false,
+      isLatest: false,
+      isSaved: false
     });
 
     const formattedExpiredDate = jobPost.expiredDate.toISOString().split("T")[0];
@@ -189,74 +193,158 @@ if (!workingShiftDoc)   return res.status(400).json({ status: false, message: "I
 };
 
 
+//correct
+exports.adminApproveJobPost = async (req, res) => {
+  try {
+    const { role } = req.user || {};
+    if (role !== "admin") {
+      return res.status(403).json({ status: false, message: "Only admin can approve job posts." });
+    }
+
+    const { id, isAdminApproved } = req.body || {};
+    if (!id || !mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ status: false, message: "Valid job post id is required." });
+    }
+
+    const post = await JobPost.findById(id);
+
+    // 1) Not found
+    if (!post) {
+      return res.status(404).json({ status: false, message: "Job post not found." });
+    }
+
+    // 2) Found but already soft-deleted
+    if (post.isDeleted === true) {
+      return res.status(400).json({
+        status: false,
+        message: "This job post has been soft deleted and cannot be approved."
+      });
+    }
+
+    // Default to true (approve) if omitted
+    const nextVal = (typeof isAdminApproved === "boolean") ? isAdminApproved : true;
+
+    // Can only APPROVE when status is ACTIVE
+    if (nextVal === true && post.status !== "active") {
+      return res.status(400).json({
+        status: false,
+        message: `Cannot approve job post while status is '${post.status}'.`
+      });
+    }
+
+    // Idempotent response if no actual change
+    if (post.isAdminApproved === nextVal) {
+      return res.status(200).json({
+        status: true,
+        message: nextVal ? "Job post is already approved." : "Job post approval is already revoked.",
+        data: { id: post._id, isAdminApproved: post.isAdminApproved, status: post.status }
+      });
+    }
+
+    post.isAdminApproved = nextVal;
+    await post.save();
+
+    return res.status(200).json({
+      status: true,
+      message: nextVal ? "Job post approved." : "Job post approval revoked.",
+      data: { id: post._id, isAdminApproved: post.isAdminApproved, status: post.status }
+    });
+  } catch (err) {
+    console.error("adminApproveJobPost error:", err);
+    return res.status(500).json({ status: false, message: "Server error", error: err.message });
+  }
+};
+
+
+//correct 
 exports.getAllJobPosts = async (req, res) => {
   try {
-    const { userId, role } = req.user;
+    const { userId, role } = req.user || {};
+    if (!userId) {
+      return res.status(401).json({ status: false, message: "Unauthorized" });
+    }
+    if (role !== "employer") {
+      return res.status(403).json({
+        status: false,
+        message: "Only employers can fetch their job posts."
+      });
+    }
 
     const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 5, 1), 100);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
     const skip  = (page - 1) * limit;
 
-    // Base filter: don't show soft-deleted posts
-    const filter = { isDeleted: false };
+    // base filter: only this employer's non-deleted posts
+    const filter = { isDeleted: false, userId };
 
-    // Employers see only their own posts; everyone else sees all
-    if (role === "employer") filter.userId = userId;
-
-    // (Optional) If you want job seekers to see only active posts, uncomment:
-    // if (role === "job_seeker") filter.status = "active";
+    // optional flag filter from query ?type=active|latest|saved
+    const type = String(req.query.type || "").trim().toLowerCase();
+    const flagMap = { active: "isActive", latest: "isLatest", saved: "isSaved" };
+    if (type) {
+      const flagField = flagMap[type];
+      if (!flagField) {
+        return res.status(400).json({
+          status: false,
+          message: "Invalid type. Use one of: active, latest, saved."
+        });
+      }
+      filter[flagField] = true; // e.g., { isActive: true }
+    }
 
     const totalRecord = await JobPost.countDocuments(filter);
     const totalPage   = Math.ceil(totalRecord / limit) || 0;
 
-    const jobPosts = await JobPost.find(filter)
+    const posts = await JobPost.find(filter)
       .populate({ path: "companyId",    select: "companyName image" })
-      .populate({ path: "userId",       select: "phoneNumber role" }) // your User schema has phoneNumber
       .populate({ path: "category",     select: "name" })
       .populate({ path: "industryType", select: "name" })
       .populate({ path: "salaryType",   select: "name" })
       .populate({ path: "jobType",      select: "name" })
       .populate({ path: "experience",   select: "name" })
       .populate({ path: "otherField",   select: "name" })
-       .populate({ path: "workingShift",   select: "name" })
+      .populate({ path: "workingShift", select: "name" })
       .populate({ path: "state",        select: "state" })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean();
 
-    const data = jobPosts.map((job) => ({
-      _id: job._id,
+    const data = posts.map((p) => ({
+      _id: p._id,
+      userId: p.userId,
+      companyId: p.companyId?._id ?? null,
+      company: p.companyId?.companyName ?? null,
+      companyImage: p.companyId?.image ?? null,
 
-      company:       job.companyId?.companyName ?? null,
-      companyImage:  job.companyId?.image ?? null,
+      category:     p.category?.name ?? null,
+      industryType: p.industryType?.name ?? null,
+      salaryType:   p.salaryType?.name ?? null,
+      jobType:      p.jobType?.name ?? null,
+      experience:   p.experience?.name ?? null,
+      otherField:   p.otherField?.name ?? null,
+      workingShift: p.workingShift?.name ?? null,
+      state:        p.state?.state ?? null,
 
-      category:      job.category?.name ?? null,
-      industryType:  job.industryType?.name ?? null,
-      salaryType:    job.salaryType?.name ?? null,
-      jobType:       job.jobType?.name ?? null,
-      experience:    job.experience?.name ?? null,
-      otherField:    job.otherField?.name ?? null,
-      workingShift:    job.workingShift?.name ?? null,
+      jobTitle:           p.jobTitle ?? null,
+      jobDescription:     p.jobDescription ?? null,
+      skills:             p.skills ?? null,
+      minSalary:          p.minSalary ?? null,
+      maxSalary:          p.maxSalary ?? null,
+      displayPhoneNumber: p.displayPhoneNumber ?? null,
+      displayEmail:       p.displayEmail ?? null,
+      hourlyRate:         p.hourlyRate ?? null,
 
-      jobTitle:           job.jobTitle ?? null,
-      jobDescription:     job.jobDescription ?? null,
-      skills:             job.skills ?? null,
-      minSalary:          job.minSalary ?? null,
-      maxSalary:          job.maxSalary ?? null,
-      displayPhoneNumber: job.displayPhoneNumber ?? null,
-      displayEmail:       job.displayEmail ?? null,
+      status:            p.status ?? null,
+      isAdminApproved:   !!p.isAdminApproved,
+      isActive:          !!p.isActive,
+      isLatest:          !!p.isLatest,
+      isSaved:           !!p.isSaved,
+      isApplied:         !!p.isApplied,
 
-      state:        job.state?.state ?? null,
-      hourlyRate:   job.hourlyRate ?? null,
-      status:       job.status ?? null,
-      isApplied:    !!job.isApplied,
-      isDeleted: !!job.isDeleted,
-
-      expiredDate:  job.expiredDate ? job.expiredDate.toISOString().split("T")[0] : null,
-      createdAt:    job.createdAt,
-      updatedAt:    job.updatedAt,
-      jobPosted:    daysAgo(job.createdAt),
+      expiredDate: p.expiredDate ? new Date(p.expiredDate).toISOString().split("T")[0] : null,
+      createdAt:  p.createdAt,
+      updatedAt:  p.updatedAt,
+      jobPosted:  daysAgo(p.createdAt)
     }));
 
     return res.status(200).json({
@@ -265,30 +353,27 @@ exports.getAllJobPosts = async (req, res) => {
       totalRecord,
       totalPage,
       currentPage: page,
-      data,
+      data
     });
   } catch (error) {
-    console.error("Error fetching job posts:", error);
+    console.error("Error fetching employer job posts:", error);
     return res.status(500).json({
       status: false,
       message: "Failed to fetch job posts.",
-      error: error.message,
+      error: error.message
     });
   }
 };
 
 
 
+//correct
 exports.getJobPostById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Validate id format
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid job post ID format."
-      });
+      return res.status(400).json({ status: false, message: "Invalid job post ID format." });
     }
 
     let jobPost = await JobPost.findById(id)
@@ -300,25 +385,17 @@ exports.getJobPostById = async (req, res) => {
       .populate({ path: "jobType",      select: "name" })
       .populate({ path: "experience",   select: "name" })
       .populate({ path: "otherField",   select: "name" })
-       .populate({ path: "workingShift",   select: "name" })
+      .populate({ path: "workingShift", select: "name" })
       .populate({ path: "state",        select: "state" });
 
     if (!jobPost) {
-      return res.status(404).json({
-        status: false,
-        message: "Job post not found."
-      });
+      return res.status(404).json({ status: false, message: "Job post not found." });
     }
 
-    // If soft-deleted, block access with 400
     if (jobPost.isDeleted === true) {
-      return res.status(400).json({
-        status: false,
-        message: "This job post has been already soft deleted."
-      });
+      return res.status(400).json({ status: false, message: "This job post has been already soft deleted." });
     }
 
-    // Auto-mark expired if needed (compare by date only)
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     if (jobPost.expiredDate && jobPost.expiredDate < today && jobPost.status !== "expired") {
@@ -326,30 +403,17 @@ exports.getJobPostById = async (req, res) => {
       await jobPost.save();
     }
 
-    // Helper for "x days ago"
-    const daysAgo = (d) => {
-      if (!d) return null;
-      const oneDay = 24 * 60 * 60 * 1000;
-      const diff = Math.floor((Date.now() - new Date(d).getTime()) / oneDay);
-      if (diff <= 0) return "today";
-      if (diff === 1) return "1 day ago";
-      return `${diff} days ago`;
-    };
-
-    // Build clean response with friendly names
     const data = {
       _id: jobPost._id,
-
       company:      jobPost.companyId?.companyName ?? null,
       companyImage: jobPost.companyId?.image ?? null,
-
       category:     jobPost.category?.name ?? null,
       industryType: jobPost.industryType?.name ?? null,
       salaryType:   jobPost.salaryType?.name ?? null,
       jobType:      jobPost.jobType?.name ?? null,
       experience:   jobPost.experience?.name ?? null,
       otherField:   jobPost.otherField?.name ?? null,
-      workingShift:   jobPost.workingShift?.name ?? null,
+      workingShift: jobPost.workingShift?.name ?? null,
       state:        jobPost.state?.state ?? null,
 
       jobTitle:           jobPost.jobTitle ?? null,
@@ -361,32 +425,28 @@ exports.getJobPostById = async (req, res) => {
       displayEmail:       jobPost.displayEmail ?? null,
       hourlyRate:         jobPost.hourlyRate ?? null,
 
-      status:      jobPost.status,
-      isApplied:   !!jobPost.isApplied,
-      expiredDate: jobPost.expiredDate
-        ? jobPost.expiredDate.toISOString().split("T")[0]
-        : null,
+      status:    jobPost.status,
+      isApplied: !!jobPost.isApplied,
+      isActive:  !!jobPost.isActive,
+      isSaved:   !!jobPost.isSaved,
+      isLatest:  !!jobPost.isLatest,
 
+      expiredDate: jobPost.expiredDate ? jobPost.expiredDate.toISOString().split("T")[0] : null,
       createdAt: jobPost.createdAt,
+
+      // ✅ use your top-level helper that returns "0 days ago", "2 days ago", etc.
       jobPosted: daysAgo(jobPost.createdAt)
     };
 
-    return res.status(200).json({
-      status: true,
-      message: "Job post fetched successfully.",
-      data
-    });
-
+    return res.status(200).json({ status: true, message: "Job post fetched successfully.", data });
   } catch (error) {
     console.error("Error fetching job post by ID:", error);
-    return res.status(500).json({
-      status: false,
-      message: "Failed to fetch job post.",
-      error: error.message
-    });
+    return res.status(500).json({ status: false, message: "Failed to fetch job post.", error: error.message });
   }
 };
 
+
+//correct
 exports.getAllJobPostsPublic = async (req, res) => {
   try {
     const page  = parseInt(req.query.page, 10)  || 1;
@@ -493,6 +553,8 @@ exports.getAllJobPostsPublic = async (req, res) => {
 };
 
 
+
+//correct
 exports.updateJobPostById = async (req, res) => {
   try {
     const {
@@ -500,113 +562,213 @@ exports.updateJobPostById = async (req, res) => {
       category,
       industryType,
       state,
-      expiredDate,
-      status,
       salaryType,
       jobType,
       experience,
       otherField,
-      workingShift,         // <-- name string from client
-      ...updateData         // everything else can be assigned directly
+      workingShift,     // name strings (optional)
+      isActive,         // flags (optional)
+      isLatest,
+      isSaved,
+      status,           // ⛔ not allowed here (use status route)
+      ...updateData     // other direct fields (title, desc, skills, min/maxSalary, etc.)
     } = req.body || {};
-    const { userId } = req.user;
 
+    const { userId, role } = req.user || {};
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ status: false, message: "Valid job post ID is required." });
     }
 
-    const jobPost = await JobPost.findById(id);
-    if (!jobPost) return res.status(404).json({ status: false, message: "Job post not found." });
+    // Block status updates in this endpoint
+    if (typeof status !== "undefined") {
+      return res.status(400).json({
+        status: false,
+        message: "Use /update-job-post-status to change status."
+      });
+    }
 
-    if (jobPost.userId.toString() !== userId.toString()) {
+    // Load post
+    const jobPost = await JobPost.findById(id);
+    if (!jobPost) {
+      return res.status(404).json({ status: false, message: "Job post not found." });
+    }
+
+    // Owner + employer only
+    const isOwner = jobPost.userId?.toString() === String(userId);
+    if (!isOwner || role !== "employer") {
       return res.status(403).json({ status: false, message: "You are not authorized to update this job post." });
     }
 
-    if (jobPost.isDeleted === true) {
-      return res.status(400).json({ status: false, message: "This job post has been soft deleted and cannot be updated." });
+    // Soft-deleted?
+    if (jobPost.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "This job post has been soft deleted and cannot be updated."
+      });
     }
 
-    // Assign only simple fields here (not ref lookups)
-    const restricted = ["_id", "userId", "companyId", "__v", "isDeleted", "deletedAt",
-                        "category", "industryType", "state", "salaryType", "jobType",
-                        "experience", "otherField", "workingShift", "expiredDate", "status"];
+    // Post must be ACTIVE to edit anything at all
+    if (jobPost.status !== "active") {
+      return res.status(403).json({
+        status: false,
+        message: "You can update a job post only when its status is 'active'."
+      });
+    }
+
+    // ---------- Update simple fields (non-ref, non-protected) ----------
+    const restricted = [
+      "_id","userId","companyId","__v","isDeleted","deletedAt",
+      "category","industryType","state","salaryType","jobType",
+      "experience","otherField","workingShift","expiredDate","status",
+      "isAdminApproved","isActive","isLatest","isSaved"
+    ];
     Object.keys(updateData).forEach((k) => {
       if (!restricted.includes(k)) jobPost[k] = updateData[k];
     });
 
-    // ---- Resolve refs by NAME (case-insensitive) if provided ----
+    // ---------- Resolve ref names (case-insensitive) ----------
+    const findByName = (Model, key, value, extra = {}) =>
+      value
+        ? Model.findOne({ ...extra, name: { $regex: `^${escapeRegex(value)}$`, $options: "i" } })
+        : null;
+
     if (category) {
-      const doc = await Category.findOne({ name: { $regex: `^${escapeRegex(category)}$`, $options: "i" } });
+      const doc = await findByName(Category, "name", category);
       if (!doc) return res.status(400).json({ status: false, message: "Invalid category name." });
       jobPost.category = doc._id;
     }
 
     if (industryType) {
-      const doc = await IndustryType.findOne({ name: { $regex: `^${escapeRegex(industryType)}$`, $options: "i" } });
+      const doc = await findByName(IndustryType, "name", industryType);
       if (!doc) return res.status(400).json({ status: false, message: "Invalid industry type name." });
       jobPost.industryType = doc._id;
     }
 
     if (state) {
-      const doc = await StateCity.findOne({ state: { $regex: `^${escapeRegex(state)}$`, $options: "i" } });
-      if (!doc) return res.status(400).json({ status: false, message: "Invalid state name." });
-      jobPost.state = doc._id;
+      const stateDoc = await StateCity.findOne({ state: { $regex: `^${escapeRegex(state)}$`, $options: "i" } });
+      if (!stateDoc) return res.status(400).json({ status: false, message: "Invalid state name." });
+      jobPost.state = stateDoc._id;
     }
 
     if (salaryType) {
-      const doc = await SalaryType.findOne({ name: { $regex: `^${escapeRegex(salaryType)}$`, $options: "i" }, isDeleted: false });
+      const doc = await findByName(SalaryType, "name", salaryType, { isDeleted: false });
       if (!doc) return res.status(400).json({ status: false, message: "Invalid or deleted salary type name." });
       jobPost.salaryType = doc._id;
     }
 
     if (jobType) {
-      const doc = await JobType.findOne({ name: { $regex: `^${escapeRegex(jobType)}$`, $options: "i" }, isDeleted: false });
+      const doc = await findByName(JobType, "name", jobType, { isDeleted: false });
       if (!doc) return res.status(400).json({ status: false, message: "Invalid or deleted job type name." });
       jobPost.jobType = doc._id;
     }
 
     if (experience) {
-      const doc = await Experience.findOne({ name: { $regex: `^${escapeRegex(experience)}$`, $options: "i" }, isDeleted: false });
+      const doc = await findByName(Experience, "name", experience, { isDeleted: false });
       if (!doc) return res.status(400).json({ status: false, message: "Invalid or deleted experience name." });
       jobPost.experience = doc._id;
     }
 
     if (otherField) {
-      const doc = await OtherField.findOne({ name: { $regex: `^${escapeRegex(otherField)}$`, $options: "i" }, isDeleted: false });
+      const doc = await findByName(OtherField, "name", otherField, { isDeleted: false });
       if (!doc) return res.status(400).json({ status: false, message: "Invalid or deleted other field name." });
       jobPost.otherField = doc._id;
     }
 
     if (workingShift) {
-      const doc = await WorkingShift.findOne({ name: { $regex: `^${escapeRegex(workingShift)}$`, $options: "i" }, isDeleted: false });
+      const doc = await findByName(WorkingShift, "name", workingShift, { isDeleted: false });
       if (!doc) return res.status(400).json({ status: false, message: "Invalid or deleted working shift name." });
       jobPost.workingShift = doc._id;
     }
 
-    // ---- Expiry/status logic ----
-    const today = new Date(); today.setHours(0,0,0,0);
+    // ---------- Flags: allowed only if admin approved AND active ----------
+    const wantsFlagChange =
+      typeof isActive !== "undefined" ||
+      typeof isLatest !== "undefined" ||
+      typeof isSaved  !== "undefined";
 
-    if (expiredDate) {
-      const [y, m, d] = String(expiredDate).split("-");
-      const exp = new Date(Date.UTC(y, m - 1, d, 0, 0, 0));
-      if (isNaN(exp.getTime())) {
-        return res.status(400).json({ status: false, message: "Invalid expiredDate format. Use YYYY-MM-DD." });
+        let warningMsg = null;
+        const pending = {};   
+
+         if (wantsFlagChange) {
+      // Not allowed? -> skip flags but still apply other fields
+      if (!jobPost.isAdminApproved || jobPost.status !== "active") {
+        warningMsg = !jobPost.isAdminApproved
+          ? "Flags can be changed only after admin approval."
+          : "Flags can be changed only when job status is 'active'.";
+      } else {
+        // Allowed — check for NO-OP duplicates
+        const toBool = (v) => v === true || v === "true" || v === 1 || v === "1";
+        const dup = [];
+
+        if (typeof isActive !== "undefined" && jobPost.isActive === toBool(isActive)) {
+          dup.push(`isActive is already ${jobPost.isActive}`);
+        }
+        if (typeof isLatest !== "undefined" && jobPost.isLatest === toBool(isLatest)) {
+          dup.push(`isLatest is already ${jobPost.isLatest}`);
+        }
+        if (typeof isSaved !== "undefined" && jobPost.isSaved === toBool(isSaved)) {
+          dup.push(`isSaved is already ${jobPost.isSaved}`);
+        }
+
+        if (dup.length) {
+          // Nothing saved; tell caller there’s no change for those flags.
+          return res.status(400).json({
+            status: false,
+            message: `No change: ${dup.join(", ")}.`
+          });
+        }
+
+
+         // Apply flag changes (since they’re allowed and not duplicates)
+        if (typeof isActive !== "undefined") pending.isActive = toBool(isActive);
+        if (typeof isLatest !== "undefined") pending.isLatest = toBool(isLatest);
+        if (typeof isSaved  !== "undefined") pending.isSaved  = toBool(isSaved);
       }
-      jobPost.expiredDate = exp;
-      jobPost.markModified("expiredDate");
-      jobPost.status = exp < today ? "expired" : "active";
-    } else if (status) {
-      if (status === "active" && jobPost.status === "expired") {
-        return res.status(400).json({
-          status: false,
-          message: "You cannot set this job back to active without updating expiry date to a future date."
-        });
-      }
-      jobPost.status = status;
     }
+
+    // ---------- Apply collected changes & save ----------
+    Object.entries(pending).forEach(([k, v]) => { jobPost[k] = v; });
+
+    // if (wantsFlagChange) {
+    //   if (!jobPost.isAdminApproved) {
+    //     warningMsg = "Flags can be changed only after admin approval.";
+    //     // do not change flags
+    //   } else if (jobPost.status !== "active") {
+    //     warningMsg = "Flags can be changed only when job status is 'active'.";
+    //     // do not change flags
+    //   } else {
+    //     const toBool = (v) => v === true || v === "true" || v === 1 || v === "1";
+    //     if (typeof isActive !== "undefined") jobPost.isActive = toBool(isActive);
+    //     if (typeof isLatest !== "undefined") jobPost.isLatest = toBool(isLatest);
+    //     if (typeof isSaved  !== "undefined") jobPost.isSaved  = toBool(isSaved);
+    //   }
+    // }
 
     await jobPost.save();
 
+    // if (wantsFlagChange) {
+    //   if (!jobPost.isAdminApproved) {
+    //     return res.status(403).json({
+    //       status: false,
+    //       message: "Flags can be changed only after admin approval."
+    //     });
+    //   }
+    //   if (jobPost.status !== "active") {
+    //     return res.status(403).json({
+    //       status: false,
+    //       message: "Flags can be changed only when job status is 'active'."
+    //     });
+    //   }
+
+    //   const toBool = (v) => v === true || v === "true" || v === 1 || v === "1";
+    //   if (typeof isActive !== "undefined") jobPost.isActive = toBool(isActive);
+    //   if (typeof isLatest !== "undefined") jobPost.isLatest = toBool(isLatest);
+    //   if (typeof isSaved  !== "undefined") jobPost.isSaved  = toBool(isSaved);
+    // }
+
+    // await jobPost.save();
+
+    // ---------- Re-fetch populated for response ----------
     const populated = await JobPost.findById(jobPost._id)
       .populate("category", "name")
       .populate("industryType", "name")
@@ -618,7 +780,6 @@ exports.updateJobPostById = async (req, res) => {
       .populate("workingShift", "name")
       .lean();
 
-    // replace ids with names for response
     const out = {
       ...populated,
       category:      populated.category?.name ?? null,
@@ -629,24 +790,37 @@ exports.updateJobPostById = async (req, res) => {
       experience:    populated.experience?.name ?? null,
       otherField:    populated.otherField?.name ?? null,
       workingShift:  populated.workingShift?.name ?? null,
+      isAdminApproved: !!populated.isAdminApproved,
+      isActive:        !!populated.isActive,
+      isLatest:        !!populated.isLatest,
+      isSaved:         !!populated.isSaved,
     };
 
-    if (out.expiredDate) out.expiredDate = new Date(out.expiredDate).toISOString().split("T")[0];
+    if (out.expiredDate) {
+      out.expiredDate = new Date(out.expiredDate).toISOString().split("T")[0];
+    }
 
-    // jobPosted helper
-    const createdAtFromObjectId = (oid) => { try { return new Date(parseInt(String(oid).substring(0,8), 16) * 1000); } catch { return null; } };
-    const daysAgo = (d) => { if (!d) return null; const diff = Math.floor((Date.now() - new Date(d)) / 86400000); return diff<=0?"today":diff===1?"1 day ago":`${diff} days ago`; };
-    out.jobPosted = daysAgo(out.createdAt || createdAtFromObjectId(out._id));
+    // ✅ Use your top-level daysAgo() util so it returns "0 days ago"
+    out.jobPosted = daysAgo(out.createdAt);
 
-    return res.status(200).json({ status: true, message: "Job post updated successfully.", data: out });
-
+    return res.status(200).json({
+      status: true,
+     message: warningMsg || "Job post updated successfully.",
+      data: out
+    });
   } catch (error) {
     console.error("Error updating job post:", error);
-    return res.status(500).json({ status: false, message: "Failed to update job post.", error: error.message });
+    return res.status(500).json({
+      status: false,
+      message: "Failed to update job post.",
+      error: error.message
+    });
   }
 };
 
 
+
+//correct
 exports.updateJobPostStatus = async (req, res) => {
   try {
     const { id, status } = req.body;
@@ -669,6 +843,13 @@ exports.updateJobPostStatus = async (req, res) => {
       });
     }
 
+     if (jobPost.isDeleted === true) {
+      return res.status(400).json({
+        status: false,
+        message: "This job post has been soft deleted and cannot be updated."
+      });
+    }
+
     
     if (jobPost.userId.toString() !== userId.toString()) {
       return res.status(403).json({
@@ -677,36 +858,43 @@ exports.updateJobPostStatus = async (req, res) => {
       });
     }
 
-    const currentDate = new Date();
 
-   
-    if (jobPost.expiredDate && currentDate > jobPost.expiredDate) {
-      jobPost.status = "expired";
-      await jobPost.save();
-
-      return res.status(400).json({
-        status: false,
-        message: "Job post is already expired. You cannot update its status."
-      });
-    }
-
-   
-    if (status === "expired") {
+     // normalize + validate incoming status
+    const nextStatus = String(status || "").toLowerCase();
+    if (nextStatus === "expired") {
       return res.status(400).json({
         status: false,
         message: "You cannot manually set status to 'expired'. It is set automatically based on expired date."
       });
     }
-
-   
-    if (!['active', 'inactive'].includes(status)) {
+    if (!["active", "inactive"].includes(nextStatus)) {
       return res.status(400).json({
         status: false,
         message: "Invalid status value. Allowed values: 'active', 'inactive'."
       });
     }
 
-    jobPost.status = status;
+    // auto-expire lock (cannot change status if already past expiry)
+    const now = new Date();
+    if (jobPost.expiredDate && now > jobPost.expiredDate) {
+      jobPost.status = "expired";
+      await jobPost.save();
+      return res.status(400).json({
+        status: false,
+        message: "Job post is already expired. You cannot update its status."
+      });
+    }
+
+    // 🔒 No-op guard: same status as current → reject
+    if (jobPost.status === nextStatus) {
+      return res.status(400).json({
+        status: false,
+        message: `No change: status is already '${nextStatus}'.`
+      });
+    }
+
+    // apply and save
+    jobPost.status = nextStatus;
     await jobPost.save();
 
    
@@ -730,7 +918,7 @@ exports.updateJobPostStatus = async (req, res) => {
 
     return res.status(200).json({
       status: true,
-      message: `Job post marked as ${status} successfully.`,
+      message: `Job post marked as ${nextStatus} successfully.`,
       data: populatedJobPost
     });
 
@@ -745,6 +933,8 @@ exports.updateJobPostStatus = async (req, res) => {
 };
 
 
+
+//correct
 exports.deleteJobPostById = async (req, res) => {
   try {
     const { id } = req.body; 
@@ -799,7 +989,9 @@ exports.deleteJobPostById = async (req, res) => {
   }
 };
 
-//get job details by job post id without token
+
+
+//get job details by job post id without token (correct)
 exports.getJobDetailsPublic = async (req, res) => {
   try {
     const { id } = req.params;

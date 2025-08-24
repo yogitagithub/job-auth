@@ -17,6 +17,7 @@ getCurrentSalary, deleteCurrentSalary, updateCurrentSalary, createWorkingShift,
 updateWorkingShift, deleteWorkingShift, getWorkingShift } = require('../controllers/adminController');
 
 const { verifyToken, verifyAdmin, verifyEmployerOnly, verifyJobSeekerOnly } = require('../middleware/authMiddleware');
+const { adminApproveJobPost } = require('../controllers/jobPostController');
 
 
 router.post('/send-otp', sendAdminOtp);
@@ -92,6 +93,10 @@ router.post("/create-working-shift", verifyToken, verifyAdmin, createWorkingShif
 router.put("/update-working-shift", verifyToken, verifyAdmin, updateWorkingShift);
  router.delete("/delete-working-shift", verifyToken, verifyAdmin, deleteWorkingShift);
 router.get("/get-working-shift", verifyToken, verifyAdmin, getWorkingShift);
+
+
+//admin approve job post status
+router.put('/job-post-approve', verifyToken, verifyAdmin, adminApproveJobPost);
 
 
 module.exports = router;

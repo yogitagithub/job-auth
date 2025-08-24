@@ -99,6 +99,7 @@ const jobPostSchema = new mongoose.Schema(
       required: true
     },
 
+    // for employer it is: employer can change the status
     status: {
       type: String,
       enum: ['active', 'expired', 'inactive'],
@@ -115,6 +116,29 @@ const jobPostSchema = new mongoose.Schema(
    },
 
     isApplied: {
+      type: Boolean,
+      default: false
+    },
+
+     isLatest: {
+      type: Boolean,
+      default: false
+    },
+
+
+     isSaved: {
+      type: Boolean,
+      default: false
+    },
+
+     isActive: {
+      type: Boolean,
+      default: false
+    },
+
+   
+    
+      isAdminApproved: {
       type: Boolean,
       default: false
     },

@@ -37,6 +37,8 @@ const jobApplicationSchema = new mongoose.Schema(
       ref: "Resume",
       required: true,
     },
+
+    //job seeker can change this status
     status: {
       type: String,
       enum: ["Applied", "Withdrawn"],
