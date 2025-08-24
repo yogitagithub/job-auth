@@ -1,5 +1,6 @@
 
 const mongoose = require('mongoose');
+const StateCity = require("./StateCity"); 
 
 const jobPostSchema = new mongoose.Schema(
   {
@@ -81,6 +82,22 @@ const jobPostSchema = new mongoose.Schema(
       required: true
     },
 
+    city: {
+        type: String,
+        validate: {
+          validator: function (value) {
+            if (!value) return true; 
+            const state = this.state;
+            if (!state) return false;
+            
+            return StateCity.findById(state).then((stateDoc) => {
+              return stateDoc && stateDoc.cities.includes(value);
+            });
+          },
+          message: 'City must be one of the cities defined in the selected state'
+        }
+      },
+
     experience: {
      type: mongoose.Schema.Types.ObjectId,
       ref: "ExperienceRange",
@@ -98,6 +115,12 @@ const jobPostSchema = new mongoose.Schema(
       ref: "WorkingShift",
       required: true
     },
+
+        
+        jobProfile: {  
+        type: mongoose.Schema.Types.ObjectId,
+      ref: "JobProfile",
+      },
 
     // for employer it is: employer can change the status
     status: {

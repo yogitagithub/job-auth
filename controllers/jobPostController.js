@@ -9,6 +9,7 @@ const JobType = require("../models/AdminJobType");
 const Experience = require("../models/AdminExperienceRange");     
 const OtherField = require("../models/AdminOtherField");
 const WorkingShift   = require("../models/AdminWorkingShift"); 
+const JobProfile   = require("../models/AdminJobProfile"); 
 
 const mongoose = require("mongoose");
 
@@ -47,9 +48,11 @@ const escapeRegex = (str = "") =>
       salaryType,
       jobType,
       state,
+       city,       
       experience,
       otherField,
 workingShift,
+jobProfile,
       jobTitle,
       jobDescription,
       skills,
@@ -62,7 +65,7 @@ workingShift,
     } = req.body || {};
 
     // quick required checks
-    const required = { category, industryType, salaryType, jobType, state, experience, otherField, workingShift };
+    const required = { category, industryType, salaryType, jobType, state, experience, otherField, workingShift, jobProfile };
     for (const [k, v] of Object.entries(required)) {
       if (!v || !String(v).trim()) {
         return res.status(400).json({ status: false, message: `${k} is required` });
@@ -89,7 +92,8 @@ workingShift,
       stateDoc,
       experienceDoc,
       otherFieldDoc,
-      workingShiftDoc
+      workingShiftDoc,
+      jobProfileDoc
     ] = await Promise.all([
 
       Category.findOne({ name: category }),
@@ -99,7 +103,8 @@ workingShift,
       StateCity.findOne({ state }),
       Experience.findOne({ name: experience, isDeleted: false }), 
       OtherField.findOne({ name: otherField, isDeleted: false }),
-      WorkingShift.findOne({ name: workingShift, isDeleted: false })
+      WorkingShift.findOne({ name: workingShift, isDeleted: false }),
+        JobProfile.findOne({ name: jobProfile, isDeleted: false })
     ]);
 
     if (!categoryDoc)     return res.status(400).json({ status: false, message: "Invalid category name." });
@@ -110,7 +115,25 @@ workingShift,
     if (!experienceDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted experience name." });
     if (!otherFieldDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted other field name." });
 if (!workingShiftDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted working shift name." });
-   
+   if (!jobProfileDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted job profile name." });
+
+
+    // --- CITY VALIDATION (optional) ---
+    let cityToSave;
+    if (city && String(city).trim()) {
+      const norm = String(city).trim().toLowerCase();
+      const allowed = (stateDoc.cities || []).find(c => String(c).toLowerCase() === norm);
+      if (!allowed) {
+        return res.status(400).json({
+          status: false,
+          message: "Invalid city for selected state.",
+          allowedCities: stateDoc.cities || []
+        });
+      }
+      // Use canonical capitalization from DB
+      cityToSave = allowed;
+    }
+
 
 // expiry (+30 days default)
     let expiry = expiredDate ? new Date(expiredDate) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
@@ -127,9 +150,12 @@ if (!workingShiftDoc)   return res.status(400).json({ status: false, message: "I
       salaryType: salaryTypeDoc._id,
       jobType: jobTypeDoc._id,
       state: stateDoc._id,
+      city: cityToSave,
       experience: experienceDoc._id,
       otherField: otherFieldDoc._id,
       workingShift: workingShiftDoc._id,
+       jobProfile: jobProfileDoc._id,
+
 
       jobTitle,
       jobDescription,
@@ -162,11 +188,14 @@ if (!workingShiftDoc)   return res.status(400).json({ status: false, message: "I
         category: categoryDoc.name,
         industryType: industryTypeDoc.name,
         state: stateDoc.state,
+        city: cityToSave || null,
+
         salaryType: salaryTypeDoc.name,
         jobType: jobTypeDoc.name,
         experience: experienceDoc.name,
         otherField: otherFieldDoc.name,
         workingShift: workingShiftDoc.name,
+        jobProfile: jobProfileDoc.name,
 
         jobTitle: jobPost.jobTitle,
         jobDescription: jobPost.jobDescription,
@@ -303,6 +332,7 @@ exports.getAllJobPosts = async (req, res) => {
       .populate({ path: "experience",   select: "name" })
       .populate({ path: "otherField",   select: "name" })
       .populate({ path: "workingShift", select: "name" })
+      .populate({ path: "jobProfile", select: "name" })
       .populate({ path: "state",        select: "state" })
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -323,7 +353,9 @@ exports.getAllJobPosts = async (req, res) => {
       experience:   p.experience?.name ?? null,
       otherField:   p.otherField?.name ?? null,
       workingShift: p.workingShift?.name ?? null,
+      jobProfile: p.jobProfile?.name ?? null,
       state:        p.state?.state ?? null,
+       city:         p.city ?? null, 
 
       jobTitle:           p.jobTitle ?? null,
       jobDescription:     p.jobDescription ?? null,
@@ -386,6 +418,7 @@ exports.getJobPostById = async (req, res) => {
       .populate({ path: "experience",   select: "name" })
       .populate({ path: "otherField",   select: "name" })
       .populate({ path: "workingShift", select: "name" })
+         .populate({ path: "jobProfile", select: "name" })
       .populate({ path: "state",        select: "state" });
 
     if (!jobPost) {
@@ -414,7 +447,9 @@ exports.getJobPostById = async (req, res) => {
       experience:   jobPost.experience?.name ?? null,
       otherField:   jobPost.otherField?.name ?? null,
       workingShift: jobPost.workingShift?.name ?? null,
+      jobProfile: jobPost.jobProfile?.name ?? null,
       state:        jobPost.state?.state ?? null,
+city:         jobPost.city ?? null,
 
       jobTitle:           jobPost.jobTitle ?? null,
       jobDescription:     jobPost.jobDescription ?? null,
@@ -438,10 +473,17 @@ exports.getJobPostById = async (req, res) => {
       jobPosted: daysAgo(jobPost.createdAt)
     };
 
-    return res.status(200).json({ status: true, message: "Job post fetched successfully.", data });
+    return res.status(200).json({ 
+      status: true, 
+      message: "Job post fetched successfully.", data });
   } catch (error) {
+
     console.error("Error fetching job post by ID:", error);
-    return res.status(500).json({ status: false, message: "Failed to fetch job post.", error: error.message });
+
+    return res.status(500).json({ 
+      status: false, 
+      message: "Failed to fetch job post.", error: error.message
+     });
   }
 };
 
@@ -496,6 +538,7 @@ exports.getAllJobPostsPublic = async (req, res) => {
       .populate({ path: "experience",   select: "name" })
       .populate({ path: "otherField",   select: "name" })
         .populate({ path: "workingShift",   select: "name" })
+         .populate({ path: "jobProfile",   select: "name" })
       .populate({ path: "state",        select: "state" })
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -516,7 +559,9 @@ exports.getAllJobPostsPublic = async (req, res) => {
       experience:   j.experience?.name ?? null,
       otherField:   j.otherField?.name ?? null,
        workingShift:   j.workingShift?.name ?? null,
+       jobProfile:   j.jobProfile?.name ?? null,
       state:        j.state?.state ?? null,
+      city:         j.city ?? null,
 
       jobTitle:           j.jobTitle ?? null,
       jobDescription:     j.jobDescription ?? null,
@@ -562,11 +607,14 @@ exports.updateJobPostById = async (req, res) => {
       category,
       industryType,
       state,
+    city,
       salaryType,
       jobType,
       experience,
       otherField,
-      workingShift,     // name strings (optional)
+      workingShift, 
+       jobProfile,    
+
       isActive,         // flags (optional)
       isLatest,
       isSaved,
@@ -618,8 +666,8 @@ exports.updateJobPostById = async (req, res) => {
     // ---------- Update simple fields (non-ref, non-protected) ----------
     const restricted = [
       "_id","userId","companyId","__v","isDeleted","deletedAt",
-      "category","industryType","state","salaryType","jobType",
-      "experience","otherField","workingShift","expiredDate","status",
+      "category","industryType","state","salaryType","jobType", "city",
+      "experience","otherField","workingShift", "jobProfile","expiredDate","status",
       "isAdminApproved","isActive","isLatest","isSaved"
     ];
     Object.keys(updateData).forEach((k) => {
@@ -644,11 +692,7 @@ exports.updateJobPostById = async (req, res) => {
       jobPost.industryType = doc._id;
     }
 
-    if (state) {
-      const stateDoc = await StateCity.findOne({ state: { $regex: `^${escapeRegex(state)}$`, $options: "i" } });
-      if (!stateDoc) return res.status(400).json({ status: false, message: "Invalid state name." });
-      jobPost.state = stateDoc._id;
-    }
+    
 
     if (salaryType) {
       const doc = await findByName(SalaryType, "name", salaryType, { isDeleted: false });
@@ -679,6 +723,67 @@ exports.updateJobPostById = async (req, res) => {
       if (!doc) return res.status(400).json({ status: false, message: "Invalid or deleted working shift name." });
       jobPost.workingShift = doc._id;
     }
+
+     if (jobProfile) {
+      const doc = await findByName(JobProfile, "name", jobProfile, { isDeleted: false });
+      if (!doc) return res.status(400).json({ status: false, message: "Invalid or deleted job profile name." });
+      jobPost.jobProfile = doc._id;
+    }
+
+
+
+      // ---------- State/City update logic (robust) ----------
+    const hasState = Object.prototype.hasOwnProperty.call(req.body, "state");
+    const hasCity  = Object.prototype.hasOwnProperty.call(req.body, "city");
+
+    // resolve state by id or human name (case-insensitive)
+    const resolveState = async (input) => {
+      if (!input) return null;
+      if (mongoose.Types.ObjectId.isValid(input)) return StateCity.findById(input);
+      return StateCity.findOne({ state: { $regex: `^${escapeRegex(String(input))}$`, $options: "i" } });
+    };
+
+    if (hasState) {
+      const stateDoc = await resolveState(state);
+      if (!stateDoc) {
+        return res.status(400).json({ status: false, message: "Invalid state." });
+      }
+
+      if (hasCity) {
+        const cityVal = String(city || "").trim();
+        if (!cityVal || !stateDoc.cities.includes(cityVal)) {
+          return res.status(400).json({ status: false, message: "Invalid city for the selected state." });
+        }
+        jobPost.city = cityVal; // valid pair
+      } else {
+        // If the stored city doesn't belong to the new state, clear it
+        const existingCity = jobPost.city;
+        if (existingCity && !stateDoc.cities.includes(existingCity)) {
+          jobPost.city = null;
+        }
+      }
+
+      jobPost.state = stateDoc._id; // always store as ObjectId
+    }
+
+    if (!hasState && hasCity) {
+      // Validate city against the current stored state
+      if (!jobPost.state) {
+        return res.status(400).json({ status: false, message: "Cannot update city because state is missing on this job post." });
+      }
+      const stateDoc = await StateCity.findById(jobPost.state);
+      if (!stateDoc) {
+        return res.status(400).json({ status: false, message: "Stored state not found." });
+      }
+      const cityVal = String(city || "").trim();
+      if (!cityVal || !stateDoc.cities.includes(cityVal)) {
+        return res.status(400).json({ status: false, message: "Invalid city for the stored state." });
+      }
+      jobPost.city = cityVal;
+    }
+
+
+
 
     // ---------- Flags: allowed only if admin approved AND active ----------
     const wantsFlagChange =
@@ -744,6 +849,7 @@ exports.updateJobPostById = async (req, res) => {
       .populate("experience", "name")
       .populate("otherField", "name")
       .populate("workingShift", "name")
+      .populate("jobProfile", "name")
       .lean();
 
     const out = {
@@ -751,11 +857,13 @@ exports.updateJobPostById = async (req, res) => {
       category:      populated.category?.name ?? null,
       industryType:  populated.industryType?.name ?? null,
       state:         populated.state?.state ?? null,
+       city:          populated.city ?? null,   
       salaryType:    populated.salaryType?.name ?? null,
       jobType:       populated.jobType?.name ?? null,
       experience:    populated.experience?.name ?? null,
       otherField:    populated.otherField?.name ?? null,
       workingShift:  populated.workingShift?.name ?? null,
+       jobProfile:  populated.jobProfile?.name ?? null,
       isAdminApproved: !!populated.isAdminApproved,
       isActive:        !!populated.isActive,
       isLatest:        !!populated.isLatest,
@@ -973,6 +1081,7 @@ exports.getJobDetailsPublic = async (req, res) => {
       .populate({ path: "experience",   select: "name" })
       .populate({ path: "otherField",   select: "name" })
        .populate({ path: "workingShift",   select: "name" })
+        .populate({ path: "jobProfile",   select: "name" })
       .populate({ path: "state",        select: "state" });
 
     if (!jobPost) {
@@ -1001,7 +1110,9 @@ exports.getJobDetailsPublic = async (req, res) => {
       experience:     jobPost.experience?.name ?? null,
       otherField:     jobPost.otherField?.name ?? null,
        workingShift:     jobPost.workingShift?.name ?? null,
+        jobProfile:     jobPost.jobProfile?.name ?? null,
       state:          jobPost.state?.state ?? null,
+       city:           jobPost.city ?? null,
 
       jobTitle:           jobPost.jobTitle ?? null,
       jobDescription:     jobPost.jobDescription ?? null,
@@ -1075,6 +1186,7 @@ exports.getJobList = async (req, res) => {
       .populate({ path: "experience",   select: "name" })
       .populate({ path: "otherField",   select: "name" })
       .populate({ path: "workingShift", select: "name" })
+       .populate({ path: "jobProfile", select: "name" })
       .populate({ path: "state",        select: "state" })
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -1097,7 +1209,9 @@ exports.getJobList = async (req, res) => {
       experience:   p.experience?.name ?? null,
       otherField:   p.otherField?.name ?? null,
       workingShift: p.workingShift?.name ?? null,
+      jobProfile: p.jobProfile?.name ?? null,
       state:        p.state?.state ?? null,
+       city:           p.city ?? null,
 
       jobTitle:           p.jobTitle ?? null,
       jobDescription:     p.jobDescription ?? null,
@@ -1146,12 +1260,14 @@ exports.updateJobListById = async (req, res) => {
       category,
       industryType,
       state,
+      city,
       salaryType,
       jobType,
       experience,
       otherField,
-      workingShift,     // name strings (optional)
-      isActive,         // flags (optional)
+      workingShift, 
+      jobProfile,   
+      isActive,        
       isLatest,
       isSaved,
       status,           // ⛔ not allowed here (use status route)
@@ -1177,12 +1293,7 @@ exports.updateJobListById = async (req, res) => {
       return res.status(404).json({ status: false, message: "Job post not found." });
     }
 
-    // Owner + employer only
-    // const isOwner = jobPost.userId?.toString() === String(userId);
-    // if (!isOwner || role !== "admin") {
-    //   return res.status(403).json({ status: false, message: "You are not authorized to update this job post." });
-    // }
-
+   
     // Soft-deleted?
     if (jobPost.isDeleted) {
       return res.status(400).json({
@@ -1203,7 +1314,7 @@ exports.updateJobListById = async (req, res) => {
     const restricted = [
       "_id","userId","companyId","__v","isDeleted","deletedAt",
       "category","industryType","state","salaryType","jobType",
-      "experience","otherField","workingShift","expiredDate","status",
+      "experience","otherField","workingShift", "jobProfile", "expiredDate","status",
       "isAdminApproved","isActive","isLatest","isSaved"
     ];
     Object.keys(updateData).forEach((k) => {
@@ -1228,11 +1339,7 @@ exports.updateJobListById = async (req, res) => {
       jobPost.industryType = doc._id;
     }
 
-    if (state) {
-      const stateDoc = await StateCity.findOne({ state: { $regex: `^${escapeRegex(state)}$`, $options: "i" } });
-      if (!stateDoc) return res.status(400).json({ status: false, message: "Invalid state name." });
-      jobPost.state = stateDoc._id;
-    }
+   
 
     if (salaryType) {
       const doc = await findByName(SalaryType, "name", salaryType, { isDeleted: false });
@@ -1263,6 +1370,65 @@ exports.updateJobListById = async (req, res) => {
       if (!doc) return res.status(400).json({ status: false, message: "Invalid or deleted working shift name." });
       jobPost.workingShift = doc._id;
     }
+
+
+     if (jobProfile) {
+      const doc = await findByName(JobProfile, "name", jobProfile, { isDeleted: false });
+      if (!doc) return res.status(400).json({ status: false, message: "Invalid or deleted job profile name." });
+      jobPost.jobProfile = doc._id;
+    }
+
+
+     // ---------- State/City update logic (robust) ----------
+    const hasState = Object.prototype.hasOwnProperty.call(req.body, "state");
+    const hasCity  = Object.prototype.hasOwnProperty.call(req.body, "city");
+
+    // resolve state by id or human name (case-insensitive)
+    const resolveState = async (input) => {
+      if (!input) return null;
+      if (mongoose.Types.ObjectId.isValid(input)) return StateCity.findById(input);
+      return StateCity.findOne({ state: { $regex: `^${escapeRegex(String(input))}$`, $options: "i" } });
+    };
+
+    if (hasState) {
+      const stateDoc = await resolveState(state);
+      if (!stateDoc) {
+        return res.status(400).json({ status: false, message: "Invalid state." });
+      }
+
+      if (hasCity) {
+        const cityVal = String(city || "").trim();
+        if (!cityVal || !stateDoc.cities.includes(cityVal)) {
+          return res.status(400).json({ status: false, message: "Invalid city for the selected state." });
+        }
+        jobPost.city = cityVal; // valid pair
+      } else {
+        // If the stored city doesn't belong to the new state, clear it
+        const existingCity = jobPost.city;
+        if (existingCity && !stateDoc.cities.includes(existingCity)) {
+          jobPost.city = null;
+        }
+      }
+
+      jobPost.state = stateDoc._id; // always store as ObjectId
+    }
+
+    if (!hasState && hasCity) {
+      // Validate city against the current stored state
+      if (!jobPost.state) {
+        return res.status(400).json({ status: false, message: "Cannot update city because state is missing on this job post." });
+      }
+      const stateDoc = await StateCity.findById(jobPost.state);
+      if (!stateDoc) {
+        return res.status(400).json({ status: false, message: "Stored state not found." });
+      }
+      const cityVal = String(city || "").trim();
+      if (!cityVal || !stateDoc.cities.includes(cityVal)) {
+        return res.status(400).json({ status: false, message: "Invalid city for the stored state." });
+      }
+      jobPost.city = cityVal;
+    }
+
 
     // ---------- Flags: allowed only if admin approved AND active ----------
     const wantsFlagChange =
@@ -1327,6 +1493,7 @@ exports.updateJobListById = async (req, res) => {
       .populate("experience", "name")
       .populate("otherField", "name")
       .populate("workingShift", "name")
+      .populate("jobProfile", "name")
       .lean();
 
     const out = {
@@ -1334,11 +1501,17 @@ exports.updateJobListById = async (req, res) => {
       category:      populated.category?.name ?? null,
       industryType:  populated.industryType?.name ?? null,
       state:         populated.state?.state ?? null,
+
+       city:          populated.city ?? null,
+       
       salaryType:    populated.salaryType?.name ?? null,
       jobType:       populated.jobType?.name ?? null,
       experience:    populated.experience?.name ?? null,
       otherField:    populated.otherField?.name ?? null,
       workingShift:  populated.workingShift?.name ?? null,
+
+       jobProfile:  populated.jobProfile?.name ?? null,
+
       isAdminApproved: !!populated.isAdminApproved,
       isActive:        !!populated.isActive,
       isLatest:        !!populated.isLatest,
