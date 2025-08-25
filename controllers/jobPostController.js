@@ -285,46 +285,221 @@ exports.adminApproveJobPost = async (req, res) => {
 };
 
 
-//correct for employer
+
+
+//correct for employer and job seeker
 exports.getAllJobPosts = async (req, res) => {
   try {
     const { userId, role } = req.user || {};
+
     if (!userId) {
-      return res.status(401).json({ status: false, message: "Unauthorized" });
-    }
-    if (role !== "employer") {
-      return res.status(403).json({
+      return res.status(401).json({
         status: false,
-        message: "Only employers can fetch their job posts."
+        message: "Unauthorized"
       });
     }
 
+    // NEW: normalize role to avoid case issues
+    const normRole = (role || "").toLowerCase();
+
+    // NEW: allow only employer + job_seeker; block admin explicitly
+    if (normRole === "admin") {
+      return res.status(403).json({
+        status: false,
+        message: "Admins are not allowed to fetch job posts from this endpoint."
+      });
+    }
+    if (normRole !== "employer" && normRole !== "job_seeker") {
+      return res.status(403).json({
+        status: false,
+        message: "Forbidden: Only employers and job seekers are allowed."
+      });
+    }
+
+    // Pagination
     const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
     const skip  = (page - 1) * limit;
 
-    // base filter: only this employer's non-deleted posts
-    const filter = { isDeleted: false, userId };
+    // Base filter: only non-deleted jobs
+    const filter = { isDeleted: false };
 
-    // optional flag filter from query ?type=active|latest|saved
-    const type = String(req.query.type || "").trim().toLowerCase();
-    const flagMap = { active: "isActive", latest: "isLatest", saved: "isSaved" };
-    if (type) {
-      const flagField = flagMap[type];
-      if (!flagField) {
-        return res.status(400).json({
-          status: false,
-          message: "Invalid type. Use one of: active, latest, saved."
-        });
-      }
-      filter[flagField] = true; // e.g., { isActive: true }
+    
+    if (normRole === "employer") {
+      filter.userId = mongoose.Types.ObjectId.isValid(userId)
+        ? new mongoose.Types.ObjectId(userId)
+        : userId;
+    }
+    
+
+    // ---------- query params ----------
+    const qTitle       = (req.query.q || req.query.jobTitle || "").trim();
+    const stateName    = (req.query.state || "").trim();
+    const cityParam    = (req.query.city  || "").trim();
+
+    const categoryName = (req.query.category || "").trim();
+    const industryName = (req.query.industryType || req.query.industry || "").trim();
+
+    const jobProfile   = (req.query.jobProfile || "").trim();
+    const salaryType   = (req.query.salaryType || "").trim();
+    const experience   = (req.query.experience || "").trim();
+    const jobType      = (req.query.jobType || "").trim();
+    const workingShift = (req.query.workingShift || "").trim();
+    const typeFlag     = (req.query.type || "").toLowerCase().trim(); // active|latest|saved
+
+    // Title search
+    if (qTitle) filter.jobTitle = { $regex: escapeRegex(qTitle), $options: "i" };
+
+    // Type flags
+    if (typeFlag) {
+      if (typeFlag === "active") filter.isActive = true;
+      else if (typeFlag === "latest") filter.isLatest = true;
+      else if (typeFlag === "saved")  filter.isSaved  = true;
+      else return res.status(400).json({ status: false, message: "Invalid type. Allowed: active, latest, saved." });
     }
 
+    // ---------- lookups ----------
+    const lookups = [];
+
+    // State
+    let stateDoc = null;
+    if (stateName) {
+      lookups.push(
+        StateCity.findOne({ state: { $regex: `^${escapeRegex(stateName)}$`, $options: "i" } })
+          .then(doc => { stateDoc = doc; })
+      );
+    }
+
+    // Industry
+    let industryDoc = null;
+    if (industryName) {
+      if (mongoose.Types.ObjectId.isValid(industryName)) {
+        industryDoc = { _id: industryName };
+      } else {
+        lookups.push(
+          IndustryType.findOne({
+            name: { $regex: `^${escapeRegex(industryName)}$`, $options: "i" },
+            isDeleted: false
+          }).then(doc => { industryDoc = doc; })
+        );
+      }
+    }
+
+    // Category
+    let categoryDoc = null;
+    if (categoryName) {
+      if (mongoose.Types.ObjectId.isValid(categoryName)) {
+        categoryDoc = { _id: categoryName };
+      } else {
+        lookups.push(
+          Category.findOne({
+            name: { $regex: `^${escapeRegex(categoryName)}$`, $options: "i" },
+            isDeleted: false
+          }).then(doc => { categoryDoc = doc; })
+        );
+      }
+    }
+
+    // Job Profile
+    let jobProfileDoc = null;
+    if (jobProfile) {
+      lookups.push(
+        JobProfile.findOne({
+          name: { $regex: `^${escapeRegex(jobProfile)}$`, $options: "i" },
+          isDeleted: false
+        }).then(doc => { jobProfileDoc = doc; })
+      );
+    }
+
+    // Salary Type
+    let salaryTypeDoc = null;
+    if (salaryType) {
+      lookups.push(
+        SalaryType.findOne({
+          name: { $regex: `^${escapeRegex(salaryType)}$`, $options: "i" },
+          isDeleted: false
+        }).then(doc => { salaryTypeDoc = doc; })
+      );
+    }
+
+    // Experience
+    let experienceDoc = null;
+    if (experience) {
+      lookups.push(
+        Experience.findOne({
+          name: { $regex: `^${escapeRegex(experience)}$`, $options: "i" },
+          isDeleted: false
+        }).then(doc => { experienceDoc = doc; })
+      );
+    }
+
+    // Job Type
+    let jobTypeDoc = null;
+    if (jobType) {
+      lookups.push(
+        JobType.findOne({
+          name: { $regex: `^${escapeRegex(jobType)}$`, $options: "i" },
+          isDeleted: false
+        }).then(doc => { jobTypeDoc = doc; })
+      );
+    }
+
+   
+    let workingShiftDoc = null;
+    if (workingShift) {
+            lookups.push(
+        WorkingShift.findOne({
+          name: { $regex: `^${escapeRegex(workingShift)}$`, $options: "i" },
+          isDeleted: false
+        }).then(doc => { workingShiftDoc = doc; })
+      );
+    }
+
+    await Promise.all(lookups);
+
+    if (industryName && industryDoc) filter.industryType = industryDoc._id;
+    if (categoryName && categoryDoc) filter.category     = categoryDoc._id;
+    if (jobProfile && jobProfileDoc) filter.jobProfile   = jobProfileDoc._id;
+    if (salaryType && salaryTypeDoc) filter.salaryType   = salaryTypeDoc._id;
+    if (experience && experienceDoc) filter.experience   = experienceDoc._id;
+    if (jobType && jobTypeDoc)       filter.jobType      = jobTypeDoc._id;
+
+    if (workingShift && workingShiftDoc) filter.workingShift = workingShiftDoc._id;
+    
+
+    // ----- State & City -----
+    if (stateName) {
+      if (!stateDoc) {
+        return res.status(200).json({
+          status: true, message: "Job posts fetched successfully.",
+          totalRecord: 0, totalPage: 0, currentPage: page, data: []
+        });
+      }
+      filter.state = stateDoc._id;
+
+      if (cityParam) {
+        const ok = (stateDoc.cities || []).some(c => c.toLowerCase() === cityParam.toLowerCase());
+        if (!ok) {
+          return res.status(200).json({
+            status: true, message: "Job posts fetched successfully.",
+            totalRecord: 0, totalPage: 0, currentPage: page, data: []
+          });
+        }
+        filter.city = { $regex: `^${escapeRegex(cityParam)}$`, $options: "i" };
+      }
+    } else if (cityParam) {
+      // city only across all states
+      filter.city = { $regex: `^${escapeRegex(cityParam)}$`, $options: "i" };
+    }
+
+    // ---------- query with pagination ----------
     const totalRecord = await JobPost.countDocuments(filter);
     const totalPage   = Math.ceil(totalRecord / limit) || 0;
 
     const posts = await JobPost.find(filter)
+      .select("-updatedAt -__v")
       .populate({ path: "companyId",    select: "companyName image" })
+      .populate({ path: "userId",       select: "phoneNumber role" })
       .populate({ path: "category",     select: "name" })
       .populate({ path: "industryType", select: "name" })
       .populate({ path: "salaryType",   select: "name" })
@@ -332,18 +507,19 @@ exports.getAllJobPosts = async (req, res) => {
       .populate({ path: "experience",   select: "name" })
       .populate({ path: "otherField",   select: "name" })
       .populate({ path: "workingShift", select: "name" })
-      .populate({ path: "jobProfile", select: "name" })
+      .populate({ path: "jobProfile",   select: "name" })
       .populate({ path: "state",        select: "state" })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean();
 
-    const data = posts.map((p) => ({
+    const data = posts.map(p => ({
       _id: p._id,
-      userId: p.userId,
-      companyId: p.companyId?._id ?? null,
-      company: p.companyId?.companyName ?? null,
+      userId:       p.userId?._id ?? null,
+      userPhone:    p.userId?.phoneNumber ?? null,
+      companyId:    p.companyId?._id ?? null,
+      company:      p.companyId?.companyName ?? null,
       companyImage: p.companyId?.image ?? null,
 
       category:     p.category?.name ?? null,
@@ -353,9 +529,9 @@ exports.getAllJobPosts = async (req, res) => {
       experience:   p.experience?.name ?? null,
       otherField:   p.otherField?.name ?? null,
       workingShift: p.workingShift?.name ?? null,
-      jobProfile: p.jobProfile?.name ?? null,
+      jobProfile:   p.jobProfile?.name ?? null,
       state:        p.state?.state ?? null,
-       city:         p.city ?? null, 
+      city:         p.city ?? null,
 
       jobTitle:           p.jobTitle ?? null,
       jobDescription:     p.jobDescription ?? null,
@@ -366,16 +542,15 @@ exports.getAllJobPosts = async (req, res) => {
       displayEmail:       p.displayEmail ?? null,
       hourlyRate:         p.hourlyRate ?? null,
 
-      status:            p.status ?? null,
-      isAdminApproved:   !!p.isAdminApproved,
-      isActive:          !!p.isActive,
-      isLatest:          !!p.isLatest,
-      isSaved:           !!p.isSaved,
-      isApplied:         !!p.isApplied,
+      status:          p.status,
+      isAdminApproved: !!p.isAdminApproved,
+      isActive:        !!p.isActive,
+      isLatest:        !!p.isLatest,
+      isSaved:         !!p.isSaved,
+      isApplied:       !!p.isApplied,
 
       expiredDate: p.expiredDate ? new Date(p.expiredDate).toISOString().split("T")[0] : null,
       createdAt:  p.createdAt,
-      updatedAt:  p.updatedAt,
       jobPosted:  daysAgo(p.createdAt)
     }));
 
@@ -388,7 +563,7 @@ exports.getAllJobPosts = async (req, res) => {
       data
     });
   } catch (error) {
-    console.error("Error fetching employer job posts:", error);
+    console.error("Error fetching job posts (unified):", error);
     return res.status(500).json({
       status: false,
       message: "Failed to fetch job posts.",
@@ -396,6 +571,7 @@ exports.getAllJobPosts = async (req, res) => {
     });
   }
 };
+
 
 
 
@@ -1148,6 +1324,7 @@ exports.getJobDetailsPublic = async (req, res) => {
 };
 
 
+
 //admin job list (type=latest, saved, active), applied all filters
 exports.getJobList = async (req, res) => {
   try {
@@ -1261,7 +1438,7 @@ exports.getJobList = async (req, res) => {
     }
 
     let workingShiftDoc = null;
-    if (workingShift && workingShift.toLowerCase() !== "both") {
+    if (workingShift) {
       lookups.push(
         WorkingShift.findOne({
           name: { $regex: `^${escapeRegex(workingShift)}$`, $options: "i" },
@@ -1278,9 +1455,8 @@ exports.getJobList = async (req, res) => {
     if (salaryType && salaryTypeDoc) filter.salaryType   = salaryTypeDoc._id;
     if (experience && experienceDoc) filter.experience   = experienceDoc._id;
     if (jobType && jobTypeDoc)       filter.jobType      = jobTypeDoc._id;
-    if (workingShift && workingShift.toLowerCase() !== "both" && workingShiftDoc) {
-      filter.workingShift = workingShiftDoc._id;
-    }
+    if (workingShift && workingShiftDoc) filter.workingShift = workingShiftDoc._id;
+    
 
     // ----- State & City -----
     if (stateName) {
@@ -1385,6 +1561,8 @@ exports.getJobList = async (req, res) => {
     });
   }
 };
+
+
 
 //admin update flags
 exports.updateJobListById = async (req, res) => {
