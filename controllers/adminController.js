@@ -3,6 +3,7 @@ const { Types } = mongoose;
 
 const jwt = require("jsonwebtoken");
 const Category = require("../models/AdminCategory");
+
 const IndustryType = require("../models/AdminIndustry");
 const Experience = require("../models/AdminExperienceRange");
 const JobType = require("../models/AdminJobType");
@@ -19,6 +20,7 @@ const FeaturedCompany = require("../models/FeaturedCompany");
 
 const User = require('../models/User');
 const JobPost = require("../models/JobPost");
+
 
 const fs = require("fs");
 const fsp = fs.promises;
@@ -475,7 +477,7 @@ exports.getCategoryBasedOnRole = async (req, res) => {
 // };
 
 
-//job count
+//with job count
 exports.getAllCategoriesPublic = async (req, res) => {
   try {
     // pagination
@@ -545,6 +547,9 @@ exports.getAllCategoriesPublic = async (req, res) => {
 };
 
 
+
+
+// without token by category id
 exports.getJobPostsByCategoryPublic = async (req, res) => {
   try {
     const { categoryId } = req.params;
@@ -568,11 +573,13 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
 
     // Pagination
     const page  = parseInt(req.query.page, 10)  || 1;
-    const limit = parseInt(req.query.limit, 10) || 5;
+    const limit = parseInt(req.query.limit, 10) || 10;
     const skip  = (page - 1) * limit;
 
-    // Filter only by category (add your own public filters if needed)
-    const filter = { category: categoryId };
+      // NEW: exclude soft-deleted posts from public results
+    const filter = { category: categoryId, isDeleted: false };
+
+   
 
     // Count & fetch
     const totalRecord = await JobPost.countDocuments(filter);
@@ -589,6 +596,8 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
       .populate({ path: "experience",   select: "name range label" })       // added
       .populate({ path: "otherField",   select: "name label title" }) 
       .populate({ path: "workingShift",   select: "name label title" })       // added
+       .populate({ path: "jobProfile",   select: "name label title" })
+      
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -622,10 +631,12 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
       skills: j.skills,
       minSalary: j.minSalary,
       maxSalary: j.maxSalary,
+        city: j.city,
       state: j.state?.state ?? null,
       experience: pickDisplay(j.experience), // now human-readable
       otherField: pickDisplay(j.otherField), // now human-readable
       workingShift: pickDisplay(j.workingShift),
+       jobProfile: pickDisplay(j.jobProfile),
       status: j.status,
       expiredDate: j.expiredDate,
       isDeleted: j.isDeleted,
@@ -648,6 +659,118 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
     });
   }
 };
+
+
+
+
+
+//without token by company id
+exports.getJobPostsByCompanyPublic = async (req, res) => {
+  try {
+    const { companyId } = req.params;
+
+    // Validate companyId
+    if (!Types.ObjectId.isValid(companyId)) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid companyId.",
+      });
+    }
+
+    // Ensure company exists (adjust model if different)
+    const companyExists = await CompanyProfile.exists({ _id: new Types.ObjectId(companyId) });
+    if (!companyExists) {
+      return res.status(404).json({
+        status: false,
+        message: "Company not found.",
+      });
+    }
+
+    // Pagination
+    const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+    const skip  = (page - 1) * limit;
+
+    // FIX 1: use the correct field name from JobPost -> companyId
+    // FIX 2: keep soft-delete exclusion here
+    const filter = { 
+      companyId: new Types.ObjectId(companyId),   // <-- was `company`; must be `companyId`
+      isDeleted: false                            // <-- ensures soft-deleted posts are excluded
+      // Optionally only show public/active:
+      // , isAdminApproved: true
+      // , isActive: true
+    };
+
+    // Count & fetch (use the SAME filter in both)
+    const totalRecord = await JobPost.countDocuments(filter);
+    const totalPage   = Math.ceil(totalRecord / limit) || 0;
+
+    const jobPosts = await JobPost.find(filter)
+      .select("-createdAt -updatedAt -__v")
+      .populate({ path: "companyId",    select: "companyName image" })
+      .populate({ path: "category",     select: "name" })
+      .populate({ path: "industryType", select: "name" })
+      .populate({ path: "state",        select: "state" })
+      .populate({ path: "salaryType",   select: "name label title value" })
+      .populate({ path: "jobType",      select: "name label title value" })
+      .populate({ path: "experience",   select: "name range label" })
+      .populate({ path: "otherField",   select: "name label title" }) 
+      .populate({ path: "workingShift", select: "name label title" })  
+      .populate({ path: "jobProfile",   select: "name label title" })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    // Display-name helper
+    const pickDisplay = (doc) => (doc ? (doc.name ?? doc.label ?? doc.title ?? doc.range ?? doc.value ?? null) : null);
+
+    const data = jobPosts.map((j) => ({
+      _id: j._id,
+      company: j.companyId?.companyName ?? null,
+      companyImage: j.companyId?.image ?? null,
+      category: j.category?.name ?? null,
+      industryType: j.industryType?.name ?? null,
+      jobTitle: j.jobTitle,
+      jobDescription: j.jobDescription,
+      salaryType: pickDisplay(j.salaryType),
+      displayPhoneNumber: j.displayPhoneNumber,
+      displayEmail: j.displayEmail,
+      jobType: pickDisplay(j.jobType),
+      skills: j.skills,
+      minSalary: j.minSalary,
+      maxSalary: j.maxSalary,
+      city: j.city,
+      state: j.state?.state ?? null,
+      experience: pickDisplay(j.experience),
+      otherField: pickDisplay(j.otherField),
+      workingShift: pickDisplay(j.workingShift),
+      jobProfile: pickDisplay(j.jobProfile),
+      status: j.status,
+      expiredDate: j.expiredDate,
+      isDeleted: j.isDeleted, // always false due to filter
+    }));
+
+    return res.status(200).json({
+      status: true,
+      message: "Job posts fetched successfully.",
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data,
+    });
+  } catch (error) {
+    console.error("Error fetching jobs by company:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to fetch job posts.",
+      error: error.message,
+    });
+  }
+};
+
+
+
 
 //industry type
 exports.createIndustry = async (req, res) => {
@@ -678,6 +801,8 @@ exports.createIndustry = async (req, res) => {
     });
   }
 };
+
+
 
 // get industry for admin
 exports.getIndustry = async (req, res) => {
@@ -723,6 +848,8 @@ exports.getIndustry = async (req, res) => {
     });
   }
 };
+
+
 
 //get industry for employer and job seeker
 exports.getIndustryBasedOnRole = async (req, res) => {
@@ -1106,43 +1233,6 @@ exports.getJobProfileBasedOnRole = async (req, res) => {
   }
 };
 
-
-// exports.getJobProfileBasedOnRole = async (req, res) => {
-//   try {
-//     // verifyToken + verifyJobSeekerOnly already ran
-//     const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
-//     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
-
-//     const [totalRecord, rows] = await Promise.all([
-//       JobProfile.countDocuments({}),
-//       JobProfile.find({})
-//         .sort({ name: 1 })
-//         .skip((page - 1) * limit)
-//         .limit(limit)
-//         .lean()
-//     ]);
-
-//     const data = rows.map(p => ({ id: p._id, name: p.name }));
-
-//     return res.status(200).json({
-//       status: true,
-//       message: data.length
-//         ? "Job profiles fetched successfully."
-//         : "No job profiles found.",
-//       totalRecord,
-//       totalPage: Math.ceil(totalRecord / limit) || 0,
-//       currentPage: page,
-//       data
-//     });
-//   } catch (err) {
-//     console.error("getJobProfileBasedOnRole error:", err);
-//     return res.status(500).json({
-//       status: false,
-//       message: "Server error.",
-//       error: err.message
-//     });
-//   }
-// };
 
 
 
@@ -1953,6 +2043,8 @@ exports.getOtherField = async (req, res) => {
   }
 };
 
+
+
 //get for employer
 exports.getOtherFieldBasedOnRole = async (req, res) => {
   try {
@@ -1993,21 +2085,50 @@ exports.getOtherFieldBasedOnRole = async (req, res) => {
   }
 };
 
+
+
 //get companies list for admin
 exports.getCompanyProfiles = async (req, res) => {
   try {
-    const page  = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 10;
+    // Pagination (safe bounds)
+    const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
     const skip  = (page - 1) * limit;
 
-    // Count only non-deleted
-    const totalRecord = await CompanyProfile.countDocuments({ isDeleted: false });
+    // NEW: read filter params
+    const qPhone = (req.query.phoneNumber || "").trim();
+    const qName  = (req.query.companyName || "").trim();
 
-    // Fetch only non-deleted
-    const companies = await CompanyProfile.find({ isDeleted: false })
+    // If you already have a global escapeRegex helper, remove this local one.
+    const escapeRegex = (s = "") => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    // Base filter (exclude soft-deleted)
+    const filter = { isDeleted: false };
+
+    // NEW: phone filter — exact for full numeric phones, else case-insensitive partial
+    if (qPhone) {
+      if (/^\d{8,15}$/.test(qPhone)) {
+        filter.phoneNumber = qPhone;
+      } else {
+        filter.phoneNumber = { $regex: escapeRegex(qPhone), $options: "i" };
+      }
+    }
+
+    // NEW: companyName filter — case-insensitive partial match
+    if (qName) {
+      filter.companyName = { $regex: escapeRegex(qName), $options: "i" };
+      // If you want "starts with" instead of "contains", use:
+      // filter.companyName = { $regex: `^${escapeRegex(qName)}`, $options: "i" };
+    }
+
+    // Count only non-deleted + applied filters
+    const totalRecord = await CompanyProfile.countDocuments(filter);
+
+    // Fetch only non-deleted + applied filters
+    const companies = await CompanyProfile.find(filter)
       .populate("industryType", "name")
       .populate("state", "state")
-      .sort({ createdAt: -1 }) // fixed sort: newest first
+      .sort({ createdAt: -1 }) // newest first
       .skip(skip)
       .limit(limit)
       .lean();
@@ -2056,22 +2177,49 @@ exports.getCompanyProfiles = async (req, res) => {
 };
 
 
+
+
 //get job seeker list for admin
 exports.getJobSeekerProfiles = async (req, res) => {
   try {
-    const page  = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 10;
+    // Pagination
+    const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
     const skip  = (page - 1) * limit;
 
-    // Count only non-deleted
-    const totalRecord = await JobSeekerProfile.countDocuments({ isDeleted: false });
+    // NEW: read filter params
+    const qPhone = (req.query.phoneNumber || "").trim();
+    const qName  = (req.query.jobSeekerName || req.query.name || "").trim();
 
-    // Fetch only non-deleted
-    const seeker = await JobSeekerProfile.find({ isDeleted: false })
+    // If you already have a global helper, remove this local one.
+    const escapeRegex = (s = "") => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    // Base filter (exclude soft-deleted)
+    const filter = { isDeleted: false };
+
+    // NEW: phone filter (exact if it looks like a full number; else partial match)
+    if (qPhone) {
+      if (/^\d{8,15}$/.test(qPhone)) {
+        filter.phoneNumber = qPhone; // exact match for numeric phone-like strings
+      } else {
+        filter.phoneNumber = { $regex: escapeRegex(qPhone), $options: "i" }; // partial/case-insensitive
+      }
+    }
+
+    // NEW: name filter (case-insensitive substring on `name` field)
+    if (qName) {
+      filter.name = { $regex: escapeRegex(qName), $options: "i" };
+    }
+
+    // Count only non-deleted + applied filters
+    const totalRecord = await JobSeekerProfile.countDocuments(filter);
+
+    // Fetch only non-deleted + applied filters
+    const seeker = await JobSeekerProfile.find(filter)
       .populate("jobProfile", "name")
       .populate("industryType", "name")
       .populate("state", "state")
-      .sort({ createdAt: -1 }) // fixed sort: newest first
+      .sort({ createdAt: -1 }) // newest first
       .skip(skip)
       .limit(limit)
       .lean();
@@ -2083,23 +2231,23 @@ exports.getJobSeekerProfiles = async (req, res) => {
       });
     }
 
-    const data = seeker.map(seeker => ({
-      id: seeker._id,
-      userId: seeker.userId,
-      phoneNumber: seeker.phoneNumber,
-      jobSeekerName: seeker.name,
-      industryType: seeker.industryType?.name || null,
-       jobprofile: seeker.jobProfile?.name || null,
-      dateOfBirth: seeker.dateOfBirth,
-      panCardNumber: seeker.panCardNumber,
-      gender: seeker.gender,
-      alternatePhoneNumber: seeker.alternatePhoneNumber,
-      email: seeker.email,
-      jobSeekerAddress: seeker.address,
-      state: seeker.state?.state || null,
-      city: seeker.city,
-      pincode: seeker.pincode,
-      image: seeker.image
+    const data = seeker.map(s => ({
+      id: s._id,
+      userId: s.userId,
+      phoneNumber: s.phoneNumber,
+      jobSeekerName: s.name,
+      industryType: s.industryType?.name || null,
+      jobprofile: s.jobProfile?.name || null,
+      dateOfBirth: s.dateOfBirth,
+      panCardNumber: s.panCardNumber,
+      gender: s.gender,
+      alternatePhoneNumber: s.alternatePhoneNumber,
+      email: s.email,
+      jobSeekerAddress: s.address,
+      state: s.state?.state || null,
+      city: s.city,
+      pincode: s.pincode,
+      image: s.image
     }));
 
     return res.status(200).json({
@@ -2119,6 +2267,8 @@ exports.getJobSeekerProfiles = async (req, res) => {
     });
   }
 };
+
+
 
 //featured companies
 exports.addFeaturedCompanies = async (req, res) => {
