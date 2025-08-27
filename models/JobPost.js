@@ -36,6 +36,7 @@ const jobPostSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    
 
     jobDescription: {
       type: String,
@@ -153,10 +154,18 @@ const jobPostSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
+    
 
      isActive: {
       type: Boolean,
       default: false
+    },
+
+
+    
+    appliedCandidates: {
+      type: Number,
+      default: 0
     },
 
    

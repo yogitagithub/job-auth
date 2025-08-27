@@ -82,6 +82,7 @@ const profileSchema = new mongoose.Schema(
       type: String,
      },
 
+
       isDeleted: { 
     type: Boolean, 
     default: false 

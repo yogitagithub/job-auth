@@ -38,16 +38,17 @@ const jobApplicationSchema = new mongoose.Schema(
       required: true,
     },
 
-    //job seeker can change this status
+   
     status: {
       type: String,
       enum: ["Applied", "Withdrawn"],
       default: "Applied",
     },
+    
 
      employerApprovalStatus: {
       type: String,
-      enum: ["Pending", "Shortlisted", "Rejected", "Viewed"],
+      enum: ["Pending", "Approved", "Rejected"],
       default: "Pending"
     },
 
