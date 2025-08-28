@@ -2178,6 +2178,69 @@ exports.getCompanyProfiles = async (req, res) => {
 
 
 
+//Get Company Profile by ID
+exports.getCompanyProfilesById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Validate ObjectId
+    if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid company ID format."
+      });
+    }
+
+    // Fetch company profile
+    const company = await CompanyProfile.findOne({ _id: id, isDeleted: false })
+      .populate("industryType", "name")
+      .populate("state", "state")
+      .lean();
+
+    if (!company) {
+      return res.status(404).json({
+        status: false,
+        message: "Company profile not found."
+      });
+    }
+
+    // Shape response
+    const data = {
+      id: company._id,
+      userId: company.userId,
+      phoneNumber: company.phoneNumber,
+      companyName: company.companyName,
+      industryType: company.industryType?.name || null,
+      contactPersonName: company.contactPersonName,
+      panCardNumber: company.panCardNumber,
+      gstNumber: company.gstNumber,
+      alternatePhoneNumber: company.alternatePhoneNumber,
+      email: company.email,
+      companyAddress: company.companyAddress,
+      state: company.state?.state || null,
+      city: company.city,
+      pincode: company.pincode,
+      image: company.image
+    };
+
+    return res.status(200).json({
+      status: true,
+      message: "Company profile fetched successfully.",
+      data
+    });
+  } catch (error) {
+    console.error("getCompanyProfilesById error:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: error.message
+    });
+  }
+};
+
+
+
+
 
 //get job seeker list for admin
 exports.getJobSeekerProfiles = async (req, res) => {
@@ -2267,6 +2330,65 @@ exports.getJobSeekerProfiles = async (req, res) => {
     });
   }
 };
+
+
+//Get job seeker Profile by ID
+exports.getJobSeekerProfilesbyId = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Validate ObjectId
+    if (!id || !/^[0-9a-fA-F]{24}$/.test(id)) {
+      return res.status(400).json({ status: false, message: "Invalid job seeker ID format." });
+    }
+
+    // Fetch (not deleted)
+    const s = await JobSeekerProfile.findOne({ _id: id, isDeleted: false })
+      .populate("jobProfile", "name")
+      .populate("industryType", "name")
+      .populate("state", "state")
+      .lean();
+
+    if (!s) {
+      return res.status(404).json({ status: false, message: "Job seeker profile not found." });
+    }
+
+    // Shape response (match your list API keys)
+    const data = {
+      id: s._id,
+      userId: s.userId,
+      phoneNumber: s.phoneNumber,
+      jobSeekerName: s.name,
+      industryType: s.industryType?.name || null,
+      jobprofile: s.jobProfile?.name || null, // keep same key as your list API
+      dateOfBirth: s.dateOfBirth ? new Date(s.dateOfBirth).toISOString().split("T")[0] : null,
+      panCardNumber: s.panCardNumber,
+      gender: s.gender,
+      alternatePhoneNumber: s.alternatePhoneNumber,
+      email: s.email,
+      jobSeekerAddress: s.address,
+      state: s.state?.state || null,
+      city: s.city,
+      pincode: s.pincode,
+      image: s.image
+    };
+
+    return res.status(200).json({
+      status: true,
+      message: "Job seeker profile fetched successfully.",
+      data
+    });
+  } catch (error) {
+    console.error("getJobSeekerProfilesbyId error:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: error.message
+    });
+  }
+};
+
+
 
 
 

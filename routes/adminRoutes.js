@@ -11,10 +11,10 @@ const { sendAdminOtp, verifyAdminOtp, createCategory, getIndustry, getCategory,
   createExperience, getExperience, updateExperience, deleteExperience,
   getJobTypes, deleteJobType, updateJobType, createJobType, deleteSalaryType, createSalaryType, getSalaryTypes, updateSalaryType,
 getOtherField, deleteOtherField, updateOtherField, createOtherField,
-getCompanyProfiles, getJobSeekerProfiles, addFeaturedCompanies, getFeaturedCompanies,
+getCompanyProfiles, getCompanyProfilesById, getJobSeekerProfiles, addFeaturedCompanies, getFeaturedCompanies,
 updateFeaturedCompanies, deleteFeaturedCompanies, createCurrentSalary,
 getCurrentSalary, deleteCurrentSalary, updateCurrentSalary, createWorkingShift,
-updateWorkingShift, deleteWorkingShift, getWorkingShift } = require('../controllers/adminController');
+updateWorkingShift, deleteWorkingShift, getWorkingShift, getJobSeekerProfilesbyId } = require('../controllers/adminController');
 
 const { verifyToken, verifyAdmin, verifyEmployerOnly, verifyJobSeekerOnly } = require('../middleware/authMiddleware');
 const { adminApproveJobPost, getJobList, updateJobListById } = require('../controllers/jobPostController');
@@ -71,9 +71,11 @@ router.get("/get-other-field", verifyToken, verifyAdmin, getOtherField);
 
 //company profiles list
 router.get("/company-profiles", verifyToken, verifyAdmin, getCompanyProfiles);
+router.get("/company-profiles/:id", verifyToken, verifyAdmin, getCompanyProfilesById);
 
 //job seeker profile list
 router.get("/job-seeker", verifyToken, verifyAdmin, getJobSeekerProfiles);
+router.get("/job-seeker/:id", verifyToken, verifyAdmin, getJobSeekerProfilesbyId);
 
 //featured companies
 router.post("/add-featured-companies", verifyToken, verifyAdmin, addFeaturedCompanies);
