@@ -28,14 +28,14 @@ router.get("/public-categories", getAllCategoriesPublic);
 router.get("/public-industries", getAllIndustriesPublic);
 
 
-//get job profile list for job_seeker
-router.get("/job-profile", verifyToken, verifyJobSeekerOnly, getJobProfileBasedOnRole);
+//get job profile list for job_seeker and employer
+router.get("/job-profile", verifyToken, getJobProfileBasedOnRole);
 
-//get exp range list for employer
+//get exp range list for employer and job_seeker
 router.get("/experience-range", verifyToken, getExperienceRangeBasedOnRole);
 
-//get other field list for employer
-router.get("/other-field", verifyToken, verifyEmployerOnly, getOtherFieldBasedOnRole);
+//get other field list for employer and job_seeker
+router.get("/other-field", verifyToken, getOtherFieldBasedOnRole);
 
 //get job type list for employer and job_seeker
 router.get("/job-type", verifyToken, getJobTypeBasedOnRole);

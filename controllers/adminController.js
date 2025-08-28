@@ -1188,36 +1188,36 @@ exports.deleteProfile = async (req, res) => {
   }
 };
 
-//get job profile for job seeker
+//get job profile for job seeker and employer
 exports.getJobProfileBasedOnRole = async (req, res) => {
   try {
-    // verifyToken + verifyJobSeekerOnly already ran
+    // ⛔ Block admins
+    const role = req.user?.role;
+    if (!role) {
+      return res.status(401).json({ status: false, message: "Unauthorized." });
+    }
+    if (role === "admin") {
+      return res.status(403).json({
+        status: false,
+        message: "Admins are not allowed to access this resource."
+      });
+    }
+
     const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
 
-    // ✅ Only fetch non-deleted profiles
     const query = { isDeleted: false };
 
     const [totalRecord, rows] = await Promise.all([
       JobProfile.countDocuments(query),
-      JobProfile.find(query)
-        .sort({ name: 1 })
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .lean()
+      JobProfile.find(query).sort({ name: 1 }).skip((page - 1) * limit).limit(limit).lean()
     ]);
 
-    const data = rows.map(p => ({
-      id: p._id,
-      name: p.name,
-      isDeleted: p.isDeleted   // optional, can remove if you don't want to return it
-    }));
+    const data = rows.map(p => ({ id: p._id, name: p.name, isDeleted: p.isDeleted }));
 
     return res.status(200).json({
       status: true,
-      message: data.length
-        ? "Job profiles fetched successfully."
-        : "No job profiles found.",
+      message: data.length ? "Job profiles fetched successfully." : "No job profiles found.",
       totalRecord,
       totalPage: Math.ceil(totalRecord / limit) || 0,
       currentPage: page,
@@ -1225,11 +1225,7 @@ exports.getJobProfileBasedOnRole = async (req, res) => {
     });
   } catch (err) {
     console.error("getJobProfileBasedOnRole error:", err);
-    return res.status(500).json({
-      status: false,
-      message: "Server error.",
-      error: err.message
-    });
+    return res.status(500).json({ status: false, message: "Server error.", error: err.message });
   }
 };
 
@@ -1415,10 +1411,25 @@ exports.deleteExperience = async (req, res) => {
   }
 };
 
-//get experience for employer 
+
+
+//get experience for employer and job seeker
 exports.getExperienceRangeBasedOnRole = async (req, res) => {
   try {
-    // verifyToken + verifyEmployerOnly already enforced at the route
+
+    //blocks admin
+      const role = req.user?.role;
+    if (!role) {
+      return res.status(401).json({ status: false, message: "Unauthorized." });
+    }
+    if (role === "admin") {
+      return res.status(403).json({
+        status: false,
+        message: "Admins are not allowed to access this resource."
+      });
+    }
+
+   
     const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
 
@@ -1618,7 +1629,23 @@ exports.deleteJobType = async (req, res) => {
 //get job type for employer and job seeker
 exports.getJobTypeBasedOnRole = async (req, res) => {
   try {
-    const role = req.user?.role;
+
+
+     //blocks admin
+      const role = req.user?.role;
+    if (!role) {
+      return res.status(401).json({ status: false, message: "Unauthorized." });
+    }
+    if (role === "admin") {
+      return res.status(403).json({
+        status: false,
+        message: "Admins are not allowed to access this resource."
+      });
+    }
+
+
+
+    // const role = req.user?.role;
     if (role !== "employer" && role !== "job_seeker") {
       return res.status(403).json({
         status: false,
@@ -1837,6 +1864,22 @@ exports.deleteSalaryType = async (req, res) => {
 exports.getSalaryTypeBasedOnRole = async (req, res) => {
   try {
     const role = req.user?.role;
+
+     //blocks admin
+     
+    if (!role) {
+      return res.status(401).json({ status: false, message: "Unauthorized." });
+    }
+    if (role === "admin") {
+      return res.status(403).json({
+        status: false,
+        message: "Admins are not allowed to access this resource."
+      });
+    }
+
+
+
+
     if (role !== "employer" && role !== "job_seeker") {
       return res.status(403).json({
         status: false,
@@ -2045,10 +2088,22 @@ exports.getOtherField = async (req, res) => {
 
 
 
-//get for employer
+//get for employer, job seekeer
 exports.getOtherFieldBasedOnRole = async (req, res) => {
   try {
-    // verifyToken + verifyEmployerOnly already run at the route
+
+     //blocks admin
+      const role = req.user?.role;
+    if (!role) {
+      return res.status(401).json({ status: false, message: "Unauthorized." });
+    }
+    if (role === "admin") {
+      return res.status(403).json({
+        status: false,
+        message: "Admins are not allowed to access this resource."
+      });
+    }
+   
     const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
 
