@@ -522,3 +522,76 @@ exports.deleteProfile = async (req, res) => {
   }
 };
 
+
+
+// without token
+exports.getAllJobSeekers = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Count only non-deleted companies
+    const totalSeekers = await JobSeekerProfile.countDocuments({ isDeleted: false });
+
+    const seekers = await JobSeekerProfile.find({ isDeleted: false }) // ✅ filter here
+      .populate("industryType", "name")
+         .populate("jobProfile", "name")
+      .populate("state", "state")
+      .skip(skip)
+      .limit(limit)
+      .sort({ createdAt: -1 });
+
+    if (!seekers || seekers.length === 0) {
+      return res.status(404).json({
+        status: false,
+        message: "No job seekers profiles found."
+      });
+    }
+
+    const responseData = seekers.map(seeker => ({
+      id: seeker._id,
+      userId: seeker.userId,
+      phoneNumber: seeker.phoneNumber,
+      jobSeekerName: seeker.companyName,
+      industryType: seeker.industryType?.name || null,
+jobProfile: seeker.jobProfile?.name || null,
+
+      // contactPersonName: seeker.contactPersonName,
+
+      panCardNumber: seeker.panCardNumber,
+      // gstNumber: seeker.gstNumber,
+      alternatePhoneNumber: seeker.alternatePhoneNumber,
+
+       dateOfBirth: seeker.dateOfBirth 
+        ? seeker.dateOfBirth.toISOString().split("T")[0] // ✅ formats as "YYYY-MM-DD"
+        : null,
+
+        
+      email: seeker.email,
+      gender: seeker.gender,
+      address: seeker.address,
+      state: seeker.state?.state || null,
+      city: seeker.city,
+      pincode: seeker.pincode,
+      image: seeker.image
+    }));
+
+    return res.json({
+      status: true,
+      message: "Job seekers profiles fetched successfully.",
+      totalSeekers,
+      currentPage: page,
+      totalPages: Math.ceil(totalSeekers / limit),
+      data: responseData
+    });
+  } catch (error) {
+    console.error("Error fetching job seekers:", error);
+    res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: error.message
+    });
+  }
+};
+

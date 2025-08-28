@@ -541,9 +541,11 @@ exports.getAllJobPosts = async (req, res) => {
       displayPhoneNumber: p.displayPhoneNumber ?? null,
       displayEmail:       p.displayEmail ?? null,
       hourlyRate:         p.hourlyRate ?? null,
+       appliedCandidates: p.appliedCandidates ?? null,
 
       status:          p.status,
       isAdminApproved: !!p.isAdminApproved,
+     
       isActive:        !!p.isActive,
       isLatest:        !!p.isLatest,
       isSaved:         !!p.isSaved,
@@ -635,6 +637,7 @@ city:         jobPost.city ?? null,
       displayPhoneNumber: jobPost.displayPhoneNumber ?? null,
       displayEmail:       jobPost.displayEmail ?? null,
       hourlyRate:         jobPost.hourlyRate ?? null,
+       appliedCandidates: jobPost.appliedCandidates ?? null,
 
       status:    jobPost.status,
       isApplied: !!jobPost.isApplied,

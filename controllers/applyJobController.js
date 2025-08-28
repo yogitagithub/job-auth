@@ -202,7 +202,7 @@ exports.withdrawApplication = async (req, res) => {
 
 
 
-
+// for employer and admin
 exports.getApplicantsForJob = async (req, res) => {
   try {
     const { role, userId } = req.user;
