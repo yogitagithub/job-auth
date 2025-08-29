@@ -359,27 +359,31 @@ exports.getMyApplications = async (req, res) => {
       });
     }
 
-    const applications = await JobApplication.find({ userId })
-      .select("userId jobPostId status employerApprovalStatus appliedAt createdAt updatedAt")
-      .populate({
-        path: "jobPostId",
-        select: "jobTitle state companyId createdAt",     // ⬅️ need createdAt for jobPosted
-        populate: [
-          { path: "state", select: "state" },
-          { path: "companyId", select: "companyName image" }
-        ]
-      })
-      .sort({ createdAt: -1 })
-      .lean();
+    // --- pagination params (safe & bounded) ---
+    const page  = Math.max(parseInt(req.query.page, 10)  || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+    const skip  = (page - 1) * limit;
 
-    // keep inline helpers inside controller (as you prefer)
+    // optional filters (use if you want to filter by status from query)
+    const statusFilter = (req.query.status || "").trim(); // e.g. "pending/accepted/rejected"
+    const employerApproval = (req.query.employerApprovalStatus || "").trim(); // e.g. "approved/pending/rejected"
+
+    const filter = { userId };
+    if (statusFilter) filter.status = statusFilter;
+    if (employerApproval) filter.employerApprovalStatus = employerApproval;
+
+    // ---- count first
+    const totalRecord = await JobApplication.countDocuments(filter);
+    const totalPage   = Math.max(1, Math.ceil(totalRecord / limit));
+    const currentPage = Math.min(page, totalPage);
+
+    // --- helpers (keep inline as before) ---
     const formatDate = (date) => {
       if (!date) return null;
       const d = new Date(date);
       return `${String(d.getDate()).padStart(2, "0")}-${String(d.getMonth() + 1).padStart(2, "0")}-${d.getFullYear()}`;
     };
 
-    // days-only, UTC-safe
     const daysAgo = (date) => {
       if (!date) return null;
       const d = new Date(date);
@@ -390,18 +394,33 @@ exports.getMyApplications = async (req, res) => {
       return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
     };
 
-    const data = applications.map((app) => {
-      const jp = app.jobPostId; // may be object (populated) or null
+    // --- page fetch
+    const applications = await JobApplication.find(filter)
+      .select("userId jobPostId status employerApprovalStatus appliedAt createdAt updatedAt")
+      .populate({
+        path: "jobPostId",
+        select: "jobTitle state companyId createdAt",
+        populate: [
+          { path: "state", select: "state" },
+          { path: "companyId", select: "companyName image" }
+        ]
+      })
+      .sort({ createdAt: -1 })     // newest application first
+      .skip((currentPage - 1) * limit)
+      .limit(limit)
+      .lean();
 
+    const data = applications.map((app) => {
+      const jp = app.jobPostId;
       return {
         _id: app._id,
-        userId: (app.userId?._id || app.userId).toString(),               // plain string
-        jobPostId: jp ? (jp?._id || jp).toString() : null,                 // plain string
+        userId: (app.userId?._id || app.userId).toString(),
+        jobPostId: jp ? (jp?._id || jp).toString() : null,
         jobTitle: jp?.jobTitle ?? null,
         state: jp?.state?.state ?? null,
         companyName: jp?.companyId?.companyName ?? null,
         companyImage: jp?.companyId?.image ?? null,
-        jobPosted: jp ? daysAgo(jp.createdAt) : null,                      // "X days ago" from job post createdAt
+        jobPosted: jp ? daysAgo(jp.createdAt) : null,
         status: app.status,
         employerApprovalStatus: app.employerApprovalStatus,
         appliedAt: formatDate(app.appliedAt),
@@ -410,7 +429,14 @@ exports.getMyApplications = async (req, res) => {
       };
     });
 
-    return res.json({ status: true, data });
+    return res.status(200).json({
+      status: true,
+      message: data.length ? "Applications fetched successfully." : "No applications found.",
+      totalRecord,
+      totalPage,
+      currentPage,
+      data
+    });
   } catch (error) {
     console.error("Error fetching applications:", error);
     return res.status(500).json({
@@ -420,6 +446,8 @@ exports.getMyApplications = async (req, res) => {
     });
   }
 };
+
+
 
 
 

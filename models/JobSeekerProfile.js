@@ -88,10 +88,28 @@ const profileSchema = new mongoose.Schema(
     default: false 
   },
 
+
+  // isExperienceAdded: { 
+  //   type: Boolean, 
+  //   default: false 
+  // },
+
    isResumeAdded:     { type: Boolean, default: false },
     isEducationAdded:  { type: Boolean, default: false },
     isSkillsAdded:     { type: Boolean, default: false },
     isExperienceAdded: { type: Boolean, default: false },
+
+// for experienced not for freshers
+  //    CurrentSalary: { 
+  //   type: Number, 
+  //   default: false 
+  // },
+
+
+  //  BankAccount: { 
+  //   type: String, 
+  //   default: false 
+  // },
   
   },
   { timestamps: true }
