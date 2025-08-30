@@ -17,21 +17,21 @@ const jobApplicationSchema = new mongoose.Schema(
       ref: "JobPost",
       required: true,
     },
-    educationId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "JobSeekerEducation",
-      required: true,
-    },
-    experienceId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "WorkExperience",
-      required: true,
-    },
-    skillsId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Skill",
-      required: true,
-    },
+    // educationId: {
+    //   type: mongoose.Schema.Types.ObjectId,
+    //   ref: "JobSeekerEducation",
+    //   required: true,
+    // },
+    // experienceId: {
+    //   type: mongoose.Schema.Types.ObjectId,
+    //   ref: "WorkExperience",
+    //   required: true,
+    // },
+    // skillsId: {
+    //   type: mongoose.Schema.Types.ObjectId,
+    //   ref: "Skill",
+    //   required: true,
+    // },
     resumeId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Resume",

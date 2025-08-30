@@ -347,6 +347,215 @@ exports.getApplicantsForJob = async (req, res) => {
 
 
 
+//get full details of job seeker by employer and admin
+exports.getApplicantsDetails = async (req, res) => {
+  try {
+    const { role, userId } = req.user;
+    const { jobPostId } = req.params;
+
+    // --- validate ---
+    if (!jobPostId || !mongoose.isValidObjectId(jobPostId)) {
+      return res.status(400).json({ status: false, message: "Valid Job Post ID is required." });
+    }
+
+    // --- job post ---
+    const post = await JobPost.findById(jobPostId).select("_id userId isDeleted");
+    if (!post) return res.status(404).json({ status: false, message: "Job post not found." });
+    if (post.isDeleted) {
+      return res.status(410).json({ status: false, message: "This job post has been removed." });
+    }
+
+    // --- ACL ---
+    if (role === "job_seeker") {
+      return res.status(403).json({ status: false, message: "Job seekers are not allowed to view applicants." });
+    }
+    const isOwnerEmployer = role === "employer" && post.userId?.equals(userId);
+    if (!(role === "admin" || isOwnerEmployer)) {
+      return res.status(403).json({ status: false, message: "You are not allowed to view applicants for this post." });
+    }
+
+    // --- pagination ---
+    const pageParam = parseInt(req.query.page, 10);
+    const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
+    const limitRaw = (req.query.limit || "").toString().toLowerCase();
+    const limit =
+      limitRaw === "all"
+        ? 0
+        : (() => {
+            const n = parseInt(limitRaw || "10", 10);
+            if (!Number.isFinite(n) || n < 1) return 10;
+            return Math.min(n, 100);
+          })();
+    const skip = limit ? (page - 1) * limit : 0;
+
+    // --- filter ---
+    const statusQuery = (req.query.status || "Applied").trim();
+    const statusFilter = statusQuery.toLowerCase() === "all" ? {} : { status: "Applied" };
+    const filter = { jobPostId: post._id, ...statusFilter };
+
+    // --- fetch applications (+ profile) ---
+    const [totalRecord, apps] = await Promise.all([
+      JobApplication.countDocuments(filter),
+      JobApplication.find(filter)
+        .select("jobSeekerId status employerApprovalStatus createdAt")
+        .populate({
+          path: "jobSeekerId",
+          match: { isDeleted: false },
+          select:
+            "name phoneNumber email state city image jobProfile dateOfBirth gender panCardNumber address alternatePhoneNumber pincode industryType",
+          populate: [
+            { path: "state", select: "state" },
+            { path: "jobProfile", select: "jobProfile name" },
+            { path: "industryType", select: "industryType name" }
+          ]
+        })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+    ]);
+
+    const seekerIds = apps
+      .filter(a => a.jobSeekerId)
+      .map(a => a.jobSeekerId._id?.toString?.() || a.jobSeekerId.toString());
+    const uniqueSeekerIds = [...new Set(seekerIds)];
+
+    // ---------- helpers ----------
+    const formatDate = (date) => {
+      if (!date) return null;
+      const d = new Date(date);
+      const dd = String(d.getDate()).padStart(2, "0");
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const yyyy = d.getFullYear();
+      return `${dd}-${mm}-${yyyy}`;
+    };
+    const bucketBySeeker = (arr) =>
+      arr.reduce((m, x) => {
+        const k = x.jobSeekerId?.toString?.() || "";
+        (m[k] = m[k] || []).push(x);
+        return m;
+      }, {});
+
+    if (uniqueSeekerIds.length === 0) {
+      return res.status(200).json({
+        status: true,
+        message: "Applicants details fetched successfully.",
+        totalRecord,
+        totalPage: 1,
+        currentPage: 1,
+        data: []
+      });
+    }
+
+    // ---------- batched related fetches ----------
+    const [educations, experiences, skills, resumes] = await Promise.all([
+      // EDUCATIONS (support minor casing variants you showed)
+      JobSeekerEducation.find({ jobSeekerId: { $in: uniqueSeekerIds } })
+        .select({
+          jobSeekerId: 1, _id: 0,
+          degree: 1,
+          boardOfUniversity: 1, boardofuniversity: 1,
+          sessionFrom: 1, sessionfrom: 1,
+          sessionTo: 1, sessionto: 1,
+          marks: 1,
+          gradeOrPercentage: 1, gradeorPercentage: 1
+        })
+        .lean(),
+
+      // WORK EXPERIENCE (exact fields per your schema)
+      WorkExperience.find({ jobSeekerId: { $in: uniqueSeekerIds } })
+        .select("jobSeekerId companyName jobTitle sessionFrom sessionTo roleDescription -_id")
+        .lean(),
+
+      // SKILLS (only 'skills')
+      Skill.find({ jobSeekerId: { $in: uniqueSeekerIds } })
+        .select("jobSeekerId skills -_id")
+        .lean(),
+
+      // RESUMES (only 'fileName')
+      Resume.find({ jobSeekerId: { $in: uniqueSeekerIds } })
+        .select("jobSeekerId fileName -_id")
+        .lean()
+    ]);
+
+    const eduBySeeker = bucketBySeeker(educations);
+    const expBySeeker = bucketBySeeker(experiences);
+    const skillBySeeker = bucketBySeeker(skills);
+    const resBySeeker = bucketBySeeker(resumes);
+
+    // ---------- normalizers (remove jobSeekerId & format) ----------
+    const normalizeEdu = (e) => ({
+      degree: e.degree ?? null,
+      boardOfUniversity: e.boardOfUniversity ?? e.boardofuniversity ?? null,
+      sessionFrom: formatDate(e.sessionFrom ?? e.sessionfrom),
+      sessionTo: formatDate(e.sessionTo ?? e.sessionto),
+      marks: e.marks ?? null,
+      gradeOrPercentage: e.gradeOrPercentage ?? e.gradeorPercentage ?? null
+    });
+
+    const normalizeExp = (x) => ({
+      companyName: x.companyName ?? null,
+      jobTitle: x.jobTitle ?? null,
+      sessionFrom: formatDate(x.sessionFrom),
+      sessionTo: formatDate(x.sessionTo),
+      roleDescription: x.roleDescription ?? null
+    });
+
+    // Return exactly what you store: if array -> array; if string -> string
+    const normalizeSkill = (s) => ({
+      skills: s?.skills ?? (Array.isArray(s) ? s : null)
+    });
+
+    const normalizeResume = (r) => ({
+      fileName: r.fileName ?? null
+    });
+
+    // ---------- build response ----------
+    const data = apps
+      .filter(a => a.jobSeekerId)
+      .map(a => {
+        const p = a.jobSeekerId;
+        const sid = p._id.toString();
+
+        return {
+          applicationId: a._id.toString(),
+          status: a.status,
+          employerApprovalStatus: a.employerApprovalStatus,
+
+          jobSeekerName: p.name ?? null,
+          email: p.email ?? null,
+          dateOfBirth: formatDate(p.dateOfBirth),
+          jobProfile: p.jobProfile ? (p.jobProfile.jobProfile || p.jobProfile.name || null) : null,
+          industryType: p.industryType ? (p.industryType.industryType || p.industryType.name || null) : null,
+
+          educations: (eduBySeeker[sid] || []).map(normalizeEdu),
+          experiences: (expBySeeker[sid] || []).map(normalizeExp),
+          skills: (skillBySeeker[sid] || []).map(normalizeSkill),
+          resumes: (resBySeeker[sid] || []).map(normalizeResume)
+        };
+      });
+
+    const totalPage = limit && totalRecord > 0 ? Math.ceil(totalRecord / limit) : 1;
+    const currentPage = limit ? Math.min(page, totalPage || 1) : 1;
+
+    return res.status(200).json({
+      status: true,
+      message: "Applicants details fetched successfully.",
+      totalRecord,
+      totalPage,
+      currentPage,
+      data
+    });
+  } catch (err) {
+    console.error("getApplicantsDetails error:", err);
+    return res.status(500).json({ status: false, message: "Server error", error: err.message });
+  }
+};
+
+
+
+
+
 
 exports.getMyApplications = async (req, res) => {
   try {

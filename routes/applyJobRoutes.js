@@ -1,11 +1,12 @@
 const express = require("express");
 const router = express.Router();
-const { applyJobs, withdrawApplication, getApplicantsForJob, getMyApplications, getApprovedApplicants, updateEmployerApprovalStatus  } = require('../controllers/applyJobController');
+const { applyJobs, withdrawApplication, getApplicantsForJob, getApplicantsDetails, getMyApplications, getApprovedApplicants, updateEmployerApprovalStatus  } = require('../controllers/applyJobController');
 const { verifyToken } = require('../middleware/authMiddleware');
 
 
 router.post('/apply-job', verifyToken, applyJobs);
 router.get('/applicants/:jobPostId', verifyToken, getApplicantsForJob);
+router.get('/applicantsDetails/:jobPostId', verifyToken, getApplicantsDetails);
 router.put('/withdraw-application', verifyToken, withdrawApplication);
 
 router.get('/getAll-appliedJobs', verifyToken, getMyApplications);
