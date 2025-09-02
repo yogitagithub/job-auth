@@ -12,6 +12,7 @@ const SalaryType = require("../models/AdminSalaryType");
 const OtherField = require("../models/AdminOtherField");
 const CurrentSalary = require("../models/AdminCurrentSalary");
 const WorkingShift = require("../models/AdminWorkingShift");
+const Skill = require("../models/Skills");
 
 
 const CompanyProfile = require("../models/CompanyProfile");
@@ -3212,5 +3213,417 @@ exports.getWorkingShift = async (req, res) => {
     });
   }
 };
+
+
+//skill set
+
+const tidy = s => String(s || "").trim().replace(/\s+/g, " ");
+
+exports.createSkill = async (req, res) => {
+  const { skill } = req.body || {};
+  if (!skill || !skill.trim()) {
+    return res.status(400).json({ status: false, message: "Skill required" });
+  }
+
+  const pretty = tidy(skill);
+
+  try {
+    const doc = await Skill.create({ skill: pretty, count: 0, isDeleted: false });
+    return res.status(201).json({
+      status: true,
+      message: "Skill created successfully",
+      data: { id: doc._id, skill: doc.skill, count: doc.count }
+    });
+
+  } catch (err) {
+    // Duplicate => either active (conflict) or soft-deleted (restore)
+    if (err?.code === 11000) {
+      const existing = await Skill.findOne({ skill: pretty })
+        .collation({ locale: "en", strength: 2 });
+
+      if (!existing) {
+        // Very rare race; safe fallback
+        return res.status(400).json({ status: false, message: "Skill already exists." });
+      }
+
+      if (existing.isDeleted) {
+        existing.skill = pretty;   // keep tidy spacing/case
+        existing.isDeleted = false;
+        await existing.save();
+        return res.status(201).json({
+          status: true,
+          message: "Skill restored successfully",
+          data: { id: existing._id, skill: existing.skill, count: existing.count }
+        });
+      }
+
+      return res.status(400).json({
+        status: false,
+        message: "Skill already exists.",
+       
+      });
+    }
+
+    return res.status(500).json({ status: false, message: "Error creating skill", error: err.message });
+  }
+};
+
+
+//for admin only
+exports.getSkill = async (req, res) => {
+  try {
+    // Admin only
+    const role = req.user?.role;
+    if (role !== "admin") {
+      return res.status(403).json({ status: false, message: "Admin token required." });
+    }
+
+    const search = norm(req.query.search || "");
+    const type   = String(req.query.type || "active").toLowerCase();
+    const page   = Math.max(parseInt(req.query.page, 10) || 1, 1);
+
+    // base limit (used for active/search)
+    let limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
+
+    // popular: "count" controls page size (default 5 if neither count nor limit given)
+    if (type === "popular") {
+      const c = parseInt(req.query.count, 10);
+      if (Number.isFinite(c) && c > 0) {
+        limit = Math.min(c, 100);
+      } else if (!req.query.limit) {
+        limit = 5;
+      }
+    }
+
+    const base = { isDeleted: false };
+
+    // ---------- SEARCH (prefix-first, no aggregation) ----------
+    if (search) {
+      const q = String(search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // escape regex
+      const prefix   = new RegExp("^" + q, "i"); // starts-with
+      const anywhere = new RegExp(q, "i");       // substring
+
+      const prefixFilter = { ...base, skill: prefix };
+      const restFilter   = { $and: [{ ...base }, { skill: anywhere }, { skill: { $not: prefix } }] };
+
+      const [prefixCount, restCount] = await Promise.all([
+        Skill.countDocuments(prefixFilter),
+        Skill.countDocuments(restFilter),
+      ]);
+
+      const totalRecord = prefixCount + restCount;
+      const skip = (page - 1) * limit;
+
+      // how many to skip/take from prefix vs rest pages
+      const prefixSkip = Math.min(skip, prefixCount);
+      const prefixTake = Math.max(0, Math.min(limit, prefixCount - prefixSkip));
+
+      const [prefixRows, restRows] = await Promise.all([
+        prefixTake > 0
+          ? Skill.find(prefixFilter)
+              .select("skill count")
+              .collation({ locale: "en", strength: 2 })
+              .sort({ count: -1, skill: 1 }) // more popular first inside prefix group
+              .skip(prefixSkip)
+              .limit(prefixTake)
+              .lean()
+          : Promise.resolve([]),
+
+        (limit - prefixTake) > 0
+          ? Skill.find(restFilter)
+              .select("skill count")
+              .collation({ locale: "en", strength: 2 })
+              .sort({ count: -1, skill: 1 }) // then other matches by popularity
+              .skip(Math.max(0, skip - prefixCount))
+              .limit(limit - prefixTake)
+              .lean()
+          : Promise.resolve([]),
+      ]);
+
+      const rows = prefixRows.concat(restRows);
+      const data = rows.map(s => ({ id: s._id, skill: s.skill, count: s.count }));
+
+      return res.status(200).json({
+        status: true,
+        message: data.length ? "Skills fetched successfully." : "No matching skills found.",
+        totalRecord,
+        totalPage: Math.ceil(totalRecord / limit || 1),
+        currentPage: page,
+        data,
+      });
+    }
+
+    // ---------- POPULAR / ACTIVE ----------
+    const filter = { ...base };
+    const sort   = type === "popular" ? { count: -1, skill: 1 } : { skill: 1 };
+    const messageIfEmpty = type === "popular" ? "No popular skills found." : "No active skills found.";
+
+    const [totalRecord, rows] = await Promise.all([
+      Skill.countDocuments(filter),
+      Skill.find(filter)
+        .select("skill count")
+        .collation({ locale: "en", strength: 2 })
+        .sort(sort)
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+    ]);
+
+    const data = rows.map(s => ({ id: s._id, skill: s.skill, count: s.count }));
+
+    return res.status(200).json({
+      status: true,
+      message: data.length ? "Skills fetched successfully." : messageIfEmpty,
+      totalRecord,
+      totalPage: Math.ceil(totalRecord / limit || 1),
+      currentPage: page,
+      data,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      status: false,
+      message: "Error fetching admin skills",
+      error: err.message,
+    });
+  }
+};
+
+
+
+exports.updateSkill = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { skill } = req.body || {};
+
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ status: false, message: "Invalid skill id." });
+    }
+    if (!skill || !skill.trim()) {
+      return res.status(400).json({ status: false, message: "Skill required" });
+    }
+
+    const pretty = tidy(skill);
+
+    // 1) Fetch the target
+    const target = await Skill.findById(id).lean();
+    if (!target) {
+      return res.status(404).json({ status: false, message: "Skill not found." });
+    }
+    if (target.isDeleted) {
+      return res.status(409).json({
+        status: false,
+        message: "Cannot update a soft-deleted skill."
+      });
+    }
+
+    // 2) If no effective change (case-insensitive & space-normalized), short-circuit
+    const oldNorm = tidy(target.skill).toLowerCase();
+    const newNorm = pretty.toLowerCase();
+    if (oldNorm === newNorm) {
+      return res.status(200).json({
+        status: true,
+        message: "No changes detected.",
+        data: { id: target._id, skill: target.skill, count: target.count }
+      });
+    }
+
+    // 3) Prevent collision with another ACTIVE skill (case-insensitive)
+    const conflict = await Skill.findOne({
+      _id: { $ne: id },
+      isDeleted: false,
+      skill: pretty
+    }).collation({ locale: "en", strength: 2 }); // case-insensitive
+
+    if (conflict) {
+      return res.status(409).json({
+        status: false,
+        message: "Another active skill with the same name already exists."
+      });
+    }
+
+    // 4) Update
+    const updated = await Skill.findByIdAndUpdate(
+      id,
+      { $set: { skill: pretty } },
+      { new: true, runValidators: true }
+    );
+
+    return res.status(200).json({
+      status: true,
+      message: "Skill updated successfully.",
+      data: { id: updated._id, skill: updated.skill, count: updated.count }
+    });
+
+  } catch (err) {
+    if (err?.code === 11000) {
+      // Unique index collision fallback
+      return res.status(409).json({
+        status: false,
+        message: "Another active skill with the same name already exists."
+      });
+    }
+    return res.status(500).json({ status: false, message: "Error updating skill", error: err.message });
+  }
+};
+
+
+
+exports.deleteSkill = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ status: false, message: "Invalid skill id." });
+    }
+
+    // 1) Check existence first (as requested)
+    const existing = await Skill.findById(id).lean();
+    if (!existing) {
+      return res.status(404).json({ status: false, message: "Skill not found." });
+    }
+
+    // 2) Already soft-deleted?
+    if (existing.isDeleted) {
+      return res.status(409).json({
+        status: false,
+        message: "Skill is already soft-deleted."
+      });
+    }
+
+    // 3) Soft delete
+    const updated = await Skill.findByIdAndUpdate(
+      id,
+      { $set: { isDeleted: true } },
+      { new: true }
+    ).select("skill count isDeleted");
+
+    return res.status(200).json({
+      status: true,
+      message: "Skill soft-deleted successfully.",
+      data: { id: updated._id, skill: updated.skill, count: updated.count, isDeleted: updated.isDeleted }
+    });
+  } catch (err) {
+    return res.status(500).json({ status: false, message: "Error deleting skill", error: err.message });
+  }
+};
+
+
+
+//get list of admin skill list on the basis of search, populara and active for employer and job seeker
+const norm = (s = "") => String(s).trim().replace(/\s+/g, " ");
+
+
+exports.listAdminSkills = async (req, res) => {
+  try {
+    const role = req.user?.role;
+    if (!["job_seeker", "employer"].includes(role)) {
+      return res.status(403).json({ status: false, message: "Unauthorized role." });
+    }
+
+    const search = norm(req.query.search || "");
+    const type   = String(req.query.type || "active").toLowerCase();
+
+    const page   = Math.max(parseInt(req.query.page, 10) || 1, 1);
+
+    // base limit (used for active/search)
+    let limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
+
+    // ----- popular: count controls page size (default 5) -----
+    if (type === "popular") {
+      const c = parseInt(req.query.count, 10);
+      if (Number.isFinite(c) && c > 0) {
+        limit = Math.min(c, 100);   // count wins if valid
+      } else if (!req.query.limit) {
+        limit = 5;                  // no count/limit => default 5
+      }
+    }
+
+    const base = { isDeleted: false };
+
+    // ---------- SEARCH (prefix-first, no aggregation) ----------
+    if (search) {
+      const q = String(search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const prefix   = new RegExp("^" + q, "i");
+      const anywhere = new RegExp(q, "i");
+
+      const prefixFilter = { ...base, skill: prefix };
+      const restFilter   = { $and: [{ ...base }, { skill: anywhere }, { skill: { $not: prefix } }] };
+
+      const [prefixCount, restCount] = await Promise.all([
+        Skill.countDocuments(prefixFilter),
+        Skill.countDocuments(restFilter),
+      ]);
+      const totalRecord = prefixCount + restCount;
+      const skip = (page - 1) * limit;
+
+      const prefixSkip = Math.min(skip, prefixCount);
+      const prefixTake = Math.max(0, Math.min(limit, prefixCount - prefixSkip));
+
+      const [prefixRows, restRows] = await Promise.all([
+        prefixTake > 0
+          ? Skill.find(prefixFilter)
+              .select("skill count")
+              .collation({ locale: "en", strength: 2 })
+              .sort({ count: -1, skill: 1 })
+              .skip(prefixSkip)
+              .limit(prefixTake)
+              .lean()
+          : Promise.resolve([]),
+        (limit - prefixTake) > 0
+          ? Skill.find(restFilter)
+              .select("skill count")
+              .collation({ locale: "en", strength: 2 })
+              .sort({ count: -1, skill: 1 })
+              .skip(Math.max(0, skip - prefixCount))
+              .limit(limit - prefixTake)
+              .lean()
+          : Promise.resolve([]),
+      ]);
+
+      const rows = prefixRows.concat(restRows);
+      const data = rows.map(s => ({ id: s._id, skill: s.skill, count: s.count }));
+
+      return res.status(200).json({
+        status: true,
+        message: data.length ? "Skills fetched successfully." : "No matching skills found.",
+        totalRecord,
+        totalPage: Math.ceil(totalRecord / limit || 1),
+        currentPage: page,
+        data,
+      });
+    }
+
+    // ---------- POPULAR / ACTIVE ----------
+    const filter = { ...base };
+    const sort   = type === "popular" ? { count: -1, skill: 1 } : { skill: 1 };
+    const messageIfEmpty = type === "popular" ? "No popular skills found." : "No active skills found.";
+
+    const [totalRecord, rows] = await Promise.all([
+      Skill.countDocuments(filter),
+      Skill.find(filter)
+        .select("skill count")
+        .collation({ locale: "en", strength: 2 })
+        .sort(sort)
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+    ]);
+
+    const data = rows.map(s => ({ id: s._id, skill: s.skill, count: s.count }));
+
+    return res.status(200).json({
+      status: true,
+      message: data.length ? "Skills fetched successfully." : messageIfEmpty,
+      totalRecord,
+      totalPage: Math.ceil(totalRecord / limit || 1),
+      currentPage: page,
+      data,
+    });
+  } catch (err) {
+    return res.status(500).json({ status: false, message: "Error fetching admin skills", error: err.message });
+  }
+};
+
+
 
 

@@ -14,7 +14,8 @@ getOtherField, deleteOtherField, updateOtherField, createOtherField,
 getCompanyProfiles, getCompanyProfilesById, getJobSeekerProfiles, addFeaturedCompanies, getFeaturedCompanies,
 updateFeaturedCompanies, deleteFeaturedCompanies, createCurrentSalary,
 getCurrentSalary, deleteCurrentSalary, updateCurrentSalary, createWorkingShift,
-updateWorkingShift, deleteWorkingShift, getWorkingShift, getJobSeekerProfilesbyId } = require('../controllers/adminController');
+updateWorkingShift, deleteWorkingShift, getWorkingShift, getJobSeekerProfilesbyId, 
+createSkill, getSkill, updateSkill, deleteSkill } = require('../controllers/adminController');
 
 const { verifyToken, verifyAdmin, verifyEmployerOnly, verifyJobSeekerOnly } = require('../middleware/authMiddleware');
 const { adminApproveJobPost, getJobList, updateJobListById } = require('../controllers/jobPostController');
@@ -101,6 +102,14 @@ router.get("/get-working-shift", verifyToken, verifyAdmin, getWorkingShift);
 router.put('/job-post-approve', verifyToken, verifyAdmin, adminApproveJobPost);
 router.get('/job-list', verifyToken, verifyAdmin, getJobList);
 router.put('/update-job-post', verifyToken, verifyAdmin, updateJobListById);
+
+
+//skill set
+router.post("/create-skill", verifyToken, verifyAdmin, createSkill);
+router.get("/get-skill", verifyToken, verifyAdmin, getSkill);
+router.put("/update-skill/:id", verifyToken, verifyAdmin, updateSkill);
+router.delete("/delete-skill/:id", verifyToken, verifyAdmin, deleteSkill);
+
 
 
 module.exports = router;

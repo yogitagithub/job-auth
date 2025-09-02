@@ -1,30 +1,45 @@
 const mongoose = require("mongoose");
 
+function tidySkill(s) {
+  return String(s || "").trim().replace(/\s+/g, " ");
+}
+
 const skillSchema = new mongoose.Schema(
   {
-    userId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    jobSeekerId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "JobSeekerProfile",
-      required: true,
-    },
-    skills: {
+    skill: {
       type: String,
-      trim: true,
+      required: true,
+      trim: true
     },
-
-     isDeleted: { 
-    type: Boolean, 
-    default: false 
-  }
-  
+    count: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    isDeleted: {
+      type: Boolean,
+      default: false,
+      index: true
+    }
   },
   { timestamps: true }
 );
 
-module.exports = mongoose.model("Skill", skillSchema);
+// collapse extra spaces before validation
+skillSchema.pre("validate", function(next) {
+  if (this.skill) this.skill = tidySkill(this.skill);
+  next();
+});
 
+// Case-insensitive UNIQUE index on active docs only
+// (strength:2 => case-insensitive; diacritics-insensitive)
+skillSchema.index(
+  { skill: 1 },
+  {
+    unique: true,
+    collation: { locale: "en", strength: 2 },
+    partialFilterExpression: { isDeleted: false }
+  }
+);
+
+module.exports = mongoose.model("Skill", skillSchema);
