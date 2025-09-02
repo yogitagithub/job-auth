@@ -7,6 +7,7 @@ const bankDetailsSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    
     jobSeekerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "JobSeekerProfile",
@@ -15,10 +16,21 @@ const bankDetailsSchema = new mongoose.Schema(
 
 
     accountHolderName: { type: String, trim: true, default: null },
-    accountNumber: { type: String, trim: true, default: null },
-    ifscCode: { type: Date, default: null },
+
+    accountNumber: { type: Number, trim: true, default: null },
+
+    ifscCode: { type: String, default: null },
+
     branchName: { type: String, default: null },
-    accountType: { type: String, trim: true, default: null },
+    
+    
+
+     accountType: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Accounttype",
+      required: true,
+     
+    },
 
      isDeleted: { 
     type: Boolean, 

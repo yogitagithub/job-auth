@@ -20,6 +20,7 @@ const CareerPreferenceRoutes = require("./routes/careerRoutes");
 
 const reviewRoutes = require("./routes/reviewRoutes");
 const screenRoutes = require("./routes/splashScreenRoutes");
+const bankRoutes = require("./routes/bankDetailsRoutes");
 
 const adminRoutes = require("./routes/adminRoutes");
 
@@ -55,6 +56,7 @@ app.use('/api/auth', stateCityRoutes);
 app.use('/api/auth', CareerPreferenceRoutes);
 
 app.use('/api/auth', screenRoutes);
+app.use('/api/auth', bankRoutes);
 app.use('/api/auth/admin', adminRoutes);
 
 const PORT = process.env.PORT || 8001;
