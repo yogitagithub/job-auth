@@ -6,7 +6,8 @@ const { getIndustryBasedOnRole, getCategoryBasedOnRole,
     getExperienceRangeBasedOnRole, getJobTypeBasedOnRole, 
     getOtherFieldBasedOnRole, 
     getJobPostsByCategoryPublic, getAllCategoriesPublic,
-getAllIndustriesPublic, getFeaturedCompaniesPublic, getJobPostsByCompanyPublic } = require('../controllers/adminController');
+getAllIndustriesPublic, getFeaturedCompaniesPublic, getJobPostsByCompanyPublic, 
+getWorkingShiftBasedOnRole, getAccountTypeBasedOnRole } = require('../controllers/adminController');
     
 const { verifyToken, verifyJobSeekerOnly, verifyEmployerOnly } = require('../middleware/authMiddleware');
 
@@ -51,6 +52,15 @@ router.get("/public-companies/:companyId", getJobPostsByCompanyPublic);
 
 //featured companies list without token
 router.get("/public-featured-companies", getFeaturedCompaniesPublic);
+
+
+//get working shift list for job_seeker and employer
+router.get("/working-shift", verifyToken, getWorkingShiftBasedOnRole);
+
+
+
+//get account type list for employer and job_seeker
+router.get("/account-type", verifyToken, getAccountTypeBasedOnRole);
 
 
 

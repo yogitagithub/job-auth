@@ -2,7 +2,7 @@ const JobApplication = require("../models/JobApplication");
 const JobSeekerProfile = require("../models/JobSeekerProfile");
 const JobSeekerEducation = require("../models/Education");
 const WorkExperience = require("../models/WorkExperience");
-const Skill = require("../models/Skills");
+const JobSeekerSkill = require("../models/JobSeekerSkill");
 const Resume = require("../models/Resume");
 const JobPost = require("../models/JobPost");
 const JobProfile = require("../models/AdminJobProfile");
@@ -51,7 +51,7 @@ exports.applyJobs = async (req, res) => {
     const [education, experience, skills, resume] = await Promise.all([
       JobSeekerEducation.findOne({ userId }),
       WorkExperience.findOne({ userId }),
-      Skill.findOne({ userId }),
+      JobSeekerSkill.findOne({ userId }),
       Resume.findOne({ userId }),
     ]);
 
@@ -76,8 +76,8 @@ exports.applyJobs = async (req, res) => {
       userId,
       jobSeekerId: jobSeekerProfile._id,
       jobPostId,
-      educationId: education._id,
-      experienceId: experience._id,
+      // educationId: education._id,
+      // experienceId: experience._id,
       skillsId: skills._id,
       resumeId: resume._id,
       status: "Applied",

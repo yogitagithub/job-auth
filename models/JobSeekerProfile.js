@@ -89,27 +89,26 @@ const profileSchema = new mongoose.Schema(
   },
 
 
-  // isExperienceAdded: { 
-  //   type: Boolean, 
-  //   default: false 
-  // },
+  isExperienced: { 
+    type: Boolean, 
+    default: false 
+  },
 
    isResumeAdded:     { type: Boolean, default: false },
     isEducationAdded:  { type: Boolean, default: false },
     isSkillsAdded:     { type: Boolean, default: false },
     isExperienceAdded: { type: Boolean, default: false },
 
-// for experienced not for freshers
-  //    CurrentSalary: { 
-  //   type: Number, 
-  //   default: false 
-  // },
+
+  CurrentSalary: {
+    type: Number,
+    min: 0,
+    // Required only when isExperienced is true
+    required: function () { return this.isExperienced === true; }
+  },
 
 
-  //  BankAccount: { 
-  //   type: String, 
-  //   default: false 
-  // },
+  
   
   },
   { timestamps: true }

@@ -9,6 +9,7 @@ const Experience = require("../models/AdminExperienceRange");
 const JobType = require("../models/AdminJobType");
 const JobProfile = require("../models/AdminJobProfile");
 const SalaryType = require("../models/AdminSalaryType");
+const AccountType = require("../models/AdminAccountType");
 const OtherField = require("../models/AdminOtherField");
 const CurrentSalary = require("../models/AdminCurrentSalary");
 const WorkingShift = require("../models/AdminWorkingShift");
@@ -3068,6 +3069,8 @@ exports.createWorkingShift = async (req, res) => {
   }
 };
 
+
+
 exports.updateWorkingShift = async (req, res) => {
   try {
     const { id } = req.body || {};
@@ -3137,6 +3140,8 @@ exports.updateWorkingShift = async (req, res) => {
   }
 };
 
+
+
 exports.deleteWorkingShift = async (req, res) => {
   try {
     const { id } = req.body || {};
@@ -3181,6 +3186,8 @@ exports.deleteWorkingShift = async (req, res) => {
   }
 };
 
+
+
 //get for admin
 exports.getWorkingShift = async (req, res) => {
   try {
@@ -3211,6 +3218,49 @@ exports.getWorkingShift = async (req, res) => {
       status: false, 
       message: "Server error" 
     });
+  }
+};
+
+
+
+//get working shift for job seeker and employer
+exports.getWorkingShiftBasedOnRole = async (req, res) => {
+  try {
+    // ⛔ Block admins
+    const role = req.user?.role;
+    if (!role) {
+      return res.status(401).json({ status: false, message: "Unauthorized." });
+    }
+    if (role === "admin") {
+      return res.status(403).json({
+        status: false,
+        message: "Admins are not allowed to access this resource."
+      });
+    }
+
+    const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
+
+    const query = { isDeleted: false };
+
+    const [totalRecord, rows] = await Promise.all([
+      WorkingShift.countDocuments(query),
+      WorkingShift.find(query).sort({ name: 1 }).skip((page - 1) * limit).limit(limit).lean()
+    ]);
+
+    const data = rows.map(p => ({ id: p._id, name: p.name, isDeleted: p.isDeleted }));
+
+    return res.status(200).json({
+      status: true,
+      message: data.length ? "Working shift fetched successfully." : "No working shift found.",
+      totalRecord,
+      totalPage: Math.ceil(totalRecord / limit) || 0,
+      currentPage: page,
+      data
+    });
+  } catch (err) {
+    console.error("getWorkingShiftBasedOnRole error:", err);
+    return res.status(500).json({ status: false, message: "Server error.", error: err.message });
   }
 };
 
@@ -3623,6 +3673,252 @@ exports.listAdminSkills = async (req, res) => {
     return res.status(500).json({ status: false, message: "Error fetching admin skills", error: err.message });
   }
 };
+
+
+
+//account type
+exports.createAccountType = async (req, res) => {
+  try {
+    const name = (req.body?.name || "").trim();
+    if (!name) return res.status(400).json({ status: false, message: "name is required" });
+
+    // case-insensitive find (even if soft-deleted)
+    const existing = await AccountType.findOne({
+      name: { $regex: `^${escapeRegex(name)}$`, $options: "i" }
+    });
+
+    if (existing) {
+      if (existing.isDeleted) {
+        // restore soft-deleted
+        existing.isDeleted = false;
+        existing.name = name; // normalize casing/spacing
+        await existing.save();
+        return res.status(200).json({
+          status: true,
+          message: "Account type restored successfully.",
+          data: existing
+        });
+      }
+      return res.status(409).json({ status: false, message: "Account type already exists" });
+    }
+
+    const doc = await AccountType.create({ name });
+    return res.status(201).json({
+      status: true,
+      message: "Account type created successfully.",
+      data: doc
+    });
+  } catch (err) {
+    if (err?.code === 11000) {
+      return res.status(409).json({ status: false, message: "Account type already exists" });
+    }
+    console.error("createAccountType error:", err);
+    return res.status(500).json({ status: false, message: "Server error" });
+  }
+};
+
+
+
+
+exports.updateAccountType = async (req, res) => {
+  try {
+    const { id } = req.body || {};
+    const name = (req.body?.name || "").trim();
+
+    if (!id || !mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ status: false, message: "Valid id is required" });
+    }
+    if (!name) {
+      return res.status(400).json({ status: false, message: "name is required" });
+    }
+
+    const doc = await AccountType.findById(id);
+    if (!doc) {
+      return res.status(404).json({ status: false, message: "Account type not found" });
+    }
+
+    // ❌ Block updates on soft-deleted docs
+    if (doc.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "This account type is already soft deleted and cannot be updated."
+      });
+    }
+
+    // Duplicate guard among active docs (case-insensitive exact match)
+    const dupe = await AccountType.findOne({
+      _id: { $ne: id },
+      isDeleted: false,
+      name: { $regex: `^${escapeRegex(name)}$`, $options: "i" }
+    });
+    if (dupe) {
+      return res.status(409).json({
+        status: false,
+        message: "Another account type with this name already exists"
+      });
+    }
+
+    doc.name = name;
+    await doc.save();
+
+    return res.status(200).json({
+      status: true,
+      message: "Account type updated successfully.",
+      data: {
+        id: doc._id,
+        name: doc.name,
+        isDeleted: doc.isDeleted
+      }
+    });
+  } catch (err) {
+    console.error("updateAccountType error:", err);
+    return res.status(500).json({ status: false, message: "Server error", error: err.message });
+  }
+};
+
+
+
+//get salary type for admin
+exports.getAccountTypes = async (req, res) => {
+  try {
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+
+    const filter = { isDeleted: false };
+
+    const [totalRecord, data] = await Promise.all([
+      AccountType.countDocuments(filter),
+      AccountType.find(filter)
+        .sort({ createdAt: -1, _id: 1 }) // stable internal order
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean()
+    ]);
+
+    return res.status(200).json({
+      status: true,
+      message: "Account types fetched successfully.",
+      totalRecord,
+      totalPage: Math.ceil(totalRecord / limit) || 0,
+      currentPage: page,
+      data
+    });
+  } catch (err) {
+    console.error("getAccountTypes error:", err);
+    return res.status(500).json({ status: false, message: "Server error" });
+  }
+};
+
+
+
+
+exports.deleteAccountType = async (req, res) => {
+  try {
+    const { id } = req.body || {};
+    if (!id || !mongoose.isValidObjectId(id)) {
+      return res.status(400).json({
+        status: false,
+        message: "Valid id is required"
+      });
+    }
+
+    const doc = await AccountType.findById(id);
+
+    if (!doc) {
+      return res.status(404).json({
+        status: false,
+        message: "Account type not found"
+      });
+    }
+
+    // 🚫 Already soft deleted
+    if (doc.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "This is already soft deleted."
+      });
+    }
+
+    // ✅ Soft delete
+    doc.isDeleted = true;
+    await doc.save();
+
+    return res.status(200).json({
+      status: true,
+      message: "Account type deleted successfully."
+    });
+
+  } catch (err) {
+    console.error("deleteAccountType error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Server error",
+      error: err.message
+    });
+  }
+};
+
+
+
+
+//get salary types for employer and job seeker
+exports.getAccountTypeBasedOnRole = async (req, res) => {
+  try {
+    const role = req.user?.role;
+
+     //blocks admin
+     
+    if (!role) {
+      return res.status(401).json({ status: false, message: "Unauthorized." });
+    }
+    if (role === "admin") {
+      return res.status(403).json({
+        status: false,
+        message: "Admins are not allowed to access this resource."
+      });
+    }
+
+
+
+
+    if (role !== "employer" && role !== "job_seeker") {
+      return res.status(403).json({
+        status: false,
+        message: "Access denied. Employers and Job seekers only."
+      });
+    }
+
+    const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+
+    const filter = { isDeleted: false };
+
+    const [totalRecord, rows] = await Promise.all([
+      AccountType.countDocuments(filter),
+      AccountType.find(filter)
+        .sort({ createdAt: -1, _id: 1 }) // stable order
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean()
+    ]);
+
+    const data = rows.map(s => ({ id: s._id, name: s.name }));
+
+    return res.status(200).json({
+      status: true,
+      message: data.length ? "Account types fetched successfully." : "No account types found.",
+      totalRecord,
+      totalPage: Math.ceil(totalRecord / limit) || 0,
+      currentPage: page,
+      data
+    });
+  } catch (err) {
+    console.error("getAccountTypeBasedOnRole error:", err);
+    return res.status(500).json({ status: false, message: "Server error", error: err.message });
+  }
+};
+
+
 
 
 

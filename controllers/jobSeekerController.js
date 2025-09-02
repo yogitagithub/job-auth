@@ -5,7 +5,7 @@ const StateCity = require("../models/StateCity");
 
 const JobSeekerEducation = require("../models/Education");
 const WorkExperience = require("../models/WorkExperience");
-const Skill = require("../models/Skills");
+const JobSeekerSkill = require("../models/JobSeekerSkill");
 const Resume = require("../models/Resume");
 
 const fs = require("fs");
@@ -166,6 +166,66 @@ exports.saveProfile = async (req, res) => {
       }
     }
 
+
+
+    // ---------- experience/salary rules ----------
+const hasIsExperienced = Object.prototype.hasOwnProperty.call(req.body, "isExperienced");
+const hasSalary       = Object.prototype.hasOwnProperty.call(req.body, "CurrentSalary");
+
+// Normalize incoming values if present
+if (hasIsExperienced) {
+  const v = String(req.body.isExperienced).toLowerCase();
+  req.body.isExperienced = (v === "true" || v === "1" || v === "yes");
+}
+if (hasSalary && req.body.CurrentSalary !== null && req.body.CurrentSalary !== "") {
+  const n = Number(req.body.CurrentSalary);
+  if (!Number.isFinite(n) || n < 0) {
+    return res.status(400).json({ status: false, message: "CurrentSalary must be a non-negative number." });
+  }
+  req.body.CurrentSalary = n;
+}
+
+// Determine the effective next value of isExperienced for this request
+const nextIsExperienced =
+  hasIsExperienced ? req.body.isExperienced : (profile?.isExperienced ?? false);
+
+// 1) Fresher must NOT send salary
+if (nextIsExperienced === false && hasSalary && req.body.CurrentSalary != null) {
+  return res.status(400).json({
+    status: false,
+    message: "Fresher candidates must not provide CurrentSalary."
+  });
+}
+
+// 2) Experienced must HAVE salary
+//    - On create and when switching from fresher->experienced in this request,
+//      salary must be provided in body.
+//    - On update where already experienced, we allow leaving salary unchanged.
+const wasExperienced = !!profile?.isExperienced;
+const isTurningExperiencedNow = (nextIsExperienced === true && wasExperienced === false);
+
+if (nextIsExperienced === true) {
+  const effectiveSalary =
+    hasSalary ? req.body.CurrentSalary : (profile ? profile.CurrentSalary : undefined);
+
+  if (isTurningExperiencedNow && (effectiveSalary == null)) {
+    return res.status(400).json({
+      status: false,
+      message: "CurrentSalary is required when marking profile as experienced."
+    });
+  }
+}
+
+// 3) If user explicitly sets fresher, clear salary
+if (nextIsExperienced === false) {
+  // ensure we don't persist a salary for freshers
+  delete req.body.CurrentSalary;
+  if (profile && profile.CurrentSalary != null) {
+    profile.CurrentSalary = undefined;
+  }
+}
+
+
     // ---------- Create or Update (partial allowed) ----------
     const restrictedFields = ["_id", "userId", "phoneNumber", "__v", "image", "isDeleted", "deletedAt", "isResumeAdded", "isEducationAdded", "isSkillsAdded", "isExperienceAdded"];
     const isCreate = !profile;
@@ -264,23 +324,18 @@ exports.getProfile = async (req, res) => {
     }
 
     // ---- Compute section-completion flags from child collections ----
-    const [eduCount, expCount, skillCount, resumeDoc] = await Promise.all([
+    const [eduCount, expCount, jssDoc, resumeDoc] = await Promise.all([
       JobSeekerEducation.countDocuments({ userId, isDeleted: false }),
       WorkExperience.countDocuments({ userId, isDeleted: false }),
-      Skill.countDocuments({ userId, isDeleted: false, skills: { $exists: true, $ne: "" } }),
-      Resume.findOne({ userId, isDeleted: false })
+      JobSeekerSkill.findOne({ userId, isDeleted: false }).select("skillIds").lean(),
+      Resume.findOne({ userId, isDeleted: false }).select("_id").lean()
     ]);
 
+    const skillsCount       = Array.isArray(jssDoc?.skillIds) ? jssDoc.skillIds.length : 0;
     const isEducationAdded  = eduCount  > 0;
     const isExperienceAdded = expCount  > 0;
-    const isSkillsAdded     = skillCount > 0;
+    const isSkillsAdded     = skillsCount >= 3;   // use >0 if "any skill" should be true
     const isResumeAdded     = !!resumeDoc;
-
-    // (optional) keep the flags in the profile document in sync
-    // await JobSeekerProfile.updateOne(
-    //   { _id: profile._id },
-    //   { $set: { isEducationAdded, isExperienceAdded, isSkillsAdded, isResumeAdded } }
-    // );
 
     const formatDate = (date) => {
       if (!date) return null;
@@ -314,6 +369,11 @@ exports.getProfile = async (req, res) => {
         alternatePhoneNumber: p.alternatePhoneNumber,
         image: p.image,
 
+
+        // profile fields you asked to include
+        isExperienced: !!p.isExperienced,
+        CurrentSalary: p.isExperienced ? (typeof p.CurrentSalary === "number" ? p.CurrentSalary : null) : null,
+
         // ✅ flags computed from actual data
         isResumeAdded,
         isEducationAdded,
@@ -330,6 +390,8 @@ exports.getProfile = async (req, res) => {
     });
   }
 };
+
+
 
 exports.updateProfileImage = async (req, res) => {
   try {
@@ -419,6 +481,8 @@ exports.updateProfileImage = async (req, res) => {
     });
   }
 };
+
+
 
 exports.getProfileImage = async (req, res) => {
   try {
