@@ -84,9 +84,9 @@ exports.applyJobs = async (req, res) => {
     });
 
     // 5) Increment counter (guard against race and state changes)
-    await JobPost.updateOne(
+  await JobPost.updateOne(
       { _id: jobPostId, isDeleted: false, status: "active" },
-      { $inc: { appliedCandidates: 1 } }
+      { $inc: { appliedCandidates: 1 }, $set: { isApplied: true } }
     );
 
     return res.status(201).json({
@@ -176,6 +176,38 @@ exports.withdrawApplication = async (req, res) => {
     await application.save();
 
     // 6) Decrement appliedCandidates (if > 0)
+
+    const decResult = await JobPost.findOneAndUpdate(
+  { _id: jobPost._id, appliedCandidates: { $gt: 0 } }, // guard so it never goes below 0
+  { $inc: { appliedCandidates: -1 } },
+  { new: true, projection: { appliedCandidates: 1, isApplied: 1 } }
+);
+
+if (!decResult) {
+  return res.status(200).json({
+    status: true,
+    message: "Application withdrawn successfully.",
+    data: {
+      applicationId: application._id,
+      currentAppliedCandidates: jobPost.appliedCandidates,
+      isApplied: jobPost.isApplied
+    }
+  });
+}
+
+
+
+// Compute desired isApplied and update only if it changed
+const shouldBeApplied = decResult.appliedCandidates > 0;
+if (decResult.isApplied !== shouldBeApplied) {
+  await JobPost.updateOne(
+    { _id: jobPost._id },
+    { $set: { isApplied: shouldBeApplied } }
+  );
+  decResult.isApplied = shouldBeApplied; // reflect in response
+}
+
+
     const updatedPost = await JobPost.findOneAndUpdate(
       { _id: jobPost._id, appliedCandidates: { $gt: 0 } },
       { $inc: { appliedCandidates: -1 } },
@@ -347,6 +379,164 @@ exports.getApplicantsForJob = async (req, res) => {
 
 
 
+// for employer only without job post id
+exports.getApplicantsForEmployer = async (req, res) => {
+  try {
+    const { role, userId } = req.user;
+
+    // ✅ only employers may hit this endpoint
+    if (role !== "employer") {
+      return res.status(403).json({
+        status: false,
+        message: "Only employers can view applicants from this endpoint."
+      });
+    }
+
+    // 🔎 optional filters
+    const statusQuery = (req.query.status || "Applied").trim();
+    const statusFilter =
+      statusQuery.toLowerCase() === "all" ? {} : { status: "Applied" };
+
+    // 🔎 pagination
+    const pageParam = parseInt(req.query.page, 10);
+    const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
+
+    const limitRaw = (req.query.limit || "").toString().toLowerCase();
+    const limit =
+      limitRaw === "all"
+        ? 0
+        : (() => {
+            const n = parseInt(limitRaw || "10", 10);
+            if (!Number.isFinite(n) || n < 1) return 10;
+            return Math.min(n, 100);
+          })();
+    const skip = limit ? (page - 1) * limit : 0;
+
+    // ✅ find ALL job posts owned by this employer
+    const employerPosts = await JobPost.find({
+      userId,
+      isDeleted: false
+    }).select("_id");
+
+    if (!employerPosts.length) {
+      return res.status(200).json({
+        status: true,
+        message: "Applicants fetched successfully.",
+        totalRecord: 0,
+        totalPage: 1,
+        currentPage: 1,
+        data: []
+      });
+    }
+
+    const jobPostIds = employerPosts.map(p => p._id);
+
+    // ✅ base filter (all apps for the employer's posts)
+    const filter = { jobPostId: { $in: jobPostIds }, ...statusFilter };
+
+    // ✅ fetch applications (include jobPostId so we can return it)
+    const [totalRecord, applications] = await Promise.all([
+      JobApplication.countDocuments(filter),
+      JobApplication.find(filter)
+        .select("jobPostId userId jobSeekerId status employerApprovalStatus appliedAt createdAt")
+        .populate({
+          path: "jobSeekerId",
+          match: { isDeleted: false },
+          select: [
+            "name",
+            "phoneNumber",
+            "email",
+            "state",
+            "city",
+            "image",
+            "jobProfile",
+            "dateOfBirth",
+            "gender",
+            "panCardNumber",
+            "address",
+            "alternatePhoneNumber",
+            "pincode",
+            "industryType"
+          ].join(" "),
+          populate: [
+            { path: "state", select: "state" },
+            { path: "jobProfile", select: "jobProfile name" },
+            { path: "industryType", select: "industryType name" }
+          ]
+        })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+    ]);
+
+    // 🗓️ local formatter
+    const formatDate = (date) => {
+      if (!date) return null;
+      const d = new Date(date);
+      const day = String(d.getDate()).padStart(2, "0");
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const year = d.getFullYear();
+      return `${day}-${month}-${year}`;
+    };
+
+    const data = applications
+      .filter(a => !!a.jobSeekerId)
+      .map(a => {
+        const p = a.jobSeekerId;
+        return {
+          // 🔙 include job post id per your request
+          jobPostId: a.jobPostId?.toString() || null,
+
+          applicationId: a._id.toString(),
+          status: a.status,
+          employerApprovalStatus: a.employerApprovalStatus,
+
+          jobSeekerName: p.name ?? null,
+          phoneNumber: p.phoneNumber ?? null,
+          email: p.email ?? null,
+          dateOfBirth: formatDate(p.dateOfBirth),
+          gender: p.gender ?? null,
+          panCardNumber: p.panCardNumber ?? null,
+          address: p.address ?? null,
+          alternatePhoneNumber: p.alternatePhoneNumber ?? null,
+          pincode: p.pincode ?? null,
+          state: p.state?.state ?? null,
+          city: p.city ?? null,
+          image: p.image ?? null,
+
+          jobProfile: p.jobProfile
+            ? p.jobProfile.jobProfile || p.jobProfile.name || null
+            : null,
+
+          industryType: p.industryType
+            ? p.industryType.industryType || p.industryType.name || null
+            : null
+        };
+      });
+
+    const totalPage = limit && totalRecord > 0 ? Math.ceil(totalRecord / limit) : 1;
+    const currentPage = limit ? Math.min(page, totalPage || 1) : 1;
+
+    return res.status(200).json({
+      status: true,
+      message: "Applicants fetched successfully.",
+      totalRecord,
+      totalPage,
+      currentPage,
+      data
+    });
+  } catch (err) {
+    console.error("getApplicantsForEmployer error:", err);
+    return res.status(500).json({ status: false, message: "Server error", error: err.message });
+  }
+};
+
+
+
+
+
+
 //get full details of job seeker by employer and admin
 exports.getApplicantsDetails = async (req, res) => {
   try {
@@ -360,7 +550,9 @@ exports.getApplicantsDetails = async (req, res) => {
 
     // --- job post ---
     const post = await JobPost.findById(jobPostId).select("_id userId isDeleted");
-    if (!post) return res.status(404).json({ status: false, message: "Job post not found." });
+    if (!post) {
+      return res.status(404).json({ status: false, message: "Job post not found." });
+    }
     if (post.isDeleted) {
       return res.status(410).json({ status: false, message: "This job post has been removed." });
     }
@@ -377,6 +569,7 @@ exports.getApplicantsDetails = async (req, res) => {
     // --- pagination ---
     const pageParam = parseInt(req.query.page, 10);
     const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
+
     const limitRaw = (req.query.limit || "").toString().toLowerCase();
     const limit =
       limitRaw === "all"
@@ -448,8 +641,8 @@ exports.getApplicantsDetails = async (req, res) => {
     }
 
     // ---------- batched related fetches ----------
-    const [educations, experiences, skills, resumes] = await Promise.all([
-      // EDUCATIONS (support minor casing variants you showed)
+    const [educations, experiences, jsSkills, resumes] = await Promise.all([
+      // EDUCATIONS
       JobSeekerEducation.find({ jobSeekerId: { $in: uniqueSeekerIds } })
         .select({
           jobSeekerId: 1, _id: 0,
@@ -462,17 +655,18 @@ exports.getApplicantsDetails = async (req, res) => {
         })
         .lean(),
 
-      // WORK EXPERIENCE (exact fields per your schema)
+      // WORK EXPERIENCE
       WorkExperience.find({ jobSeekerId: { $in: uniqueSeekerIds } })
         .select("jobSeekerId companyName jobTitle sessionFrom sessionTo roleDescription -_id")
         .lean(),
 
-      // SKILLS (only 'skills')
-      Skill.find({ jobSeekerId: { $in: uniqueSeekerIds } })
-        .select("jobSeekerId skills -_id")
+      // ✅ JOB SEEKER SKILLS (user's skills) -> populate to get admin skill names
+      JobSeekerSkill.find({ jobSeekerId: { $in: uniqueSeekerIds }, isDeleted: false })
+        .select("jobSeekerId skillIds -_id")
+        .populate({ path: "skillIds", select: "skill" })
         .lean(),
 
-      // RESUMES (only 'fileName')
+      // RESUMES
       Resume.find({ jobSeekerId: { $in: uniqueSeekerIds } })
         .select("jobSeekerId fileName -_id")
         .lean()
@@ -480,10 +674,20 @@ exports.getApplicantsDetails = async (req, res) => {
 
     const eduBySeeker = bucketBySeeker(educations);
     const expBySeeker = bucketBySeeker(experiences);
-    const skillBySeeker = bucketBySeeker(skills);
+
+    // Build a map: jobSeekerId -> [skill names]
+    const skillsBySeeker = jsSkills.reduce((acc, doc) => {
+      const sid = doc.jobSeekerId.toString();
+      const names = (doc.skillIds || [])
+        .map(s => (s && typeof s === "object" && "skill" in s) ? s.skill : s) // populated name or raw id
+        .filter(Boolean);
+      acc[sid] = Array.from(new Set([...(acc[sid] || []), ...names]));
+      return acc;
+    }, {});
+
     const resBySeeker = bucketBySeeker(resumes);
 
-    // ---------- normalizers (remove jobSeekerId & format) ----------
+    // ---------- normalizers ----------
     const normalizeEdu = (e) => ({
       degree: e.degree ?? null,
       boardOfUniversity: e.boardOfUniversity ?? e.boardofuniversity ?? null,
@@ -501,14 +705,7 @@ exports.getApplicantsDetails = async (req, res) => {
       roleDescription: x.roleDescription ?? null
     });
 
-    // Return exactly what you store: if array -> array; if string -> string
-    const normalizeSkill = (s) => ({
-      skills: s?.skills ?? (Array.isArray(s) ? s : null)
-    });
-
-    const normalizeResume = (r) => ({
-      fileName: r.fileName ?? null
-    });
+    const normalizeResume = (r) => ({ fileName: r.fileName ?? null });
 
     // ---------- build response ----------
     const data = apps
@@ -530,7 +727,10 @@ exports.getApplicantsDetails = async (req, res) => {
 
           educations: (eduBySeeker[sid] || []).map(normalizeEdu),
           experiences: (expBySeeker[sid] || []).map(normalizeExp),
-          skills: (skillBySeeker[sid] || []).map(normalizeSkill),
+
+          // ✅ array of skill names (empty [] if none)
+          skills: skillsBySeeker[sid] || [],
+
           resumes: (resBySeeker[sid] || []).map(normalizeResume)
         };
       });
@@ -551,7 +751,6 @@ exports.getApplicantsDetails = async (req, res) => {
     return res.status(500).json({ status: false, message: "Server error", error: err.message });
   }
 };
-
 
 
 

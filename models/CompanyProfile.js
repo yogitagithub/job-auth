@@ -27,6 +27,21 @@ const companyProfileSchema = new mongoose.Schema({
   contactPersonName: { type: String, trim: true },
   panCardNumber: { type: String, trim: true },
   gstNumber: { type: String, trim: true },
+
+
+
+  //certificate upload part
+   gstCertificate: {
+    fileUrl:  { type: String, trim: true },
+    fileName: { type: String, trim: true },
+    fileType: { type: String, trim: true }, // e.g., "application/pdf"
+    fileSize: { type: Number },             // bytes
+   
+  },
+
+ 
+
+
   alternatePhoneNumber: { type: String },
 
   email: {

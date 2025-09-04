@@ -65,9 +65,14 @@ const jobPostSchema = new mongoose.Schema(
       required: true
     },
 
-    skills: {
-      type: String,
-    },
+  
+
+      skills: [
+          {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Skill",
+          }
+        ],
 
     minSalary: {
       type: Number,
@@ -122,6 +127,13 @@ const jobPostSchema = new mongoose.Schema(
         type: mongoose.Schema.Types.ObjectId,
       ref: "JobProfile",
       },
+
+
+       workLocation: {
+     type: mongoose.Schema.Types.ObjectId,
+      ref: "WorkLocation",
+      required: true
+    },
 
     // for employer it is: employer can change the status
     status: {
@@ -183,5 +195,7 @@ const jobPostSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+
 
 module.exports = mongoose.model('JobPost', jobPostSchema);

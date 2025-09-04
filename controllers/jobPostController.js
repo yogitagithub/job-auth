@@ -10,6 +10,8 @@ const Experience = require("../models/AdminExperienceRange");
 const OtherField = require("../models/AdminOtherField");
 const WorkingShift   = require("../models/AdminWorkingShift"); 
 const JobProfile   = require("../models/AdminJobProfile"); 
+const WorkLocation   = require("../models/AdminWorkLoc"); 
+const Skill = require("../models/Skills");
 
 const mongoose = require("mongoose");
 
@@ -23,6 +25,30 @@ const daysAgo = (date) => {
   const diffDays = Math.max(0, Math.floor((startOfToday - startOfDate) / 86400000));
   return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
 };
+
+
+// helper: parse "YYYY-MM-DD" into a Date at UTC midnight
+function parseDateOnlyToUTC(dateStr) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr).trim());
+  if (!m) return null;
+  const [_, y, mo, d] = m;
+  return new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)));
+}
+
+// helper: format a Date as "YYYY-MM-DD" using its UTC parts
+function formatDateOnlyUTC(dt) {
+  const y = dt.getUTCFullYear();
+  const m = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(dt.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+
+// Today's date at **UTC midnight**
+function todayDateOnlyUTC() {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
 
 const escapeRegex = (str = "") =>
   str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -52,6 +78,7 @@ const escapeRegex = (str = "") =>
       experience,
       otherField,
 workingShift,
+workLocation,
 jobProfile,
       jobTitle,
       jobDescription,
@@ -65,12 +92,20 @@ jobProfile,
     } = req.body || {};
 
     // quick required checks
-    const required = { category, industryType, salaryType, jobType, state, experience, otherField, workingShift, jobProfile };
+    const required = { category, industryType, salaryType, jobType, workLocation, state, experience, otherField, workingShift, jobProfile };
     for (const [k, v] of Object.entries(required)) {
       if (!v || !String(v).trim()) {
         return res.status(400).json({ status: false, message: `${k} is required` });
       }
     }
+
+
+     // skills must be a non-empty array
+    if (!Array.isArray(skills) || skills.length === 0) {
+      return res.status(400).json({ status: false, message: "skills must be a non-empty array." });
+    }
+
+
 
     // simple validations
     if (minSalary != null && maxSalary != null && Number(minSalary) > Number(maxSalary)) {
@@ -90,9 +125,11 @@ jobProfile,
       salaryTypeDoc,
       jobTypeDoc,
       stateDoc,
+      
       experienceDoc,
       otherFieldDoc,
       workingShiftDoc,
+      workLocationDoc,
       jobProfileDoc
     ] = await Promise.all([
 
@@ -100,10 +137,12 @@ jobProfile,
       IndustryType.findOne({ name: industryType }),
       SalaryType.findOne({ name: salaryType, isDeleted: false }),
       JobType.findOne({ name: jobType, isDeleted: false }),
+      
       StateCity.findOne({ state }),
       Experience.findOne({ name: experience, isDeleted: false }), 
       OtherField.findOne({ name: otherField, isDeleted: false }),
       WorkingShift.findOne({ name: workingShift, isDeleted: false }),
+      WorkLocation.findOne({ name: workLocation, isDeleted: false }),
         JobProfile.findOne({ name: jobProfile, isDeleted: false })
     ]);
 
@@ -111,11 +150,14 @@ jobProfile,
     if (!industryTypeDoc) return res.status(400).json({ status: false, message: "Invalid industry type name." });
     if (!salaryTypeDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted salary type name." });
     if (!jobTypeDoc)      return res.status(400).json({ status: false, message: "Invalid or deleted job type name." });
+   
+
     if (!stateDoc)        return res.status(400).json({ status: false, message: "Invalid state name." });
     if (!experienceDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted experience name." });
     if (!otherFieldDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted other field name." });
-if (!workingShiftDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted working shift name." });
+    if (!workingShiftDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted working shift name." });
    if (!jobProfileDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted job profile name." });
+if (!workLocationDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted work location name." });
 
 
     // --- CITY VALIDATION (optional) ---
@@ -135,6 +177,53 @@ if (!workingShiftDoc)   return res.status(400).json({ status: false, message: "I
     }
 
 
+
+    // ---------- skills: accept names and/or ObjectIds ----------
+const input = Array.from(new Set(
+  (Array.isArray(skills) ? skills : [])
+    .map(s => (typeof s === 'string' ? s.trim() : s))
+)).filter(Boolean);
+
+const idInputs   = input.filter(v => mongoose.isValidObjectId(v));
+const nameInputs = input.filter(v => !mongoose.isValidObjectId(v)).map(String);
+
+// Build case-insensitive regexes for names
+const nameRegexes = nameInputs.map(n => new RegExp(`^${escapeRegex(n)}$`, 'i'));
+
+const [skillDocsById, skillDocsByName] = await Promise.all([
+  idInputs.length
+    ? Skill.find({ _id: { $in: idInputs }, isDeleted: false })
+    : [],
+  nameInputs.length
+    ? Skill.find({ skill: { $in: nameRegexes }, isDeleted: false })
+    : []
+]);
+
+const allSkillDocs = [...skillDocsById, ...skillDocsByName];
+
+// For “missing” list, check both ids and names (case-insensitive compare to doc.skill)
+const foundIds = new Set(allSkillDocs.map(d => String(d._id)));
+const missing = [];
+for (const v of input) {
+  if (mongoose.isValidObjectId(v)) {
+    if (!foundIds.has(String(v))) missing.push(v);
+  } else {
+    const matched = allSkillDocs.find(d => String(d.skill).toLowerCase() === String(v).toLowerCase());
+    if (!matched) missing.push(v);
+  }
+}
+if (missing.length) {
+  return res.status(400).json({
+    status: false,
+    message: "Some skills were not found or are deleted.",
+    missing
+  });
+}
+
+const skillsIds   = allSkillDocs.map(d => d._id);
+const skillsNames = allSkillDocs.map(d => d.skill);
+
+
 // expiry (+30 days default)
     let expiry = expiredDate ? new Date(expiredDate) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     if (isNaN(expiry.getTime())) {
@@ -149,17 +238,19 @@ if (!workingShiftDoc)   return res.status(400).json({ status: false, message: "I
       industryType: industryTypeDoc._id,
       salaryType: salaryTypeDoc._id,
       jobType: jobTypeDoc._id,
+       skills: skillsIds,   
       state: stateDoc._id,
       city: cityToSave,
       experience: experienceDoc._id,
       otherField: otherFieldDoc._id,
       workingShift: workingShiftDoc._id,
+      workLocation: workLocationDoc._id,
        jobProfile: jobProfileDoc._id,
 
 
       jobTitle,
       jobDescription,
-      skills,
+     
       minSalary,
       maxSalary,
       displayPhoneNumber,
@@ -192,14 +283,18 @@ if (!workingShiftDoc)   return res.status(400).json({ status: false, message: "I
 
         salaryType: salaryTypeDoc.name,
         jobType: jobTypeDoc.name,
+
+        skills: skillsNames, // array of names
+
         experience: experienceDoc.name,
         otherField: otherFieldDoc.name,
         workingShift: workingShiftDoc.name,
+         workLocation: workLocationDoc.name,
         jobProfile: jobProfileDoc.name,
 
         jobTitle: jobPost.jobTitle,
         jobDescription: jobPost.jobDescription,
-        skills: jobPost.skills,
+      
         minSalary: jobPost.minSalary,
         maxSalary: jobPost.maxSalary,
         displayPhoneNumber: jobPost.displayPhoneNumber,
@@ -347,6 +442,24 @@ exports.getAllJobPosts = async (req, res) => {
     const workingShift = (req.query.workingShift || "").trim();
     const typeFlag     = (req.query.type || "").toLowerCase().trim(); // active|latest|saved
 
+
+
+      // [skills] — accept ?skills=React js,Node js OR ?skills[]=... OR mixture of names/ids
+    let skillsQueryRaw = req.query.skills;
+    let skillsQueryArr = [];
+    if (Array.isArray(skillsQueryRaw)) {
+      // skills[]=A&skills[]=B
+      skillsQueryArr = skillsQueryRaw.flatMap(v =>
+        String(v).split(",").map(s => s.trim()).filter(Boolean)
+      );
+    } else if (typeof skillsQueryRaw === "string" && skillsQueryRaw.trim()) {
+      // skills=A,B or single name/id
+      skillsQueryArr = skillsQueryRaw.split(",").map(s => s.trim()).filter(Boolean);
+    }
+
+
+
+
     // Title search
     if (qTitle) filter.jobTitle = { $regex: escapeRegex(qTitle), $options: "i" };
 
@@ -445,6 +558,8 @@ exports.getAllJobPosts = async (req, res) => {
     }
 
    
+
+    //working shift
     let workingShiftDoc = null;
     if (workingShift) {
             lookups.push(
@@ -454,6 +569,35 @@ exports.getAllJobPosts = async (req, res) => {
         }).then(doc => { workingShiftDoc = doc; })
       );
     }
+
+
+
+     // [skills] resolve names/ids to Skill _ids (case-insensitive on field "skill")
+    let skillIdsForFilter = [];
+    if (skillsQueryArr.length) {
+      const ids   = skillsQueryArr.filter(v => mongoose.isValidObjectId(v));
+      const names = skillsQueryArr.filter(v => !mongoose.isValidObjectId(v));
+
+      const nameRegexes = names.map(n => new RegExp(`^${escapeRegex(n)}$`, "i"));
+      const [byId, byName] = await Promise.all([
+        ids.length   ? Skill.find({ _id: { $in: ids }, isDeleted: false }) : [],
+        names.length ? Skill.find({ skill: { $in: nameRegexes }, isDeleted: false }) : []
+      ]);
+      const all = [...byId, ...byName];
+      skillIdsForFilter = all.map(d => d._id);
+
+      // If user asked for skills but none matched, short-circuit to empty result
+      if (!skillIdsForFilter.length) {
+        return res.status(200).json({
+          status: true, message: "Job posts fetched successfully.",
+          totalRecord: 0, totalPage: 0, currentPage: page, data: []
+        });
+      }
+      // Require posts that contain ALL provided skills:
+      filter.skills = { $all: skillIdsForFilter };
+      // If you want "any of" semantics instead, use: { $in: skillIdsForFilter }
+    }
+
 
     await Promise.all(lookups);
 
@@ -508,7 +652,9 @@ exports.getAllJobPosts = async (req, res) => {
       .populate({ path: "otherField",   select: "name" })
       .populate({ path: "workingShift", select: "name" })
       .populate({ path: "jobProfile",   select: "name" })
+        .populate({ path: "workLocation", select: "name" }) 
       .populate({ path: "state",        select: "state" })
+       .populate({ path: "skills",       select: "skill" }) // [skills] populate names
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -530,12 +676,20 @@ exports.getAllJobPosts = async (req, res) => {
       otherField:   p.otherField?.name ?? null,
       workingShift: p.workingShift?.name ?? null,
       jobProfile:   p.jobProfile?.name ?? null,
+      workLocation: p.workLocation?.name ?? null, 
       state:        p.state?.state ?? null,
       city:         p.city ?? null,
 
       jobTitle:           p.jobTitle ?? null,
       jobDescription:     p.jobDescription ?? null,
-      skills:             p.skills ?? null,
+
+
+       // [skills] return array of skill names (fallback to raw ids if not populated)
+      skills: Array.isArray(p.skills)
+        ? p.skills.map(s => (s && typeof s === "object" && "skill" in s) ? s.skill : s)
+        : [],
+
+
       minSalary:          p.minSalary ?? null,
       maxSalary:          p.maxSalary ?? null,
       displayPhoneNumber: p.displayPhoneNumber ?? null,
@@ -580,11 +734,35 @@ exports.getAllJobPosts = async (req, res) => {
 //correct
 exports.getJobPostById = async (req, res) => {
   try {
+
+     // ---------- auth & role checks ----------
+    const { userId, role } = req.user || {};
+    if (!userId) {
+      return res.status(401).json({ status: false, message: "Unauthorized" });
+    }
+    const normRole = (role || "").toLowerCase();
+    if (normRole === "admin") {
+      return res.status(403).json({
+        status: false,
+        message: "Admins are not allowed to fetch job posts from this endpoint."
+      });
+    }
+    if (normRole !== "employer" && normRole !== "job_seeker") {
+      return res.status(403).json({
+        status: false,
+        message: "Forbidden: Only employers and job seekers are allowed."
+      });
+    }
+
+      // ---------- param validation ----------
+
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ status: false, message: "Invalid job post ID format." });
     }
+
+     // ---------- fetch ----------
 
     let jobPost = await JobPost.findById(id)
       .select("-updatedAt -__v")
@@ -596,6 +774,8 @@ exports.getJobPostById = async (req, res) => {
       .populate({ path: "experience",   select: "name" })
       .populate({ path: "otherField",   select: "name" })
       .populate({ path: "workingShift", select: "name" })
+       .populate({ path: "workLocation", select: "name" }) 
+         .populate({ path: "skills",       select: "skill" })
          .populate({ path: "jobProfile", select: "name" })
       .populate({ path: "state",        select: "state" });
 
@@ -606,6 +786,20 @@ exports.getJobPostById = async (req, res) => {
     if (jobPost.isDeleted === true) {
       return res.status(400).json({ status: false, message: "This job post has been already soft deleted." });
     }
+
+     // ---------- employer ownership enforcement ----------
+    if (normRole === "employer") {
+      // Only allow if this job belongs to the requesting employer
+      const ownerId = (jobPost.userId && jobPost.userId._id) ? jobPost.userId._id.toString() : jobPost.userId?.toString();
+      if (!ownerId || ownerId !== userId.toString()) {
+        return res.status(403).json({
+          status: false,
+          message: "Employers can only view their own job posts."
+        });
+      }
+    }
+
+    // ---------- auto mark expired (unchanged) ----------
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -625,13 +819,21 @@ exports.getJobPostById = async (req, res) => {
       experience:   jobPost.experience?.name ?? null,
       otherField:   jobPost.otherField?.name ?? null,
       workingShift: jobPost.workingShift?.name ?? null,
+       workLocation: jobPost.workLocation?.name ?? null,    
       jobProfile: jobPost.jobProfile?.name ?? null,
       state:        jobPost.state?.state ?? null,
 city:         jobPost.city ?? null,
 
       jobTitle:           jobPost.jobTitle ?? null,
       jobDescription:     jobPost.jobDescription ?? null,
-      skills:             jobPost.skills ?? null,
+     
+
+        // ✅ skills as array of names (fallback to ids if not populated)
+      skills: Array.isArray(jobPost.skills)
+        ? jobPost.skills.map(s => (s && typeof s === "object" && "skill" in s) ? s.skill : s)
+        : [],
+
+
       minSalary:          jobPost.minSalary ?? null,
       maxSalary:          jobPost.maxSalary ?? null,
       displayPhoneNumber: jobPost.displayPhoneNumber ?? null,
@@ -778,7 +980,7 @@ exports.getAllJobPostsPublic = async (req, res) => {
 
 
 
-//correct with flags updation only employer
+//correct with flags updation agter admin approval only for employer
 exports.updateJobPostById = async (req, res) => {
   try {
     const {
@@ -786,27 +988,42 @@ exports.updateJobPostById = async (req, res) => {
       category,
       industryType,
       state,
-    city,
+      city,
       salaryType,
       jobType,
       experience,
       otherField,
-      workingShift, 
-       jobProfile,    
+      workingShift,
+      jobProfile,
 
-      isActive,         // flags (optional)
+      workLocation,
+      skills,
+
+      isActive,
       isLatest,
       isSaved,
-      status,           // ⛔ not allowed here (use status route)
-      ...updateData     // other direct fields (title, desc, skills, min/maxSalary, etc.)
+      status,
+      ...updateData
     } = req.body || {};
 
     const { userId, role } = req.user || {};
+
+    // Hard-block certain fields outright
+    const forbiddenFields = ["isDeleted", "isAdminApproved", "appliedCandidates", "isApplied"];
+    const attemptedForbidden = forbiddenFields.filter(f =>
+      Object.prototype.hasOwnProperty.call(req.body, f)
+    );
+    if (attemptedForbidden.length) {
+      return res.status(403).json({
+        status: false,
+        message: `Forbidden update: You cannot modify ${attemptedForbidden.join(", ")} from this endpoint.`
+      });
+    }
+
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ status: false, message: "Valid job post ID is required." });
     }
 
-    // Block status updates in this endpoint
     if (typeof status !== "undefined") {
       return res.status(400).json({
         status: false,
@@ -845,8 +1062,8 @@ exports.updateJobPostById = async (req, res) => {
     // ---------- Update simple fields (non-ref, non-protected) ----------
     const restricted = [
       "_id","userId","companyId","__v","isDeleted","deletedAt",
-      "category","industryType","state","salaryType","jobType", "city",
-      "experience","otherField","workingShift", "jobProfile","expiredDate","status",
+      "category","industryType","state","salaryType","jobType","city",
+      "experience","otherField","workingShift","jobProfile","expiredDate","status",
       "isAdminApproved","isActive","isLatest","isSaved"
     ];
     Object.keys(updateData).forEach((k) => {
@@ -870,8 +1087,6 @@ exports.updateJobPostById = async (req, res) => {
       if (!doc) return res.status(400).json({ status: false, message: "Invalid industry type name." });
       jobPost.industryType = doc._id;
     }
-
-    
 
     if (salaryType) {
       const doc = await findByName(SalaryType, "name", salaryType, { isDeleted: false });
@@ -903,19 +1118,16 @@ exports.updateJobPostById = async (req, res) => {
       jobPost.workingShift = doc._id;
     }
 
-     if (jobProfile) {
+    if (jobProfile) {
       const doc = await findByName(JobProfile, "name", jobProfile, { isDeleted: false });
       if (!doc) return res.status(400).json({ status: false, message: "Invalid or deleted job profile name." });
       jobPost.jobProfile = doc._id;
     }
 
-
-
-      // ---------- State/City update logic (robust) ----------
+    // ---------- State/City update logic ----------
     const hasState = Object.prototype.hasOwnProperty.call(req.body, "state");
     const hasCity  = Object.prototype.hasOwnProperty.call(req.body, "city");
 
-    // resolve state by id or human name (case-insensitive)
     const resolveState = async (input) => {
       if (!input) return null;
       if (mongoose.Types.ObjectId.isValid(input)) return StateCity.findById(input);
@@ -924,29 +1136,24 @@ exports.updateJobPostById = async (req, res) => {
 
     if (hasState) {
       const stateDoc = await resolveState(state);
-      if (!stateDoc) {
-        return res.status(400).json({ status: false, message: "Invalid state." });
-      }
+      if (!stateDoc) return res.status(400).json({ status: false, message: "Invalid state." });
 
       if (hasCity) {
         const cityVal = String(city || "").trim();
         if (!cityVal || !stateDoc.cities.includes(cityVal)) {
           return res.status(400).json({ status: false, message: "Invalid city for the selected state." });
         }
-        jobPost.city = cityVal; // valid pair
+        jobPost.city = cityVal;
       } else {
-        // If the stored city doesn't belong to the new state, clear it
         const existingCity = jobPost.city;
         if (existingCity && !stateDoc.cities.includes(existingCity)) {
           jobPost.city = null;
         }
       }
-
-      jobPost.state = stateDoc._id; // always store as ObjectId
+      jobPost.state = stateDoc._id;
     }
 
     if (!hasState && hasCity) {
-      // Validate city against the current stored state
       if (!jobPost.state) {
         return res.status(400).json({ status: false, message: "Cannot update city because state is missing on this job post." });
       }
@@ -961,8 +1168,78 @@ exports.updateJobPostById = async (req, res) => {
       jobPost.city = cityVal;
     }
 
+    // ---------- Work Location update ----------
+    const hasWorkLocation = Object.prototype.hasOwnProperty.call(req.body, "workLocation");
+    if (hasWorkLocation) {
+      if (workLocation === null || workLocation === "") {
+        jobPost.workLocation = undefined; // or null
+      } else {
+        let wlDoc = null;
+        if (mongoose.Types.ObjectId.isValid(workLocation)) {
+          wlDoc = await WorkLocation.findById(workLocation);
+        } else {
+          wlDoc = await findByName(WorkLocation, "name", String(workLocation), { isDeleted: false });
+        }
+        if (!wlDoc) return res.status(400).json({ status: false, message: "Invalid or deleted work location." });
+        jobPost.workLocation = wlDoc._id;
+      }
+    }
 
+    // ---------- Skills update (array or CSV; ids or names) ----------
+    const hasSkills = Object.prototype.hasOwnProperty.call(req.body, "skills");
+    if (hasSkills) {
+      let skillsList = [];
+      if (Array.isArray(skills)) {
+        skillsList = skills.flatMap(v => String(v).split(",")).map(s => s.trim()).filter(Boolean);
+      } else if (typeof skills === "string") {
+        skillsList = skills.split(",").map(s => s.trim()).filter(Boolean);
+      } else if (skills == null) {
+        skillsList = [];
+      } else {
+        return res.status(400).json({ status: false, message: "Invalid 'skills' format. Provide an array or a comma-separated string." });
+      }
 
+      if (!skillsList.length) {
+        jobPost.skills = [];
+      } else {
+        const ids   = skillsList.filter(v => mongoose.isValidObjectId(v));
+        const names = skillsList.filter(v => !mongoose.isValidObjectId(v));
+        const nameRegexes = names.map(n => new RegExp(`^${escapeRegex(n)}$`, "i"));
+        const [byId, byName] = await Promise.all([
+          ids.length   ? Skill.find({ _id: { $in: ids }, isDeleted: false }) : [],
+          names.length ? Skill.find({ skill: { $in: nameRegexes }, isDeleted: false }) : []
+        ]);
+        const all = [...byId, ...byName];
+        if (!all.length) {
+          return res.status(400).json({ status: false, message: "No valid skills found to update." });
+        }
+        jobPost.skills = all.map(d => d._id);
+      }
+    }
+
+    // ---------- Expired Date update (active only; >= today; ignore if invalid) ----------
+    let warningMsg = null; // collect non-fatal warnings
+    const hasExpiredDate = Object.prototype.hasOwnProperty.call(req.body, "expiredDate");
+    if (hasExpiredDate) {
+      if (jobPost.status !== "active") {
+        // With your global "active-only edits" check above this shouldn't be hit,
+        // but keep it defensive.
+        warningMsg = "Ignored expiredDate: can be updated only when job status is 'active'.";
+      } else {
+        const newExp = parseDateOnlyToUTC(req.body.expiredDate);
+        if (!newExp) {
+          warningMsg = "Ignored expiredDate: invalid format. Use 'YYYY-MM-DD' (e.g., 2025-09-10).";
+        } else {
+          const todayUTC = todayDateOnlyUTC();
+          if (newExp.getTime() < todayUTC.getTime()) {
+            warningMsg = `Ignored expiredDate: cannot be earlier than today (${formatDateOnlyUTC(todayUTC)}).`;
+          } else {
+            // Business rule: allow shortening or extending as long as >= today
+            jobPost.expiredDate = newExp;
+          }
+        }
+      }
+    }
 
     // ---------- Flags: allowed only if admin approved AND active ----------
     const wantsFlagChange =
@@ -970,56 +1247,40 @@ exports.updateJobPostById = async (req, res) => {
       typeof isLatest !== "undefined" ||
       typeof isSaved  !== "undefined";
 
-        let warningMsg = null;
-        const pending = {};   
-
-         if (wantsFlagChange) {
-      // Not allowed? -> skip flags but still apply other fields
+    const pending = {};
+    if (wantsFlagChange) {
       if (!jobPost.isAdminApproved || jobPost.status !== "active") {
-        warningMsg = !jobPost.isAdminApproved
+        const msg = !jobPost.isAdminApproved
           ? "Flags can be changed only after admin approval."
           : "Flags can be changed only when job status is 'active'.";
+        // merge with previous warning (non-fatal)
+        warningMsg = warningMsg ? `${warningMsg} ${msg}` : msg;
       } else {
-        // Allowed — check for NO-OP duplicates
         const toBool = (v) => v === true || v === "true" || v === 1 || v === "1";
         const dup = [];
-
-        if (typeof isActive !== "undefined" && jobPost.isActive === toBool(isActive)) {
-          dup.push(`isActive is already ${jobPost.isActive}`);
-        }
-        if (typeof isLatest !== "undefined" && jobPost.isLatest === toBool(isLatest)) {
-          dup.push(`isLatest is already ${jobPost.isLatest}`);
-        }
-        if (typeof isSaved !== "undefined" && jobPost.isSaved === toBool(isSaved)) {
-          dup.push(`isSaved is already ${jobPost.isSaved}`);
-        }
-
+        if (typeof isActive !== "undefined" && jobPost.isActive === toBool(isActive)) dup.push(`isActive is already ${jobPost.isActive}`);
+        if (typeof isLatest !== "undefined" && jobPost.isLatest === toBool(isLatest)) dup.push(`isLatest is already ${jobPost.isLatest}`);
+        if (typeof isSaved  !== "undefined" && jobPost.isSaved  === toBool(isSaved))  dup.push(`isSaved is already ${jobPost.isSaved}`);
         if (dup.length) {
-          // Nothing saved; tell caller there’s no change for those flags.
-          return res.status(400).json({
-            status: false,
-            message: `No change: ${dup.join(", ")}.`
-          });
+          // non-fatal: just warn and continue with other fields
+          const msg = `No change: ${dup.join(", ")}.`;
+          warningMsg = warningMsg ? `${warningMsg} ${msg}` : msg;
+        } else {
+          if (typeof isActive !== "undefined") pending.isActive = toBool(isActive);
+          if (typeof isLatest !== "undefined") pending.isLatest = toBool(isLatest);
+          if (typeof isSaved  !== "undefined") pending.isSaved  = toBool(isSaved);
         }
-
-
-         // Apply flag changes (since they’re allowed and not duplicates)
-        if (typeof isActive !== "undefined") pending.isActive = toBool(isActive);
-        if (typeof isLatest !== "undefined") pending.isLatest = toBool(isLatest);
-        if (typeof isSaved  !== "undefined") pending.isSaved  = toBool(isSaved);
       }
     }
 
-    // ---------- Apply collected changes & save ----------
+    // Apply collected flag changes
     Object.entries(pending).forEach(([k, v]) => { jobPost[k] = v; });
-
-   
 
     await jobPost.save();
 
-    
     // ---------- Re-fetch populated for response ----------
     const populated = await JobPost.findById(jobPost._id)
+      .select("-__v")
       .populate("category", "name")
       .populate("industryType", "name")
       .populate("state", "state")
@@ -1029,6 +1290,8 @@ exports.updateJobPostById = async (req, res) => {
       .populate("otherField", "name")
       .populate("workingShift", "name")
       .populate("jobProfile", "name")
+      .populate("workLocation", "name")
+      .populate("skills", "skill")
       .lean();
 
     const out = {
@@ -1036,13 +1299,17 @@ exports.updateJobPostById = async (req, res) => {
       category:      populated.category?.name ?? null,
       industryType:  populated.industryType?.name ?? null,
       state:         populated.state?.state ?? null,
-       city:          populated.city ?? null,   
+      city:          populated.city ?? null,
       salaryType:    populated.salaryType?.name ?? null,
       jobType:       populated.jobType?.name ?? null,
       experience:    populated.experience?.name ?? null,
       otherField:    populated.otherField?.name ?? null,
       workingShift:  populated.workingShift?.name ?? null,
-       jobProfile:  populated.jobProfile?.name ?? null,
+      jobProfile:    populated.jobProfile?.name ?? null,
+      workLocation:  populated.workLocation?.name ?? null,
+      skills: Array.isArray(populated.skills)
+        ? populated.skills.map(s => (s && typeof s === "object" && "skill" in s) ? s.skill : s)
+        : [],
       isAdminApproved: !!populated.isAdminApproved,
       isActive:        !!populated.isActive,
       isLatest:        !!populated.isLatest,
@@ -1050,15 +1317,13 @@ exports.updateJobPostById = async (req, res) => {
     };
 
     if (out.expiredDate) {
-      out.expiredDate = new Date(out.expiredDate).toISOString().split("T")[0];
+      out.expiredDate = formatDateOnlyUTC(new Date(out.expiredDate)); // UTC-safe
     }
-
-    // ✅ Use your top-level daysAgo() util so it returns "0 days ago"
     out.jobPosted = daysAgo(out.createdAt);
 
     return res.status(200).json({
       status: true,
-     message: warningMsg || "Job post updated successfully.",
+      message: warningMsg ? `Job post updated successfully. Note: ${warningMsg}` : "Job post updated successfully.",
       data: out
     });
   } catch (error) {
@@ -1073,7 +1338,8 @@ exports.updateJobPostById = async (req, res) => {
 
 
 
-//correct
+
+
 exports.updateJobPostStatus = async (req, res) => {
   try {
     const { id, status } = req.body;

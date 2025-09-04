@@ -9,7 +9,6 @@ const path = require("path");
 const mongoose = require("mongoose");
 
 
-
 exports.saveProfile = async (req, res) => {
   try {
     const { userId, role, phoneNumber } = req.user;
@@ -21,17 +20,18 @@ exports.saveProfile = async (req, res) => {
       });
     }
 
-    if (!req.body || Object.keys(req.body).length === 0) {
-      return res.status(400).json({
-        status: false,
-        message: "No fields provided to create or update."
-      });
-    }
+    // Compute a reliable BASE URL (uses env, falls back to request host)
+    const baseUrl =
+      (process.env.BASE_URL && process.env.BASE_URL.replace(/\/$/, "")) ||
+      `${req.protocol}://${req.get("host")}`;
 
-    // Get current profile early (helps city-only/state-only logic)
+    const hasAnyBody = req.body && Object.keys(req.body).length > 0;
+    const hasFile = !!req.file;
+
+    // Load existing profile early
     let profile = await CompanyProfile.findOne({ userId });
 
-    // ⛔ Block updates if profile exists but is soft-deleted
+    // Soft-deleted guard
     if (profile && profile.isDeleted === true) {
       return res.status(400).json({
         status: false,
@@ -39,13 +39,20 @@ exports.saveProfile = async (req, res) => {
       });
     }
 
-    // aboutCompany: normalize only if key is present
+    // Normalize aboutCompany if present
     if (Object.prototype.hasOwnProperty.call(req.body, "aboutCompany")) {
       const v = req.body.aboutCompany;
       req.body.aboutCompany = v && String(v).trim() ? String(v).trim() : null;
     }
 
-    // --------- industryType (optional) ----------
+    // ---- Normalize gstNumber if present (treat empty as null) ----
+    const gstProvidedThisRequest = Object.prototype.hasOwnProperty.call(req.body, "gstNumber");
+    if (gstProvidedThisRequest) {
+      const v = req.body.gstNumber;
+      req.body.gstNumber = v && String(v).trim() ? String(v).trim() : null;
+    }
+
+    // ---------- industryType (optional) ----------
     if (Object.prototype.hasOwnProperty.call(req.body, "industryType")) {
       const val = req.body.industryType;
       let industryDoc = null;
@@ -65,114 +72,163 @@ exports.saveProfile = async (req, res) => {
       req.body.industryType = industryDoc._id;
     }
 
-    // --------- state & city (optional, flexible) ----------
+    // ---------- state & city (optional) ----------
     const hasState = Object.prototype.hasOwnProperty.call(req.body, "state");
     const hasCity  = Object.prototype.hasOwnProperty.call(req.body, "city");
 
-    // Helper: resolve a state by name or id
     const resolveState = async (input) => {
-      if (mongoose.Types.ObjectId.isValid(input)) {
-        return StateCity.findById(input);
-      }
+      if (mongoose.Types.ObjectId.isValid(input)) return StateCity.findById(input);
       return StateCity.findOne({ state: input });
     };
 
-    // Case A: state provided (with or without city)
     if (hasState) {
       const stateDoc = await resolveState(req.body.state);
-      if (!stateDoc) {
-        return res.status(400).json({ status: false, message: "Invalid state." });
-      }
+      if (!stateDoc) return res.status(400).json({ status: false, message: "Invalid state." });
 
-      // If city is also provided, validate against this state
       if (hasCity) {
         if (!req.body.city || !stateDoc.cities.includes(req.body.city)) {
-          return res.status(400).json({
-            status: false,
-            message: "Invalid city for the selected state."
-          });
+          return res.status(400).json({ status: false, message: "Invalid city for the selected state." });
         }
       } else {
-        // state-only update: if existing city is now invalid for new state, clear it
         const existingCity = profile?.city;
         if (existingCity && !stateDoc.cities.includes(existingCity)) {
-          req.body.city = null; // keep data consistent
+          req.body.city = null; // clear invalid city
         }
       }
-
-      req.body.state = stateDoc._id; // store as ObjectId
+      req.body.state = stateDoc._id; // store ObjectId
     }
 
-    // Case B: only city provided (no state key in body)
     if (!hasState && hasCity) {
       if (!profile) {
-        // On create, cannot validate city without knowing state
         return res.status(400).json({
           status: false,
-          message: "Cannot update only city on create. Provide state as well."
+          message: "Cannot set only city on create. Provide state as well."
         });
       }
       if (!profile.state) {
         return res.status(400).json({
           status: false,
-          message: "Cannot update city because state is missing in profile."
+          message: "Cannot set city because state is missing in profile."
         });
       }
-
       const stateDoc = await StateCity.findById(profile.state);
-      if (!stateDoc) {
-        return res.status(400).json({
-          status: false,
-          message: "Stored state not found."
-        });
-      }
-      if (!req.body.city || !stateDoc.cities.includes(req.body.city)) {
+      if (!stateDoc || !stateDoc.cities.includes(req.body.city)) {
         return res.status(400).json({
           status: false,
           message: "Invalid city for the stored state."
         });
       }
-      // nothing else to change; city will be set below
     }
 
-    // --------- Create or Update (partial allowed) ----------
-    const restrictedFields = ["_id", "userId", "phoneNumber", "__v", "image", "isDeleted", "deletedAt"];
+    // ---------- ENFORCE GST rules ----------
+    const oldGst = profile?.gstNumber || null;
+    const newGst = gstProvidedThisRequest ? req.body.gstNumber : oldGst;
+    const clearingGst = gstProvidedThisRequest && !req.body.gstNumber;
+    const gstChanged = gstProvidedThisRequest && newGst !== oldGst;
+
+    // Rule C: If a certificate file is uploaded in this request, a *gstNumber must be provided in this request*.
+    // (Blocks "certificate only" uploads.)
+    if (hasFile && !gstProvidedThisRequest) {
+      return res.status(400).json({
+        status: false,
+        message: "Please provide 'gstNumber' along with the certificate upload."
+      });
+    }
+
+    // Rule A: If GST is present after this request (not cleared), a certificate must exist
+    if ((newGst || oldGst) && !clearingGst) {
+      const hasExistingCert = !!profile?.gstCertificate?.fileUrl;
+      if (!hasFile && !hasExistingCert) {
+        return res.status(400).json({
+          status: false,
+          message: "GST certificate is required when GST number is set. Upload the file."
+        });
+      }
+    }
+
+    // Rule B: If GST number is UPDATED in this request, a NEW certificate upload is mandatory
+    if (gstChanged && !hasFile) {
+      return res.status(400).json({
+        status: false,
+        message: "You are updating GST number. Please upload the NEW GST certificate also."
+      });
+    }
+
+    // ---------- Build updates ----------
+    const restricted = ["_id", "userId", "phoneNumber", "__v", "image", "isDeleted", "deletedAt"];
+    const bodyUpdates = Object.keys(req.body || {}).reduce((acc, k) => {
+      if (!restricted.includes(k)) acc[k] = req.body[k];
+      return acc;
+    }, {});
+
+    // Prepare new certificate subdoc if file uploaded (store ABSOLUTE URL)
+    let newCertificate = null;
+    if (hasFile) {
+      newCertificate = {
+        fileUrl: `${baseUrl}/uploads/certificates/${req.file.filename}`,
+        fileName: req.file.originalname,
+        fileType: req.file.mimetype,
+        fileSize: req.file.size,
+        uploadedAt: new Date()
+      };
+    }
+
     const isCreate = !profile;
 
     if (isCreate) {
+      if (!hasAnyBody && !newCertificate) {
+        return res.status(400).json({ status: false, message: "No data provided to create profile." });
+      }
+
       profile = new CompanyProfile({
         userId,
         phoneNumber,
-        ...Object.keys(req.body).reduce((acc, k) => {
-          if (!restrictedFields.includes(k)) acc[k] = req.body[k];
-          return acc;
-        }, {})
+        ...bodyUpdates,
+        ...(newCertificate && { gstCertificate: newCertificate })
       });
       await profile.save();
     } else {
-      Object.keys(req.body).forEach((field) => {
-        if (!restrictedFields.includes(field)) {
-          profile[field] = req.body[field];
-        }
-      });
+      // If replacing file, delete old file from disk (best-effort)
+      if (newCertificate && profile.gstCertificate?.fileUrl) {
+        try {
+          // old fileUrl may be absolute; get its pathname to find local file
+          let pathname;
+          try { pathname = new URL(profile.gstCertificate.fileUrl).pathname; }
+          catch { pathname = profile.gstCertificate.fileUrl; } // fallback if relative
+          if (pathname.startsWith("/uploads/certificates/")) {
+            const absolute = path.join(process.cwd(), pathname.replace(/^\//, ""));
+            await fsp.unlink(absolute).catch(() => {});
+          }
+        } catch (_) { /* ignore fs issues */ }
+      }
+
+      Object.assign(profile, bodyUpdates);
+      if (newCertificate) profile.gstCertificate = newCertificate;
       await profile.save();
     }
 
-    // --------- Populate & respond ----------
+    // --------- Fetch, shape, and respond (hide meta; flatten gstCertificate) ----------
     const populated = await CompanyProfile.findById(profile._id)
+      .select("-__v -createdAt -updatedAt -isDeleted")
       .populate("state", "state")
-      .populate("industryType", "name");
+      .populate("industryType", "name")
+      .lean();
+
+    const data = {
+      ...populated,
+      gstCertificate: populated.gstCertificate
+        ? (populated.gstCertificate.fileUrl?.startsWith("http")
+            ? populated.gstCertificate.fileUrl
+            : `${baseUrl}${populated.gstCertificate.fileUrl}`)
+        : null,
+      state: populated.state?.state || null,
+      industryType: populated.industryType?.name || null
+    };
 
     return res.status(200).json({
       status: true,
       message: `Company profile ${isCreate ? "created" : "updated"} successfully.`,
-      data: {
-        ...populated.toObject(),
-        state: populated.state?.state || null,
-        city: populated.city ?? null,
-        industryType: populated.industryType?.name || null,
-        aboutCompany: populated.aboutCompany ?? null
-      }
+      data
     });
   } catch (error) {
     console.error("Error creating/updating company profile:", error);
@@ -183,6 +239,9 @@ exports.saveProfile = async (req, res) => {
     });
   }
 };
+
+
+
 
 exports.getProfile = async (req, res) => {
   try {
@@ -216,6 +275,15 @@ exports.getProfile = async (req, res) => {
     }
 
     const p = profile.toObject();
+
+     // Flatten to a single string URL (or null)
+    const certUrl = p.gstCertificate?.fileUrl
+      ? (p.gstCertificate.fileUrl.startsWith("http")
+          ? p.gstCertificate.fileUrl
+          : `${baseUrl}${p.gstCertificate.fileUrl}`)
+      : null;
+
+
     const responseData = {
       id: p._id,
       userId: p.userId,
@@ -225,13 +293,14 @@ exports.getProfile = async (req, res) => {
       contactPersonName: p.contactPersonName,
       panCardNumber: p.panCardNumber,
       gstNumber: p.gstNumber,
+      gstCertificate: certUrl,
       alternatePhoneNumber: p.alternatePhoneNumber,
       email: p.email,
       companyAddress: p.companyAddress,
       state: p.state?.state || null,
       city: p.city,
       pincode: p.pincode,
-      image: p.image
+      image: p.image || null
     };
 
     return res.status(200).json({

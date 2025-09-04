@@ -16,7 +16,8 @@ updateFeaturedCompanies, deleteFeaturedCompanies, createCurrentSalary,
 getCurrentSalary, deleteCurrentSalary, updateCurrentSalary, createWorkingShift,
 updateWorkingShift, deleteWorkingShift, getWorkingShift, getJobSeekerProfilesbyId, 
 createSkill, getSkill, updateSkill, deleteSkill,
-createAccountType, updateAccountType, deleteAccountType, getAccountTypes } = require('../controllers/adminController');
+createAccountType, updateAccountType, deleteAccountType, getAccountTypes,
+createWorkLoc, getWorkLoc, updateWorkLoc, deleteWorkLoc } = require('../controllers/adminController');
 
 const { verifyToken, verifyAdmin, verifyEmployerOnly, verifyJobSeekerOnly } = require('../middleware/authMiddleware');
 const { adminApproveJobPost, getJobList, updateJobListById } = require('../controllers/jobPostController');
@@ -118,6 +119,14 @@ router.post("/create-account-types", verifyToken, verifyAdmin, createAccountType
  router.put("/update-account-types", verifyToken, verifyAdmin, updateAccountType);
  router.delete("/delete-account-types", verifyToken, verifyAdmin, deleteAccountType);
 router.get("/get-account-types", verifyToken, verifyAdmin, getAccountTypes);
+
+
+
+//work location crud
+router.post("/create-work-location", verifyToken, verifyAdmin, createWorkLoc);
+  router.put("/update-work-location", verifyToken, verifyAdmin, updateWorkLoc);
+  router.delete("/delete-work-location", verifyToken, verifyAdmin, deleteWorkLoc);
+ router.get("/get-work-location", verifyToken, verifyAdmin, getWorkLoc);
 
 
 
