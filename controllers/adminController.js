@@ -2788,7 +2788,7 @@ exports.getFeaturedCompaniesPublic = async (req, res) => {
     // 1) Find all companyIds that are currently featured (not soft-deleted)
     const featuredIds = await FeaturedCompany.find({ isDeleted: false }).distinct("companyId");
     if (featuredIds.length === 0) {
-      return res.status(404).json({ status: false, message: "No featured companies found." });
+      return res.status(200).json({ status: true, message: "No featured companies found." });
     }
 
     // 2) Keep only companies that are NOT soft-deleted
