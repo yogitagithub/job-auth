@@ -2617,7 +2617,7 @@ exports.getFeaturedCompanies = async (req, res) => {
     const rows = result?.[0]?.data || [];
 
     if (rows.length === 0) {
-      return res.status(404).json({ status: false, message: "No featured companies found." });
+      return res.status(200).json({ status: true, message: "No featured companies found." });
     }
 
     const data = rows.map(doc => ({
