@@ -19,16 +19,7 @@ const jobApplicationSchema = new mongoose.Schema(
     },
 
     
-    // educationId: {
-    //   type: mongoose.Schema.Types.ObjectId,
-    //   ref: "JobSeekerEducation",
-    //   required: true,
-    // },
-    // experienceId: {
-    //   type: mongoose.Schema.Types.ObjectId,
-    //   ref: "WorkExperience",
-    //   required: true,
-    // },
+    
 
 
     skillsId: {

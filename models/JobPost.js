@@ -67,12 +67,13 @@ const jobPostSchema = new mongoose.Schema(
 
   
 
-      skills: [
-          {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: "Skill",
-          }
-        ],
+skills: [
+  { 
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Skill" 
+  }
+],
+
 
     minSalary: {
       type: Number,
@@ -103,6 +104,8 @@ const jobPostSchema = new mongoose.Schema(
           message: 'City must be one of the cities defined in the selected state'
         }
       },
+
+      
 
     experience: {
      type: mongoose.Schema.Types.ObjectId,

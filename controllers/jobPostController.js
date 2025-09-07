@@ -53,7 +53,7 @@ function todayDateOnlyUTC() {
 const escapeRegex = (str = "") =>
   str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-//correct
+
  exports.createJobPost = async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -316,7 +316,7 @@ const skillsNames = allSkillDocs.map(d => d.skill);
 };
 
 
-//correct
+
 exports.adminApproveJobPost = async (req, res) => {
   try {
     const { role } = req.user || {};
@@ -381,7 +381,7 @@ exports.adminApproveJobPost = async (req, res) => {
 
 
 
-//correct for employer and job seeker
+//for employer and job seeker
 exports.getAllJobPosts = async (req, res) => {
   try {
     const { userId, role } = req.user || {};
@@ -730,7 +730,7 @@ exports.getAllJobPosts = async (req, res) => {
 
 
 
-//correct
+
 exports.getJobPostById = async (req, res) => {
   try {
 
@@ -868,7 +868,7 @@ city:         jobPost.city ?? null,
 };
 
 
-//correct
+
 exports.getAllJobPostsPublic = async (req, res) => {
   try {
     const page  = parseInt(req.query.page, 10)  || 1;
@@ -979,7 +979,7 @@ exports.getAllJobPostsPublic = async (req, res) => {
 
 
 
-//correct with flags updation agter admin approval only for employer
+//with flags updation agter admin approval only for employer
 exports.updateJobPostById = async (req, res) => {
   try {
     const {
@@ -1436,7 +1436,7 @@ exports.updateJobPostStatus = async (req, res) => {
 
 
 
-//correct
+
 exports.deleteJobPostById = async (req, res) => {
   try {
     const { id } = req.body; 
@@ -1493,7 +1493,7 @@ exports.deleteJobPostById = async (req, res) => {
 
 
 
-//get job details by job post id without token (correct)
+//get job details by job post id without token 
 exports.getJobDetailsPublic = async (req, res) => {
   try {
     const { id } = req.params;
@@ -1755,46 +1755,110 @@ exports.getJobList = async (req, res) => {
       .populate({ path: "workingShift", select: "name" })
       .populate({ path: "jobProfile",   select: "name" })
       .populate({ path: "state",        select: "state" })
+      
+     .populate({ path: "skills",       select: "skill -_id" })
+
+
+
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean();
 
-    const data = posts.map(p => ({
-      _id: p._id,
-      userId:       p.userId?._id ?? null,
-      userPhone:    p.userId?.phoneNumber ?? null,
-      companyId:    p.companyId?._id ?? null,
-      company:      p.companyId?.companyName ?? null,
-      companyImage: p.companyId?.image ?? null,
-      category:     p.category?.name ?? null,
-      industryType: p.industryType?.name ?? null,
-      salaryType:   p.salaryType?.name ?? null,
-      jobType:      p.jobType?.name ?? null,
-      experience:   p.experience?.name ?? null,
-      otherField:   p.otherField?.name ?? null,
-      workingShift: p.workingShift?.name ?? null,
-      jobProfile:   p.jobProfile?.name ?? null,
-      state:        p.state?.state ?? null,
-      city:         p.city ?? null,
-      jobTitle:           p.jobTitle ?? null,
-      jobDescription:     p.jobDescription ?? null,
-      skills:             p.skills ?? null,
-      minSalary:          p.minSalary ?? null,
-      maxSalary:          p.maxSalary ?? null,
-      displayPhoneNumber: p.displayPhoneNumber ?? null,
-      displayEmail:       p.displayEmail ?? null,
-      hourlyRate:         p.hourlyRate ?? null,
-      status:          p.status,
-      isAdminApproved: !!p.isAdminApproved,
-      isActive:        !!p.isActive,
-      isLatest:        !!p.isLatest,
-      isSaved:         !!p.isSaved,
-      isApplied:       !!p.isApplied,
-      expiredDate: p.expiredDate ? new Date(p.expiredDate).toISOString().split("T")[0] : null,
-      createdAt:  p.createdAt,
-      jobPosted:  daysAgo(p.createdAt)
-    }));
+
+
+
+       const data = posts.map(p => {
+      // normalize skills → always array of strings
+      const skills = Array.isArray(p.skills)
+        ? (p.skills || []).map(s => s?.skill).filter(Boolean)
+        : (p.skills && typeof p.skills === "object" && p.skills.skill)
+          ? [p.skills.skill]
+          : [];
+
+      return {
+        _id: p._id,
+        userId:       p.userId?._id ?? null,
+        userPhone:    p.userId?.phoneNumber ?? null,
+        companyId:    p.companyId?._id ?? null,
+        company:      p.companyId?.companyName ?? null,
+        companyImage: p.companyId?.image ?? null,
+        category:     p.category?.name ?? null,
+        industryType: p.industryType?.name ?? null,
+        salaryType:   p.salaryType?.name ?? null,
+        jobType:      p.jobType?.name ?? null,
+        experience:   p.experience?.name ?? null,
+        otherField:   p.otherField?.name ?? null,
+        workingShift: p.workingShift?.name ?? null,
+        jobProfile:   p.jobProfile?.name ?? null,
+
+        // 👇 exactly like your getMySkills style (strings only)
+        skills,
+
+        state:        p.state?.state ?? null,
+        city:         p.city ?? null,
+        jobTitle:           p.jobTitle ?? null,
+        jobDescription:     p.jobDescription ?? null,
+        minSalary:          p.minSalary ?? null,
+        maxSalary:          p.maxSalary ?? null,
+        displayPhoneNumber: p.displayPhoneNumber ?? null,
+        displayEmail:       p.displayEmail ?? null,
+        hourlyRate:         p.hourlyRate ?? null,
+        appliedCandidates:  p.appliedCandidates,
+        status:          p.status,
+        isAdminApproved: !!p.isAdminApproved,
+        isActive:        !!p.isActive,
+        isLatest:        !!p.isLatest,
+        isSaved:         !!p.isSaved,
+        isApplied:       !!p.isApplied,
+        expiredDate: p.expiredDate ? new Date(p.expiredDate).toISOString().split("T")[0] : null,
+        createdAt:  p.createdAt,
+        jobPosted:  daysAgo(p.createdAt)
+      };
+    });
+      
+
+//     const data = posts.map(p => ({
+//       _id: p._id,
+//       userId:       p.userId?._id ?? null,
+//       userPhone:    p.userId?.phoneNumber ?? null,
+//       companyId:    p.companyId?._id ?? null,
+//       company:      p.companyId?.companyName ?? null,
+//       companyImage: p.companyId?.image ?? null,
+//       category:     p.category?.name ?? null,
+//       industryType: p.industryType?.name ?? null,
+//       salaryType:   p.salaryType?.name ?? null,
+//       jobType:      p.jobType?.name ?? null,
+//       experience:   p.experience?.name ?? null,
+//       otherField:   p.otherField?.name ?? null,
+//       workingShift: p.workingShift?.name ?? null,
+//       jobProfile:   p.jobProfile?.name ?? null,
+     
+//  skills,
+
+
+//       state:        p.state?.state ?? null,
+//       city:         p.city ?? null,
+//       jobTitle:           p.jobTitle ?? null,
+//       jobDescription:     p.jobDescription ?? null,
+//       skills:             p.skills ?? null,
+//       minSalary:          p.minSalary ?? null,
+//       maxSalary:          p.maxSalary ?? null,
+//       displayPhoneNumber: p.displayPhoneNumber ?? null,
+//       displayEmail:       p.displayEmail ?? null,
+//       hourlyRate:         p.hourlyRate ?? null,
+//        appliedCandidates: p.appliedCandidates,
+//       status:          p.status,
+//       isAdminApproved: !!p.isAdminApproved,
+      
+//       isActive:        !!p.isActive,
+//       isLatest:        !!p.isLatest,
+//       isSaved:         !!p.isSaved,
+//       isApplied:       !!p.isApplied,
+//       expiredDate: p.expiredDate ? new Date(p.expiredDate).toISOString().split("T")[0] : null,
+//       createdAt:  p.createdAt,
+//       jobPosted:  daysAgo(p.createdAt)
+//     }));
 
     return res.status(200).json({
       status: true,
@@ -2103,4 +2167,152 @@ exports.updateJobListById = async (req, res) => {
     });
   }
 };
+
+
+
+
+
+//top 5 categories and its job post in array format without token
+exports.getTopCategories = async (req, res) => {
+  try {
+    const categoryLimit     = Math.max(parseInt(req.query.categoryLimit, 10) || 5, 1);
+    const postsPerCategory  = Math.max(parseInt(req.query.postsPerCategory, 10) || 6, 1);
+
+    // Resolve actual collection names from your models
+    const COL = {
+      jobPosts:      JobPost.collection.name,
+      categories:    Category.collection.name,
+      companies:     CompanyProfile.collection.name,
+      salaryTypes:   SalaryType.collection.name,
+      jobTypes:      JobType.collection.name,
+      experiences:   Experience.collection.name,
+      workingShifts: WorkingShift.collection.name,
+      jobProfiles:   JobProfile.collection.name,
+      states:        StateCity.collection.name
+    };
+
+    const pipeline = [
+      { $match: { isDeleted: false } },                 // only non-deleted posts
+      { $group: { _id: "$category", jobCount: { $sum: 1 } } },
+      { $sort: { jobCount: -1 } },
+      { $limit: categoryLimit },
+
+      // join category doc (ensure not deleted)
+      {
+        $lookup: {
+          from: COL.categories,
+          let: { catId: "$_id" },
+          pipeline: [
+            { $match: { $expr: { $and: [
+              { $eq: ["$_id", "$$catId"] },
+              { $eq: ["$isDeleted", false] }
+            ]}} },
+            { $project: { _id: 1, name: 1 } }           // no image; we won't return it
+          ],
+          as: "cat"
+        }
+      },
+      { $unwind: "$cat" },
+
+      // fetch up to M latest jobs per category
+      {
+        $lookup: {
+          from: COL.jobPosts,
+          let: { catId: "$_id" },
+          pipeline: [
+            { $match: { $expr: { $and: [
+              { $eq: ["$category", "$$catId"] },
+              { $eq: ["$isDeleted", false] }
+            ]}} },
+            { $sort: { createdAt: -1 } },
+            { $limit: postsPerCategory },
+
+            // lookups for display names
+            { $lookup: { from: COL.companies,     localField: "companyId",   foreignField: "_id", as: "company" } },
+            { $lookup: { from: COL.salaryTypes,   localField: "salaryType",  foreignField: "_id", as: "salary" } },
+            { $lookup: { from: COL.jobTypes,      localField: "jobType",     foreignField: "_id", as: "jt" } },
+            { $lookup: { from: COL.experiences,   localField: "experience",  foreignField: "_id", as: "exp" } },
+            { $lookup: { from: COL.workingShifts, localField: "workingShift",foreignField: "_id", as: "ws" } },
+            { $lookup: { from: COL.jobProfiles,   localField: "jobProfile",  foreignField: "_id", as: "jp" } },
+            { $lookup: { from: COL.states,        localField: "state",       foreignField: "_id", as: "st" } },
+
+            // flatten to readable fields
+            {
+              $addFields: {
+                company:      { $first: "$company.companyName" },
+                companyImage: { $first: "$company.image" },
+                salaryType:   { $first: "$salary.name" },
+                jobType:      { $first: "$jt.name" },
+                experience:   { $first: "$exp.name" },
+                workingShift: { $first: "$ws.name" },
+                jobProfile:   { $first: "$jp.name" },
+                state:        { $first: "$st.state" }
+              }
+            },
+
+            // keep only needed fields in each job item
+            {
+              $project: {
+                _id: 1,
+                jobTitle: 1,
+                jobDescription: 1,
+                company: 1,
+                companyImage: 1,
+                salaryType: 1,
+                jobType: 1,
+                experience: 1,
+                workingShift: 1,
+                jobProfile: 1,
+                state: 1,
+                city: 1,
+                minSalary: 1,
+                maxSalary: 1,
+                status: 1,
+                expiredDate: 1,
+                createdAt: 1
+              }
+            }
+          ],
+          as: "jobs"
+        }
+      },
+
+      // final per-category shape (no image, no totalPosts in output)
+      {
+        $project: {
+          _id: 0,
+          categoryId: "$cat._id",
+          categoryName: "$cat.name",
+          jobs: "$jobs"          // we’ll rename when building the response
+        }
+      }
+    ];
+
+    const rows = await JobPost.aggregate(pipeline);
+
+    // add "x days ago" & rename jobs → "job postarray"; omit totalPosts & categoryImage
+    const data = rows.map(row => ({
+      categoryId: row.categoryId,
+      categoryName: row.categoryName,
+      "job postarray": (row.jobs || []).map(j => ({
+        ...j,
+        jobPosted: daysAgo(j.createdAt)
+      }))
+    }));
+
+    return res.status(200).json({
+      status: true,
+      message: "Top 5 categories fetched successfully.",
+      data
+    });
+  } catch (err) {
+    console.error("getTopCategories error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to fetch top categories.",
+      error: err.message
+    });
+  }
+};
+
 
