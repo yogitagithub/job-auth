@@ -2239,26 +2239,6 @@ exports.getCompanyProfiles = async (req, res) => {
 
 
 
-    // const data = companies.map(company => ({
-    //   id: company._id,
-    //   userId: company.userId,
-    //   phoneNumber: company.phoneNumber,
-    //   companyName: company.companyName,
-    //   industryType: company.industryType?.name || null,
-    //   contactPersonName: company.contactPersonName,
-    //   panCardNumber: company.panCardNumber,
-    //   gstNumber: company.gstNumber,
-
-    //    gstCertificate: certUrl,
-
-    //   alternatePhoneNumber: company.alternatePhoneNumber,
-    //   email: company.email,
-    //   companyAddress: company.companyAddress,
-    //   state: company.state?.state || null,
-    //   city: company.city,
-    //   pincode: company.pincode,
-    //   image: company.image
-    // }));
 
     return res.status(200).json({
       status: true,
@@ -2426,7 +2406,13 @@ exports.getJobSeekerProfiles = async (req, res) => {
       state: s.state?.state || null,
       city: s.city,
       pincode: s.pincode,
-      image: s.image
+      image: s.image,
+      currentSalary: s.CurrentSalary,
+         isExperienceAdded: s.isExperienceAdded,
+          isSkillsAdded: s.isSkillsAdded,
+           isEducationAdded: s.isEducationAdded, 
+           isResumeAdded: s.isResumeAdded,
+            isExperienced: s.isExperienced
     }));
 
     return res.status(200).json({
@@ -2486,6 +2472,14 @@ exports.getJobSeekerProfilesbyId = async (req, res) => {
       state: s.state?.state || null,
       city: s.city,
       pincode: s.pincode,
+
+       currentSalary: s.CurrentSalary,
+         isExperienceAdded: s.isExperienceAdded,
+          isSkillsAdded: s.isSkillsAdded,
+           isEducationAdded: s.isEducationAdded, 
+           isResumeAdded: s.isResumeAdded,
+            isExperienced: s.isExperienced,
+
       image: s.image
     };
 
