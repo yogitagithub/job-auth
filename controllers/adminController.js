@@ -2198,23 +2198,67 @@ exports.getCompanyProfiles = async (req, res) => {
       });
     }
 
-    const data = companies.map(company => ({
-      id: company._id,
-      userId: company.userId,
-      phoneNumber: company.phoneNumber,
-      companyName: company.companyName,
-      industryType: company.industryType?.name || null,
-      contactPersonName: company.contactPersonName,
-      panCardNumber: company.panCardNumber,
-      gstNumber: company.gstNumber,
-      alternatePhoneNumber: company.alternatePhoneNumber,
-      email: company.email,
-      companyAddress: company.companyAddress,
-      state: company.state?.state || null,
-      city: company.city,
-      pincode: company.pincode,
-      image: company.image
-    }));
+
+    const data = companies.map((c) => {
+      // Build gstCertificate like in getProfile
+      const certUrl = c.gstCertificate?.fileUrl
+        ? (c.gstCertificate.fileUrl.startsWith("http")
+            ? c.gstCertificate.fileUrl
+            : `${baseUrl}${c.gstCertificate.fileUrl}`)
+        : null;
+
+      // If your `image` can be a relative path, uncomment next two lines
+      // const imageUrl = c.image
+      //   ? (c.image.startsWith("http") ? c.image : `${baseUrl}${c.image}`)
+      //   : null;
+
+      return {
+        id: c._id,
+        userId: c.userId,
+        phoneNumber: c.phoneNumber,
+        companyName: c.companyName,
+        industryType: c.industryType?.name || null,
+        contactPersonName: c.contactPersonName,
+        panCardNumber: c.panCardNumber,
+        gstNumber: c.gstNumber,
+        gstCertificate: certUrl,  // ✅ added
+
+        alternatePhoneNumber: c.alternatePhoneNumber,
+        email: c.email,
+        companyAddress: c.companyAddress,
+        state: c.state?.state || null,
+        city: c.city,
+        pincode: c.pincode,
+        image: c.image || null // or use imageUrl if you want absolute
+      };
+    });
+
+    
+    
+
+
+
+
+    // const data = companies.map(company => ({
+    //   id: company._id,
+    //   userId: company.userId,
+    //   phoneNumber: company.phoneNumber,
+    //   companyName: company.companyName,
+    //   industryType: company.industryType?.name || null,
+    //   contactPersonName: company.contactPersonName,
+    //   panCardNumber: company.panCardNumber,
+    //   gstNumber: company.gstNumber,
+
+    //    gstCertificate: certUrl,
+
+    //   alternatePhoneNumber: company.alternatePhoneNumber,
+    //   email: company.email,
+    //   companyAddress: company.companyAddress,
+    //   state: company.state?.state || null,
+    //   city: company.city,
+    //   pincode: company.pincode,
+    //   image: company.image
+    // }));
 
     return res.status(200).json({
       status: true,
@@ -2262,6 +2306,15 @@ exports.getCompanyProfilesById = async (req, res) => {
       });
     }
 
+     // Build GST certificate URL like in getProfile
+    const certUrl = company.gstCertificate?.fileUrl
+      ? (company.gstCertificate.fileUrl.startsWith("http")
+          ? company.gstCertificate.fileUrl
+          : `${baseUrl}${company.gstCertificate.fileUrl}`)
+      : null;
+
+
+
     // Shape response
     const data = {
       id: company._id,
@@ -2272,6 +2325,11 @@ exports.getCompanyProfilesById = async (req, res) => {
       contactPersonName: company.contactPersonName,
       panCardNumber: company.panCardNumber,
       gstNumber: company.gstNumber,
+
+
+       gstCertificate: certUrl,
+
+       
       alternatePhoneNumber: company.alternatePhoneNumber,
       email: company.email,
       companyAddress: company.companyAddress,
