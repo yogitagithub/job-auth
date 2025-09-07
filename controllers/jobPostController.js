@@ -10,7 +10,7 @@ const Experience = require("../models/AdminExperienceRange");
 const OtherField = require("../models/AdminOtherField");
 const WorkingShift   = require("../models/AdminWorkingShift"); 
 const JobProfile   = require("../models/AdminJobProfile"); 
-const WorkLocation   = require("../models/AdminWorkLoc"); 
+ 
 const Skill = require("../models/Skills");
 
 const mongoose = require("mongoose");
@@ -78,7 +78,7 @@ const escapeRegex = (str = "") =>
       experience,
       otherField,
 workingShift,
-workLocation,
+
 jobProfile,
       jobTitle,
       jobDescription,
@@ -92,7 +92,7 @@ jobProfile,
     } = req.body || {};
 
     // quick required checks
-    const required = { category, industryType, salaryType, jobType, workLocation, state, experience, otherField, workingShift, jobProfile };
+    const required = { category, industryType, salaryType, jobType, state, experience, otherField, workingShift, jobProfile };
     for (const [k, v] of Object.entries(required)) {
       if (!v || !String(v).trim()) {
         return res.status(400).json({ status: false, message: `${k} is required` });
@@ -129,7 +129,7 @@ jobProfile,
       experienceDoc,
       otherFieldDoc,
       workingShiftDoc,
-      workLocationDoc,
+    
       jobProfileDoc
     ] = await Promise.all([
 
@@ -142,7 +142,7 @@ jobProfile,
       Experience.findOne({ name: experience, isDeleted: false }), 
       OtherField.findOne({ name: otherField, isDeleted: false }),
       WorkingShift.findOne({ name: workingShift, isDeleted: false }),
-      WorkLocation.findOne({ name: workLocation, isDeleted: false }),
+     
         JobProfile.findOne({ name: jobProfile, isDeleted: false })
     ]);
 
@@ -157,7 +157,6 @@ jobProfile,
     if (!otherFieldDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted other field name." });
     if (!workingShiftDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted working shift name." });
    if (!jobProfileDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted job profile name." });
-if (!workLocationDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted work location name." });
 
 
     // --- CITY VALIDATION (optional) ---
@@ -244,7 +243,7 @@ const skillsNames = allSkillDocs.map(d => d.skill);
       experience: experienceDoc._id,
       otherField: otherFieldDoc._id,
       workingShift: workingShiftDoc._id,
-      workLocation: workLocationDoc._id,
+    
        jobProfile: jobProfileDoc._id,
 
 
@@ -289,7 +288,7 @@ const skillsNames = allSkillDocs.map(d => d.skill);
         experience: experienceDoc.name,
         otherField: otherFieldDoc.name,
         workingShift: workingShiftDoc.name,
-         workLocation: workLocationDoc.name,
+       
         jobProfile: jobProfileDoc.name,
 
         jobTitle: jobPost.jobTitle,
@@ -652,7 +651,7 @@ exports.getAllJobPosts = async (req, res) => {
       .populate({ path: "otherField",   select: "name" })
       .populate({ path: "workingShift", select: "name" })
       .populate({ path: "jobProfile",   select: "name" })
-        .populate({ path: "workLocation", select: "name" }) 
+      
       .populate({ path: "state",        select: "state" })
        .populate({ path: "skills",       select: "skill" }) // [skills] populate names
       .sort({ createdAt: -1 })
@@ -676,7 +675,7 @@ exports.getAllJobPosts = async (req, res) => {
       otherField:   p.otherField?.name ?? null,
       workingShift: p.workingShift?.name ?? null,
       jobProfile:   p.jobProfile?.name ?? null,
-      workLocation: p.workLocation?.name ?? null, 
+     
       state:        p.state?.state ?? null,
       city:         p.city ?? null,
 
@@ -774,7 +773,7 @@ exports.getJobPostById = async (req, res) => {
       .populate({ path: "experience",   select: "name" })
       .populate({ path: "otherField",   select: "name" })
       .populate({ path: "workingShift", select: "name" })
-       .populate({ path: "workLocation", select: "name" }) 
+      
          .populate({ path: "skills",       select: "skill" })
          .populate({ path: "jobProfile", select: "name" })
       .populate({ path: "state",        select: "state" });
@@ -819,7 +818,7 @@ exports.getJobPostById = async (req, res) => {
       experience:   jobPost.experience?.name ?? null,
       otherField:   jobPost.otherField?.name ?? null,
       workingShift: jobPost.workingShift?.name ?? null,
-       workLocation: jobPost.workLocation?.name ?? null,    
+      
       jobProfile: jobPost.jobProfile?.name ?? null,
       state:        jobPost.state?.state ?? null,
 city:         jobPost.city ?? null,
@@ -996,7 +995,7 @@ exports.updateJobPostById = async (req, res) => {
       workingShift,
       jobProfile,
 
-      workLocation,
+     
       skills,
 
       isActive,
@@ -1168,23 +1167,7 @@ exports.updateJobPostById = async (req, res) => {
       jobPost.city = cityVal;
     }
 
-    // ---------- Work Location update ----------
-    const hasWorkLocation = Object.prototype.hasOwnProperty.call(req.body, "workLocation");
-    if (hasWorkLocation) {
-      if (workLocation === null || workLocation === "") {
-        jobPost.workLocation = undefined; // or null
-      } else {
-        let wlDoc = null;
-        if (mongoose.Types.ObjectId.isValid(workLocation)) {
-          wlDoc = await WorkLocation.findById(workLocation);
-        } else {
-          wlDoc = await findByName(WorkLocation, "name", String(workLocation), { isDeleted: false });
-        }
-        if (!wlDoc) return res.status(400).json({ status: false, message: "Invalid or deleted work location." });
-        jobPost.workLocation = wlDoc._id;
-      }
-    }
-
+   
     // ---------- Skills update (array or CSV; ids or names) ----------
     const hasSkills = Object.prototype.hasOwnProperty.call(req.body, "skills");
     if (hasSkills) {
@@ -1290,7 +1273,7 @@ exports.updateJobPostById = async (req, res) => {
       .populate("otherField", "name")
       .populate("workingShift", "name")
       .populate("jobProfile", "name")
-      .populate("workLocation", "name")
+     
       .populate("skills", "skill")
       .lean();
 
@@ -1306,7 +1289,7 @@ exports.updateJobPostById = async (req, res) => {
       otherField:    populated.otherField?.name ?? null,
       workingShift:  populated.workingShift?.name ?? null,
       jobProfile:    populated.jobProfile?.name ?? null,
-      workLocation:  populated.workLocation?.name ?? null,
+    
       skills: Array.isArray(populated.skills)
         ? populated.skills.map(s => (s && typeof s === "object" && "skill" in s) ? s.skill : s)
         : [],

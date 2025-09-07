@@ -129,11 +129,6 @@ const jobPostSchema = new mongoose.Schema(
       },
 
 
-       workLocation: {
-     type: mongoose.Schema.Types.ObjectId,
-      ref: "WorkLocation",
-      required: true
-    },
 
     // for employer it is: employer can change the status
     status: {

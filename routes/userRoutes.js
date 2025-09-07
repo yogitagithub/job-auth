@@ -7,7 +7,7 @@ const { getIndustryBasedOnRole, getCategoryBasedOnRole,
     getOtherFieldBasedOnRole, 
     getJobPostsByCategoryPublic, getAllCategoriesPublic,
 getAllIndustriesPublic, getFeaturedCompaniesPublic, getJobPostsByCompanyPublic, 
-getWorkingShiftBasedOnRole, getAccountTypeBasedOnRole, getWorkLocBasedOnRole } = require('../controllers/adminController');
+getWorkingShiftBasedOnRole, getAccountTypeBasedOnRole } = require('../controllers/adminController');
     
 const { verifyToken, verifyJobSeekerOnly, verifyEmployerOnly } = require('../middleware/authMiddleware');
 
@@ -63,8 +63,7 @@ router.get("/working-shift", verifyToken, getWorkingShiftBasedOnRole);
 router.get("/account-type", verifyToken, getAccountTypeBasedOnRole);
 
 
-//get work location list for employer and job_seeker
-router.get("/work-location", verifyToken, getWorkLocBasedOnRole);
+
 
 
 
