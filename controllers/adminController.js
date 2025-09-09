@@ -541,7 +541,7 @@ exports.getAllCategoriesPublic = async (req, res) => {
 
 
 
-// without token by category id
+// without token by category id and for admin access also controller will work
 exports.getJobPostsByCategoryPublic = async (req, res) => {
   try {
     const { categoryId } = req.params;
@@ -589,6 +589,12 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
       .populate({ path: "otherField",   select: "name label title" }) 
       .populate({ path: "workingShift",   select: "name label title" })       // added
        .populate({ path: "jobProfile",   select: "name label title" })
+
+         .populate({
+        path: "skills",
+        select: "skill name",          // supports either 'skill' or 'name' in Skill model
+       
+      })
       
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -620,7 +626,13 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
       displayPhoneNumber: j.displayPhoneNumber,
       displayEmail: j.displayEmail,
       jobType: pickDisplay(j.jobType),       // now human-readable
-      skills: j.skills,
+     
+
+          skills: Array.isArray(j.skills)
+        ? j.skills.map(s => s.skill ?? s.name ?? null).filter(Boolean)
+        : [],
+
+        
       minSalary: j.minSalary,
       maxSalary: j.maxSalary,
         city: j.city,
@@ -648,6 +660,126 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
       status: false,
       message: "Failed to fetch job posts.",
       error: error.message,
+    });
+  }
+};
+
+
+
+
+
+// with token employer and job seeker only by category id
+exports.getJobPostsByCategoryId = async (req, res) => {
+  try {
+    // --- AuthZ: allow only employer & job_seeker ---
+    const role = req.user?.role;
+    if (!role) {
+      return res.status(401).json({ status: false, message: "Unauthorized." });
+    }
+    if (!["employer", "job_seeker"].includes(role)) {
+      return res.status(403).json({
+        status: false,
+        message: "Access denied. Only employers and job seekers can access this resource."
+      });
+    }
+
+    // --- Validate categoryId ---
+    const { categoryId } = req.params;
+    if (!categoryId || !mongoose.isValidObjectId(categoryId)) {
+      return res.status(400).json({ status: false, message: "Invalid categoryId." });
+    }
+
+    // --- Ensure category exists and is not soft-deleted ---
+    const catExists = await Category.exists({ _id: categoryId, isDeleted: false });
+    if (!catExists) {
+      return res.status(404).json({ status: false, message: "Category not found." });
+    }
+
+    // --- Pagination (safe defaults + caps) ---
+    const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+    const skip  = (page - 1) * limit;
+
+    // --- Filter: only non-deleted posts in this category ---
+    const filter = { category: categoryId, isDeleted: false };
+
+    // --- Count & fetch ---
+    const totalRecord = await JobPost.countDocuments(filter);
+    const totalPage   = Math.ceil(totalRecord / limit) || 1;
+
+    const jobPosts = await JobPost.find(filter)
+      .select("-createdAt -updatedAt -__v") // trim payload
+      .populate({ path: "companyId",    select: "companyName image" })
+      .populate({ path: "category",     select: "name" })
+      .populate({ path: "industryType", select: "name" })
+      .populate({ path: "state",        select: "state" })
+      .populate({ path: "salaryType",   select: "name label title value" })
+      .populate({ path: "jobType",      select: "name label title value" })
+      .populate({ path: "experience",   select: "name range label" })
+      .populate({ path: "otherField",   select: "name label title" })
+      .populate({ path: "workingShift", select: "name label title" })
+      .populate({ path: "jobProfile",   select: "name label title" })
+
+
+      .populate({
+        path: "skills",
+        select: "skill name",           
+      
+      })
+
+
+
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const pickDisplay = (doc) => {
+      if (!doc) return null;
+      return doc.name ?? doc.label ?? doc.title ?? doc.range ?? doc.value ?? null;
+    };
+
+    const data = jobPosts.map(j => ({
+      _id: j._id,
+      company: j.companyId?.companyName ?? null,
+      companyImage: j.companyId?.image ?? null,
+      category: j.category?.name ?? null,
+      industryType: j.industryType?.name ?? null,
+      jobTitle: j.jobTitle,
+      jobDescription: j.jobDescription,
+      salaryType: pickDisplay(j.salaryType),
+      displayPhoneNumber: j.displayPhoneNumber,
+      displayEmail: j.displayEmail,
+      jobType: pickDisplay(j.jobType),
+      skills: Array.isArray(j.skills) ? j.skills.map(s => s.skill ?? s.name ?? null).filter(Boolean) : [],
+      minSalary: j.minSalary,
+      maxSalary: j.maxSalary,
+      city: j.city,
+      state: j.state?.state ?? null,
+      experience: pickDisplay(j.experience),
+      otherField: pickDisplay(j.otherField),
+      workingShift: pickDisplay(j.workingShift),
+      jobProfile: pickDisplay(j.jobProfile),
+      status: j.status,
+      expiredDate: j.expiredDate,
+      isDeleted: j.isDeleted
+    }));
+
+    return res.status(200).json({
+      status: true,
+      message: "Job posts fetched successfully.",
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data
+    });
+
+  } catch (error) {
+    console.error("Error fetching jobs by category:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to fetch job posts.",
+      error: error.message
     });
   }
 };

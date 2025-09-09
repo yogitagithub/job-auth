@@ -7,7 +7,7 @@ const { getIndustryBasedOnRole, getCategoryBasedOnRole,
     getOtherFieldBasedOnRole, 
     getJobPostsByCategoryPublic, getAllCategoriesPublic,
 getAllIndustriesPublic, getFeaturedCompaniesPublic, getJobPostsByCompanyPublic, 
-getWorkingShiftBasedOnRole, getAccountTypeBasedOnRole } = require('../controllers/adminController');
+getWorkingShiftBasedOnRole, getAccountTypeBasedOnRole, getJobPostsByCategoryId } = require('../controllers/adminController');
     
 const { verifyToken, verifyJobSeekerOnly, verifyEmployerOnly } = require('../middleware/authMiddleware');
 
@@ -31,6 +31,10 @@ router.get('/industries', verifyToken, getIndustryBasedOnRole);
 router.get('/categories', verifyToken, getCategoryBasedOnRole);
 router.get("/public-categories", getAllCategoriesPublic);
 router.get("/public-industries", getAllIndustriesPublic);
+
+
+//get job list based on category id for job_seeker and employer
+router.get('/job-list/:categoryId', verifyToken, getJobPostsByCategoryId);
 
 
 //get job profile list for job_seeker and employer

@@ -15,7 +15,7 @@ getCompanyProfiles, getCompanyProfilesById, getJobSeekerProfiles, addFeaturedCom
 updateFeaturedCompanies, deleteFeaturedCompanies, createCurrentSalary,
 getCurrentSalary, deleteCurrentSalary, updateCurrentSalary, createWorkingShift,
 updateWorkingShift, deleteWorkingShift, getWorkingShift, getJobSeekerProfilesbyId, 
-createSkill, getSkill, updateSkill, deleteSkill,
+createSkill, getSkill, updateSkill, deleteSkill, getJobPostsByCategoryPublic,
 createAccountType, updateAccountType, deleteAccountType, getAccountTypes } = require('../controllers/adminController');
 
 const { verifyToken, verifyAdmin, verifyEmployerOnly, verifyJobSeekerOnly } = require('../middleware/authMiddleware');
@@ -118,6 +118,11 @@ router.post("/create-account-types", verifyToken, verifyAdmin, createAccountType
  router.put("/update-account-types", verifyToken, verifyAdmin, updateAccountType);
  router.delete("/delete-account-types", verifyToken, verifyAdmin, deleteAccountType);
 router.get("/get-account-types", verifyToken, verifyAdmin, getAccountTypes);
+
+
+
+//get job list based on category id for admin only
+router.get("/public-categories/:categoryId",verifyToken, verifyAdmin, getJobPostsByCategoryPublic);
 
 
 
