@@ -365,6 +365,8 @@ exports.deleteCategory = async (req, res) => {
   }
 };
 
+
+
 //get for employer and job seeker
 exports.getCategoryBasedOnRole = async (req, res) => {
   try {
