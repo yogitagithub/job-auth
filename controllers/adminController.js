@@ -1400,9 +1400,7 @@ exports.deleteExperience = async (req, res) => {
 //get experience for employer and job seeker
 exports.getExperienceRangeBasedOnRole = async (req, res) => {
   try {
-
-    //blocks admin
-      const role = req.user?.role;
+    const role = req.user?.role;
     if (!role) {
       return res.status(401).json({ status: false, message: "Unauthorized." });
     }
@@ -1413,19 +1411,47 @@ exports.getExperienceRangeBasedOnRole = async (req, res) => {
       });
     }
 
-   
     const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+    const skip  = (page - 1) * limit;
 
     const filter = { isDeleted: false };
 
     const [totalRecord, rows] = await Promise.all([
       Experience.countDocuments(filter),
-      Experience.find(filter)
-        .sort({ createdAt: -1, _id: 1 })
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .lean()
+
+      // 👇 Custom ordering: Fresher first, then by numeric min years ascending
+      Experience.aggregate([
+        { $match: filter },
+        {
+          $addFields: {
+            _isFresher: {
+              $cond: [
+                { $regexMatch: { input: "$name", regex: /^fresher/i } },
+                0,
+                1
+              ]
+            },
+            _minYears: {
+              $let: {
+                vars: { r: { $regexFind: { input: "$name", regex: /(\d+)/ } } },
+                in: {
+                  // if a number exists, use it; else push to end
+                  $cond: [
+                    { $ifNull: ["$$r.match", false] },
+                    { $toInt: "$$r.match" },
+                    9999
+                  ]
+                }
+              }
+            }
+          }
+        },
+        { $sort: { _isFresher: 1, _minYears: 1, name: 1 } },
+        { $skip: skip },
+        { $limit: limit },
+        { $project: { _isFresher: 0, _minYears: 0 } }
+      ])
     ]);
 
     const data = rows.map(x => ({ id: x._id, name: x.name }));
@@ -1449,6 +1475,9 @@ exports.getExperienceRangeBasedOnRole = async (req, res) => {
     });
   }
 };
+
+
+
 
 
 //job types
