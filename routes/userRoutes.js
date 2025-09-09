@@ -48,7 +48,7 @@ router.get("/job-type", verifyToken, getJobTypeBasedOnRole);
 //get salary type list for employer and job_seeker
 router.get("/salary-type", verifyToken, getSalaryTypeBasedOnRole);
 
-//get job list based on category id
+//get job list based on category id without token
 router.get("/public-categories/:categoryId", getJobPostsByCategoryPublic);
 
 //get job list based on company id 

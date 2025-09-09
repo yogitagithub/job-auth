@@ -379,26 +379,16 @@ exports.getCategoryBasedOnRole = async (req, res) => {
       });
     }
 
-    // pagination params
-    const pageRaw  = parseInt(req.query.page, 10);
-    const limitRaw = parseInt(req.query.limit, 10);
-
-    const page  = Number.isFinite(pageRaw)  && pageRaw  > 0 ? pageRaw  : 1;
-    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : 10;
-    const skip  = (page - 1) * limit;
+    
 
     // only non-deleted categories
     const filter = { isDeleted: false };
 
-    // 1) Count for pagination
-    const totalRecord = await Category.countDocuments(filter);
-    const totalPage   = Math.ceil(totalRecord / limit) || 1;
-
+   
     // 2) Fetch page
     const categories = await Category.find(filter)
       .sort({ name: 1 })
-      .skip(skip)
-      .limit(limit)
+      
       .lean();
 
     // 3) Shape response (keep same fields as your original)
@@ -414,9 +404,7 @@ exports.getCategoryBasedOnRole = async (req, res) => {
     return res.status(200).json({
       status: true,
       message: `${role} categories fetched successfully.`,
-      totalRecord,
-      totalPage,
-      currentPage: page,
+      totalRecord: data.length,
       data
     });
 
@@ -430,7 +418,6 @@ exports.getCategoryBasedOnRole = async (req, res) => {
 };
 
 //get all categories without token
-
 //without job count
 // exports.getAllCategoriesPublic = async (req, res) => {
 //   try {
@@ -868,23 +855,17 @@ exports.getIndustryBasedOnRole = async (req, res) => {
       });
     }
 
-    // pagination params
-    const page  = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 10;
-    const skip  = (page - 1) * limit;
+    
 
     // only non-deleted industries
     const filter = { isDeleted: false };
 
-    // count for pagination
-    const totalRecord = await IndustryType.countDocuments(filter);
-    const totalPage   = Math.ceil(totalRecord / limit);
+    
 
     // fetch page
     const industries = await IndustryType.find(filter)
       .sort({ name: 1 })
-      .skip(skip)
-      .limit(limit)
+     
       .lean();
 
     // shape response
@@ -896,9 +877,7 @@ exports.getIndustryBasedOnRole = async (req, res) => {
     return res.status(200).json({
       status: true,
       message: `${role} industries fetched successfully.`,
-      totalRecord,
-      totalPage,
-      currentPage: page,
+    totalRecord: data.length,
       data
     });
   } catch (error) {
