@@ -10,6 +10,7 @@ const Experience = require("../models/AdminExperienceRange");
 const OtherField = require("../models/AdminOtherField");
 const WorkingShift   = require("../models/AdminWorkingShift"); 
 const JobProfile   = require("../models/AdminJobProfile"); 
+const JobSeekerSkill = require("../models/JobSeekerSkill");
  
 const Skill = require("../models/Skills");
 
@@ -2496,3 +2497,172 @@ exports.getTopCategories = async (req, res) => {
 };
 
 
+
+
+function pickLabel(doc, isState = false) {
+  if (!doc) return null;
+  if (isState) return doc.state ?? doc.name ?? null;          // StateCity has "state"
+  return doc.name ?? doc.title ?? doc.label ?? doc.type ?? doc.range ?? doc.shift ?? null;
+}
+
+//get job list based on job seeker skills
+exports.getBasedOnSkillsJobs = async (req, res) => {
+  try {
+    const { userId, role } = req.user || {};
+    if (role !== "job_seeker") {
+      return res.status(403).json({ status: false, message: "Only job seekers can view job posts." });
+    }
+
+    // 1) Get seeker's skills (ObjectIds) from JobSeekerSkill
+    const jss = await JobSeekerSkill.findOne({ userId, isDeleted: false })
+      .select("skillIds")
+      .lean();
+
+    const seekerSkills = (jss?.skillIds || []).map(id => new mongoose.Types.ObjectId(id));
+    if (!seekerSkills.length) {
+      return res.status(200).json({
+        status: true,
+        message: "No skills found in your profile.",
+        totalRecord: 0,
+        totalPage: 0,
+        currentPage: 1,
+        data: []
+      });
+    }
+
+    // 2) Pagination inputs
+    const page  = Math.max(parseInt(req.query.page, 10)  || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit, 10) || 10, 50);
+
+    // 3) ONLY the requested filters:
+    const baseFilter = {
+      status: "active",
+      skills: { $in: seekerSkills }   // any skill overlap (includes "all" too)
+    };
+
+    // ---- PASS 1: rank globally (minimal fields) so pagination respects overlap ranking ----
+    const minimal = await JobPost.find(baseFilter).select("_id skills createdAt").lean();
+    if (!minimal.length) {
+      return res.status(200).json({
+        status: true,
+        message: "No matching job posts.",
+        totalRecord: 0,
+        totalPage: 0,
+        currentPage: page,
+        data: []
+      });
+    }
+
+    const sset = new Set(seekerSkills.map(String));
+    const ranked = minimal
+      .map(doc => {
+        const ids = (doc.skills || []).map(s => String(s));
+        const overlap = ids.reduce((c, id) => c + (sset.has(id) ? 1 : 0), 0);
+        return { _id: String(doc._id), createdAt: doc.createdAt, overlap };
+      })
+      .sort((a, b) => (b.overlap - a.overlap) || (new Date(b.createdAt) - new Date(a.createdAt)));
+
+    const totalRecord = ranked.length;
+    const totalPage   = Math.max(Math.ceil(totalRecord / limit), 1);
+    const start       = (page - 1) * limit;
+    const pageIds     = ranked.slice(start, start + limit).map(r => new mongoose.Types.ObjectId(r._id));
+    const orderIndex  = new Map(pageIds.map((id, i) => [String(id), i]));
+
+    // ---- PASS 2: fetch full docs for the page, populate company + skill names ----
+    const pageDocs = await JobPost.find({ _id: { $in: pageIds } })
+     .populate({ path: "companyId", select: "companyName image" })
+      .populate({ path: "skills", select: "skill" })
+
+       .populate({ path: "category",     select: "name title label" })
+      .populate({ path: "industryType", select: "name title label" })
+      .populate({ path: "jobType",      select: "name type label title" })
+      .populate({ path: "salaryType",   select: "name type label title" })
+      .populate({ path: "experience",   select: "name label range" })
+      .populate({ path: "workingShift", select: "name label shift" })
+      .populate({ path: "otherField",   select: "name label title" })
+      .populate({ path: "jobProfile",   select: "name title label" })
+  .populate({ path: "state",        select: "state name" })
+
+      .lean();
+
+    // keep the ranked order
+    pageDocs.sort((a, b) => orderIndex.get(String(a._id)) - orderIndex.get(String(b._id)));
+
+
+    const formatDate = (iso) => {
+  if (!iso) return null;
+  const d = new Date(iso);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}-${mm}-${yyyy}`;
+};
+
+
+     // reshape output
+   const data = pageDocs.map(job => {
+  // 1) pull out populated refs and the rest of the raw fields
+  const {
+    companyId,
+    skills,
+    category,
+    industryType,
+    jobType,
+    salaryType,
+    experience,
+    workingShift,
+    otherField,
+    jobProfile,
+    state,
+    expiredDate,
+
+      isDeleted,      // drop
+    __v,            // drop
+    updatedAt,      // drop
+    createdAt,    // drop
+
+
+    ...rest
+  } = job;
+
+  // 2) company flatten
+  const companyName  = companyId?.companyName ?? null;
+const companyImage = companyId?.image ?? null;
+
+  // 3) build final payload with label strings
+  return {
+    ...rest, // all other JobPost fields you want to keep
+      expiredDate: formatDate(expiredDate), 
+    companyName,
+    companyImage,
+    skills: (skills || []).map(s => s.skill),          // ["React js", "Express js", ...]
+
+    // <-- labels instead of ObjectIds
+    category:     pickLabel(category),
+    industryType: pickLabel(industryType),
+    jobType:      pickLabel(jobType),
+    salaryType:   pickLabel(salaryType),
+    experience:   pickLabel(experience),
+    workingShift: pickLabel(workingShift),
+    otherField:   pickLabel(otherField),
+    jobProfile:   pickLabel(jobProfile),
+    state:        pickLabel(state, true)
+  };
+});
+
+
+
+    return res.status(200).json({
+      status: true,
+      message: "Job posts fetched successfully.",
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data
+    });
+
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ status: false, message: "Server error", error: err.message });
+  }
+};

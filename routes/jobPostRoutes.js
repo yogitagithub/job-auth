@@ -4,7 +4,7 @@ const router = express.Router();
 const { createJobPost, getAllJobPosts, 
     getJobPostById, updateJobPostById, 
     updateJobPostStatus, deleteJobPostById, 
-    getAllJobPostsPublic, getJobDetailsPublic, getTopCategories } = require('../controllers/jobPostController');
+    getAllJobPostsPublic, getJobDetailsPublic, getTopCategories, getBasedOnSkillsJobs } = require('../controllers/jobPostController');
     
 const { verifyToken } = require('../middleware/authMiddleware');
 
@@ -28,6 +28,11 @@ router.get("/public-job-details/:id", getJobDetailsPublic);
 
 //top 5 categories and its job post in array format without token
 router.get("/top-categories", getTopCategories);
+
+
+
+//get job list based on job seeker skills
+router.get("/based-on-skills", verifyToken, getBasedOnSkillsJobs);
 
 
 
