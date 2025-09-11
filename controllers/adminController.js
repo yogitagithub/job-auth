@@ -541,7 +541,7 @@ exports.getAllCategoriesPublic = async (req, res) => {
 
 
 
-// without token by category id and for admin access also controller will work
+// without token by category id and for admin access also this controller will work
 exports.getJobPostsByCategoryPublic = async (req, res) => {
   try {
     const { categoryId } = req.params;
@@ -571,6 +571,9 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
       // NEW: exclude soft-deleted posts from public results
     const filter = { category: categoryId, isDeleted: false };
 
+
+    
+
    
 
     // Count & fetch
@@ -578,7 +581,7 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
     const totalPage   = Math.ceil(totalRecord / limit);
 
     const jobPosts = await JobPost.find(filter)
-      .select("-createdAt -updatedAt -__v")
+      .select("-createdAt -updatedAt -__v -isDeleted")
       .populate({ path: "companyId",    select: "companyName image" })
       .populate({ path: "category",     select: "name" })
       .populate({ path: "industryType", select: "name" })
@@ -614,6 +617,17 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
       );
     };
 
+
+     const formatDateDDMMYYYY = (d) => {
+      if (!d) return null;
+      const dt = new Date(d);
+      const dd = String(dt.getUTCDate()).padStart(2, "0");
+      const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+      const yyyy = dt.getUTCFullYear();
+      return `${dd}-${mm}-${yyyy}`;
+    };
+    
+
     const data = jobPosts.map((j) => ({
       _id: j._id,
       company: j.companyId?.companyName ?? null,
@@ -642,8 +656,18 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
       workingShift: pickDisplay(j.workingShift),
        jobProfile: pickDisplay(j.jobProfile),
       status: j.status,
-      expiredDate: j.expiredDate,
-      isDeleted: j.isDeleted,
+
+       hourlyRate:        j.hourlyRate ?? null,
+      isAdminApproved:   !!j.isAdminApproved,
+      appliedCandidates: j.appliedCandidates ?? 0,
+      isActive:          !!j.isActive,
+      isSaved:           !!j.isSaved,
+      isLatest:          !!j.isLatest,
+      isApplied:         !!j.isApplied,
+
+
+       expiredDate: formatDateDDMMYYYY(j.expiredDate),
+     
     }));
 
     return res.status(200).json({

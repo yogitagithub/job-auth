@@ -2141,55 +2141,94 @@ exports.updateJobListById = async (req, res) => {
     }
 
 
-     // ---------- State/City update logic (robust) ----------
-    const hasState = Object.prototype.hasOwnProperty.call(req.body, "state");
-    const hasCity  = Object.prototype.hasOwnProperty.call(req.body, "city");
+   
+    // ---------- State/City update logic ----------
+const hasState = Object.prototype.hasOwnProperty.call(req.body, "state");
+const hasCity  = Object.prototype.hasOwnProperty.call(req.body, "city");
 
-    // resolve state by id or human name (case-insensitive)
-    const resolveState = async (input) => {
-      if (!input) return null;
-      if (mongoose.Types.ObjectId.isValid(input)) return StateCity.findById(input);
-      return StateCity.findOne({ state: { $regex: `^${escapeRegex(String(input))}$`, $options: "i" } });
-    };
+const resolveState = async (input) => {
+  if (!input) return null;
+  if (mongoose.Types.ObjectId.isValid(input)) return StateCity.findById(input);
+  return StateCity.findOne({
+    state: { $regex: `^${escapeRegex(String(input))}$`, $options: "i" }
+  });
+};
 
-    if (hasState) {
-      const stateDoc = await resolveState(state);
-      if (!stateDoc) {
-        return res.status(400).json({ status: false, message: "Invalid state." });
-      }
+// helper: canonical city from a state's list (case-insensitive)
+const findCanonicalCity = (stateDoc, cityVal) => {
+  if (!stateDoc || !Array.isArray(stateDoc.cities)) return null;
+  const norm = String(cityVal).trim().toLowerCase();
+  return stateDoc.cities.find(c => String(c).toLowerCase() === norm) || null;
+};
 
-      if (hasCity) {
-        const cityVal = String(city || "").trim();
-        if (!cityVal || !stateDoc.cities.includes(cityVal)) {
-          return res.status(400).json({ status: false, message: "Invalid city for the selected state." });
-        }
-        jobPost.city = cityVal; // valid pair
-      } else {
-        // If the stored city doesn't belong to the new state, clear it
-        const existingCity = jobPost.city;
-        if (existingCity && !stateDoc.cities.includes(existingCity)) {
-          jobPost.city = null;
-        }
-      }
+if (hasState) {
+  // explicit state provided
+  const stateDoc = await resolveState(state);
+  if (!stateDoc) {
+    return res.status(400).json({ status: false, message: "Invalid state." });
+  }
 
-      jobPost.state = stateDoc._id; // always store as ObjectId
+  if (hasCity) {
+    const cityVal = String(city || "").trim();
+    const canonical = cityVal ? findCanonicalCity(stateDoc, cityVal) : null;
+    if (cityVal && !canonical) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid city for the selected state.",
+        allowedCities: stateDoc.cities || []
+      });
+    }
+    jobPost.city = canonical ?? null; // allow clearing city by sending empty string
+  } else {
+    // if city kept but doesn't belong to the new state, clear it
+    const canonical = jobPost.city ? findCanonicalCity(stateDoc, jobPost.city) : null;
+    jobPost.city = canonical ?? null;
+  }
+
+  jobPost.state = stateDoc._id;
+}
+
+if (!hasState && hasCity) {
+  // only city provided
+  const cityVal = String(city || "").trim();
+
+  if (!cityVal) {
+    // explicit empty clears city; keep state as-is
+    jobPost.city = null;
+  } else {
+    let chosenState = null;
+    let canonical = null;
+
+    // 1) try within current stored state first (if any)
+    if (jobPost.state) {
+      const current = await StateCity.findById(jobPost.state);
+      canonical = current ? findCanonicalCity(current, cityVal) : null;
+      if (canonical) chosenState = current;
     }
 
-    if (!hasState && hasCity) {
-      // Validate city against the current stored state
-      if (!jobPost.state) {
-        return res.status(400).json({ status: false, message: "Cannot update city because state is missing on this job post." });
+    // 2) otherwise, infer state by searching all states that contain this city
+    if (!canonical) {
+      const matches = await StateCity.find({
+        cities: { $elemMatch: { $regex: new RegExp(`^${escapeRegex(cityVal)}$`, "i") } }
+      });
+
+      if (!matches || matches.length === 0) {
+        return res.status(400).json({
+          status: false,
+          message: "City not found in any state."
+        });
       }
-      const stateDoc = await StateCity.findById(jobPost.state);
-      if (!stateDoc) {
-        return res.status(400).json({ status: false, message: "Stored state not found." });
-      }
-      const cityVal = String(city || "").trim();
-      if (!cityVal || !stateDoc.cities.includes(cityVal)) {
-        return res.status(400).json({ status: false, message: "Invalid city for the stored state." });
-      }
-      jobPost.city = cityVal;
+
+      // If you prefer strictness, check matches.length > 1 and ask for state.
+      chosenState = matches[0];
+      canonical = findCanonicalCity(chosenState, cityVal);
     }
+
+    // update both state & city canonically
+    jobPost.state = chosenState._id;
+    jobPost.city  = canonical;
+  }
+}
 
 
     // ---------- Flags: allowed only if admin approved AND active ----------
@@ -2256,6 +2295,7 @@ exports.updateJobListById = async (req, res) => {
       .populate("otherField", "name")
       .populate("workingShift", "name")
       .populate("jobProfile", "name")
+       .populate({ path: "skills", select: "skill -_id" })
       .lean();
 
     const out = {
@@ -2273,6 +2313,12 @@ exports.updateJobListById = async (req, res) => {
       workingShift:  populated.workingShift?.name ?? null,
 
        jobProfile:  populated.jobProfile?.name ?? null,
+
+
+        skills: Array.isArray(populated.skills)
+  ? populated.skills.map(s =>
+      (s && typeof s === "object" && "skill" in s) ? s.skill : s
+     ).filter(Boolean)  : [],
 
       isAdminApproved: !!populated.isAdminApproved,
       isActive:        !!populated.isActive,
