@@ -54,6 +54,10 @@ const escapeRegex = (str = "") =>
   str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 
+const asNullableNumber = (v) =>
+  v === undefined || v === null || String(v).trim() === "" ? null : Number(v);
+
+
  exports.createJobPost = async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -87,17 +91,31 @@ jobProfile,
       maxSalary,
       displayPhoneNumber,
       displayEmail,
+
       hourlyRate,
       expiredDate
+
     } = req.body || {};
 
+      const normHourlyRate = asNullableNumber(hourlyRate);
+
     // quick required checks
-    const required = { category, industryType, salaryType, jobType, state, experience, otherField, workingShift, jobProfile };
+    const required = { category, industryType, salaryType, jobType, experience, otherField, workingShift };
     for (const [k, v] of Object.entries(required)) {
       if (!v || !String(v).trim()) {
         return res.status(400).json({ status: false, message: `${k} is required` });
       }
     }
+
+
+      // New rule: at least one of state or city must be provided
+    if ((!state || !String(state).trim()) && (!city || !String(city).trim())) {
+      return res.status(400).json({
+        status: false,
+        message: "Either state or city is required."
+      });
+    }
+
 
 
      // skills must be a non-empty array
@@ -124,13 +142,13 @@ jobProfile,
       industryTypeDoc,
       salaryTypeDoc,
       jobTypeDoc,
-      stateDoc,
+   
       
       experienceDoc,
       otherFieldDoc,
       workingShiftDoc,
     
-      jobProfileDoc
+     
     ] = await Promise.all([
 
       Category.findOne({ name: category }),
@@ -138,12 +156,12 @@ jobProfile,
       SalaryType.findOne({ name: salaryType, isDeleted: false }),
       JobType.findOne({ name: jobType, isDeleted: false }),
       
-      StateCity.findOne({ state }),
+    
       Experience.findOne({ name: experience, isDeleted: false }), 
       OtherField.findOne({ name: otherField, isDeleted: false }),
       WorkingShift.findOne({ name: workingShift, isDeleted: false }),
      
-        JobProfile.findOne({ name: jobProfile, isDeleted: false })
+       
     ]);
 
     if (!categoryDoc)     return res.status(400).json({ status: false, message: "Invalid category name." });
@@ -152,29 +170,72 @@ jobProfile,
     if (!jobTypeDoc)      return res.status(400).json({ status: false, message: "Invalid or deleted job type name." });
    
 
-    if (!stateDoc)        return res.status(400).json({ status: false, message: "Invalid state name." });
+    // if (!stateDoc)        return res.status(400).json({ status: false, message: "Invalid state name." });
     if (!experienceDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted experience name." });
     if (!otherFieldDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted other field name." });
     if (!workingShiftDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted working shift name." });
-   if (!jobProfileDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted job profile name." });
 
 
-    // --- CITY VALIDATION (optional) ---
-    let cityToSave;
+
+     // --- Resolve state & validate/normalize city ---
+    let stateDoc = null;
+    let cityToSave = undefined;
+
+    // If state provided, fetch it
+    if (state && String(state).trim()) {
+      stateDoc = await StateCity.findOne({ state: String(state).trim() });
+      if (!stateDoc) {
+        return res.status(400).json({ status: false, message: "Invalid state name." });
+      }
+    }
+
     if (city && String(city).trim()) {
-      const norm = String(city).trim().toLowerCase();
-      const allowed = (stateDoc.cities || []).find(c => String(c).toLowerCase() === norm);
+      const normCity = String(city).trim().toLowerCase();
+
+      // If state missing, infer state from city
+      if (!stateDoc) {
+        stateDoc = await StateCity.findOne({
+          cities: { $elemMatch: { $regex: new RegExp(`^${escapeRegex(city)}$`, "i") } }
+        });
+        if (!stateDoc) {
+          return res.status(400).json({
+            status: false,
+            message: "City not found in any state.",
+          });
+        }
+      }
+
+      // Validate city is in this state's cities and canonicalize casing
+      const allowed = (stateDoc.cities || []).find(c => String(c).toLowerCase() === normCity);
       if (!allowed) {
+        // City provided but not in the resolved state
         return res.status(400).json({
           status: false,
           message: "Invalid city for selected state.",
           allowedCities: stateDoc.cities || []
         });
       }
-      // Use canonical capitalization from DB
-      cityToSave = allowed;
+      cityToSave = allowed; // canonical capitalization from DB
     }
 
+
+      // jobProfile is optional: only lookup/validate when user sent a non-empty value
+    let jobProfileDoc = null;
+    if (jobProfile && String(jobProfile).trim()) {
+      jobProfileDoc = await JobProfile.findOne({
+        name: jobProfile,
+        isDeleted: false,
+      });
+      if (!jobProfileDoc) {
+        return res.status(400).json({
+          status: false,
+          message: "Invalid or deleted job profile name.",
+        });
+      }
+    }
+
+
+   
 
 
     // ---------- skills: accept names and/or ObjectIds ----------
@@ -229,6 +290,14 @@ const skillsNames = allSkillDocs.map(d => d.skill);
       return res.status(400).json({ status: false, message: "Invalid expiredDate." });
     }
 
+
+        // Safety: by here stateDoc must exist (either provided or inferred)
+    if (!stateDoc) {
+      return res.status(400).json({ status: false, message: "Unable to resolve state. Provide a valid state or city." });
+    }
+
+
+
     // create job (save ObjectIds)
     const jobPost = await JobPost.create({
       userId,
@@ -238,14 +307,18 @@ const skillsNames = allSkillDocs.map(d => d.skill);
       salaryType: salaryTypeDoc._id,
       jobType: jobTypeDoc._id,
        skills: skillsIds,   
-      state: stateDoc._id,
-      city: cityToSave,
+
+
+        state: stateDoc._id,              // <- resolved from state or inferred from city
+      city: cityToSave,   
+      
+      
       experience: experienceDoc._id,
       otherField: otherFieldDoc._id,
       workingShift: workingShiftDoc._id,
     
-       jobProfile: jobProfileDoc._id,
-
+   
+       jobProfile: jobProfileDoc ? jobProfileDoc._id : null,
 
       jobTitle,
       jobDescription,
@@ -254,7 +327,9 @@ const skillsNames = allSkillDocs.map(d => d.skill);
       maxSalary,
       displayPhoneNumber,
       displayEmail,
-      hourlyRate,
+
+       hourlyRate: normHourlyRate,
+
       expiredDate: expiry,
       status: "active",
 
@@ -277,7 +352,9 @@ const skillsNames = allSkillDocs.map(d => d.skill);
         // return friendly names (you sent names; ids saved internally)
         category: categoryDoc.name,
         industryType: industryTypeDoc.name,
-        state: stateDoc.state,
+
+
+         state: stateDoc.state,                 // <- inferred or provided
         city: cityToSave || null,
 
         salaryType: salaryTypeDoc.name,
@@ -289,16 +366,23 @@ const skillsNames = allSkillDocs.map(d => d.skill);
         otherField: otherFieldDoc.name,
         workingShift: workingShiftDoc.name,
        
-        jobProfile: jobProfileDoc.name,
+         jobProfile: jobProfileDoc ? jobProfileDoc.name : null,
+
+      
 
         jobTitle: jobPost.jobTitle,
         jobDescription: jobPost.jobDescription,
-      
+
+        hourlyRate: jobPost.hourlyRate ?? null,
+
         minSalary: jobPost.minSalary,
         maxSalary: jobPost.maxSalary,
         displayPhoneNumber: jobPost.displayPhoneNumber,
         displayEmail: jobPost.displayEmail,
-        hourlyRate: jobPost.hourlyRate,
+
+      
+
+
         status: jobPost.status,
         expiredDate: formattedExpiredDate,
         jobPosted: daysAgo(jobPost.createdAt)
