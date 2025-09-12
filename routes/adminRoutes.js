@@ -19,7 +19,7 @@ createSkill, getSkill, updateSkill, deleteSkill, getJobPostsByCategoryPublic,
 createAccountType, updateAccountType, deleteAccountType, getAccountTypes } = require('../controllers/adminController');
 
 const { verifyToken, verifyAdmin, verifyEmployerOnly, verifyJobSeekerOnly } = require('../middleware/authMiddleware');
-const { adminApproveJobPost, getJobList, updateJobListById } = require('../controllers/jobPostController');
+const { adminApproveJobPost, getJobList, updateJobListById, adminRecommendJobPost } = require('../controllers/jobPostController');
 
 
 router.post('/send-otp', sendAdminOtp);
@@ -103,6 +103,7 @@ router.get("/get-working-shift", verifyToken, verifyAdmin, getWorkingShift);
 router.put('/job-post-approve', verifyToken, verifyAdmin, adminApproveJobPost);
 router.get('/job-list', verifyToken, verifyAdmin, getJobList);
 router.put('/update-job-post', verifyToken, verifyAdmin, updateJobListById);
+router.put('/job-post-recommended', verifyToken, verifyAdmin, adminRecommendJobPost);
 
 
 //skill set

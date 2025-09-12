@@ -401,7 +401,7 @@ const skillsNames = allSkillDocs.map(d => d.skill);
 };
 
 
-
+//admin can only approve job post
 exports.adminApproveJobPost = async (req, res) => {
   try {
     const { role } = req.user || {};
@@ -460,6 +460,210 @@ exports.adminApproveJobPost = async (req, res) => {
   } catch (err) {
     console.error("adminApproveJobPost error:", err);
     return res.status(500).json({ status: false, message: "Server error", error: err.message });
+  }
+};
+
+
+
+
+//admin can only recommend job post
+exports.adminRecommendJobPost = async (req, res) => {
+  try {
+    const { role } = req.user || {};
+    if (role !== "admin") {
+      return res.status(403).json({ status: false, message: "Only admin can recommend job posts." });
+    }
+
+    const { id, adminRecommended } = req.body || {};
+    if (!id || !mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ status: false, message: "Valid job post id is required." });
+    }
+
+    const post = await JobPost.findById(id);
+
+    // 1) Not found
+    if (!post) {
+      return res.status(404).json({ status: false, message: "Job post not found." });
+    }
+
+    // 2) Found but already soft-deleted
+    if (post.isDeleted === true) {
+      return res.status(400).json({
+        status: false,
+        message: "This job post has been soft deleted and cannot be recommended."
+      });
+    }
+
+    // Default to true (approve) if omitted
+    const nextVal = (typeof adminRecommended === "boolean") ? adminRecommended : true;
+
+    // Can only APPROVE when status is ACTIVE
+    if (nextVal === true && post.status !== "active") {
+      return res.status(400).json({
+        status: false,
+        message: `Cannot recommend job post while status is '${post.status}'.`
+      });
+    }
+
+    // Idempotent response if no actual change
+    if (post.adminRecommended === nextVal) {
+      return res.status(200).json({
+        status: true,
+        message: nextVal ? "Job post is already recommended." : "Job post recommendation is already revoked.",
+        data: { id: post._id, adminRecommended: post.adminRecommended, status: post.status }
+      });
+    }
+
+    post.adminRecommended = nextVal;
+    await post.save();
+
+    return res.status(200).json({
+      status: true,
+      message: nextVal ? "Job post recommended." : "Job post recommendation revoked.",
+      data: { id: post._id, adminRecommended: post.adminRecommended, status: post.status }
+    });
+  } catch (err) {
+    console.error("adminRecommendJobPost error:", err);
+    return res.status(500).json({ 
+      status: false, 
+      message: "Server error", error: err.message 
+    });
+  }
+};
+
+
+
+
+//get recommended job list for job seekers only
+exports.getRecommendedJobs = async (req, res) => {
+  try {
+    const { role } = req.user || {};
+    if (role !== "job_seeker") {
+      return res.status(403).json({
+        status: false,
+        message: "Only job seekers can access recommended job posts."
+      });
+    }
+
+    // ---- pagination ----
+    const page  = Math.max(parseInt(req.query.page, 10)  || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+    const skip  = (page - 1) * limit;
+
+    // ---- filter ----
+    const filter = { adminRecommended: true, status: "active", isDeleted: false };
+
+    // ---- count ----
+    const totalRecord = await JobPost.countDocuments(filter);
+    const totalPage   = Math.max(Math.ceil(totalRecord / limit), 1);
+
+    // Helper to pick a reasonable display name from various ref schemas
+    const pickName = (obj) =>
+      obj?.name ?? obj?.title ?? obj?.label ?? obj?.range ?? obj?.experience ?? null;
+
+    
+
+    // helper: format Date -> "dd-mm-yyyy"
+const formatDDMMYYYY = (d) => {
+  if (!d) return null;
+  const dt = new Date(d);
+  const dd = String(dt.getDate()).padStart(2, "0");
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const yyyy = dt.getFullYear();
+  return `${dd}-${mm}-${yyyy}`;
+};
+
+
+
+
+    // ---- query + populate ----
+    const posts = await JobPost.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      // select only fields you need from JobPost
+      .select(`
+        userId companyId category industryType jobTitle jobDescription salaryType
+        displayPhoneNumber displayEmail jobType skills minSalary maxSalary state city
+        experience otherField workingShift jobProfile status hourlyRate expiredDate
+        isApplied isLatest isSaved isActive appliedCandidates isAdminApproved
+        adminRecommended
+      `)
+      // populate minimal fields to flatten later
+      .populate("companyId", "companyName image")
+      .populate("category", "name")
+      .populate("industryType", "name")
+      .populate("jobType", "name")
+      .populate("skills", "skill")
+      .populate("state", "state name")          // handle either schema: state/state.name
+      .populate("workingShift", "name title")
+      .populate("otherField", "name title")
+      .populate("experience", "name label range experience title")
+       .populate("salaryType", "name title label")
+      .lean();
+
+    // ---- shape/flatten the payload ----
+    const data = posts.map(p => ({
+      _id: p._id,
+      userId: p.userId,
+
+      // company
+      companyName: p.companyId?.companyName ?? null,
+    companyImage: p.companyId?.image ?? null, 
+      // simple strings (no nested object)
+      category: pickName(p.category),
+      industryType: pickName(p.industryType),
+      jobType: pickName(p.jobType),
+      workingShift: pickName(p.workingShift),
+      otherField: pickName(p.otherField),
+      experience: pickName(p.experience),
+
+      // state can be 'state' or 'name' depending on your StateCity schema
+      state: p.state?.state ?? p.state?.name ?? null,
+
+      // skills as array of strings
+      skills: Array.isArray(p.skills) ? p.skills.map(s => s?.skill).filter(Boolean) : [],
+
+      // passthrough fields you still want
+      jobTitle: p.jobTitle,
+      jobDescription: p.jobDescription,
+      salaryType: pickName(p.salaryType),     
+                   // if you want its name, also populate SalaryType and use pickName
+      displayPhoneNumber: p.displayPhoneNumber,
+      displayEmail: p.displayEmail,
+      minSalary: p.minSalary,
+      maxSalary: p.maxSalary,
+      city: p.city,
+      jobProfile: p.jobProfile ?? null,     // populate + pickName if you need its label
+      status: p.status,
+      hourlyRate: p.hourlyRate,
+     expiredDate: formatDDMMYYYY(p.expiredDate), 
+      isApplied: p.isApplied,
+      isLatest: p.isLatest,
+      isSaved: p.isSaved,
+      isActive: p.isActive,
+      appliedCandidates: p.appliedCandidates,
+      isAdminApproved: p.isAdminApproved,
+      adminRecommended: p.adminRecommended,
+     
+    }));
+
+    return res.status(200).json({
+      status: true,
+      message: "Recommended job posts fetched successfully.",
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data
+    });
+
+  } catch (err) {
+    console.error("getRecommendedJobs error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Server error",
+      error: err.message
+    });
   }
 };
 

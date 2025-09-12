@@ -35,6 +35,7 @@ const jobPostSchema = new mongoose.Schema(
     jobTitle: {
       type: String,
       trim: true,
+       required: true
     },
     
 
@@ -184,6 +185,14 @@ skills: [
       type: Boolean,
       default: false
     },
+
+
+    
+      adminRecommended: {
+      type: Boolean,
+      default: false
+    },
+
 
     isDeleted: {
       type: Boolean,
