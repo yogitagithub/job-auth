@@ -20,7 +20,7 @@ createAccountType, updateAccountType, deleteAccountType, getAccountTypes } = req
 
 const { verifyToken, verifyAdmin, verifyEmployerOnly, verifyJobSeekerOnly } = require('../middleware/authMiddleware');
 const { adminApproveJobPost, getJobList, updateJobListById, adminRecommendJobPost } = require('../controllers/jobPostController');
-const { adminRecommendJobSeeker } = require('../controllers/jobSeekerController');
+const { adminRecommendJobSeeker, adminTopJobSeeker } = require('../controllers/jobSeekerController');
 
 
 router.post('/send-otp', sendAdminOtp);
@@ -130,6 +130,10 @@ router.get("/public-categories/:categoryId",verifyToken, verifyAdmin, getJobPost
 //admin recommended job seeker profiles
 router.put('/job-seeker-recommended', verifyToken, verifyAdmin, adminRecommendJobSeeker);
 
+
+
+//admin top job seeker profiles
+router.put('/job-seeker-top', verifyToken, verifyAdmin, adminTopJobSeeker);
 
 
 

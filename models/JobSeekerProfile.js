@@ -111,6 +111,13 @@ const profileSchema = new mongoose.Schema(
       default: false
     },
 
+
+
+     adminTopProfiles: {
+      type: Boolean,
+      default: false
+    },
+
     
 
   CurrentSalary: {
