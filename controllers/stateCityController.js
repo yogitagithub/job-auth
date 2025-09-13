@@ -50,23 +50,33 @@ exports.getAllStatesPublic = async (req, res) => {
   }
 };
 
+
+
+
 exports.getCitiesByStatePublic = async (req, res) => {
   try {
     const { state } = req.query;
 
-    // Case 1: state=null OR not provided -> return all cities
+    // helper: clean, dedupe, sort A→Z (case/accents insensitive)
+    const tidySort = (arr = []) => {
+      const cleaned = arr
+        .map(s => String(s || "").trim())
+        .filter(Boolean);
+      const deduped = Array.from(new Set(cleaned));
+      return deduped.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true }));
+    };
+
+    // Case 1: no state -> return all cities (flattened, sorted)
     if (!state || state === "null") {
       const allStates = await StateCity.find()
-        .select("state cities -_id")
+        .select("cities -_id")
         .lean();
 
-      // flatten all cities
       const allCities = allStates.flatMap(s => s.cities || []);
-
       return res.status(200).json({
         status: true,
         message: "All cities fetched successfully.",
-        data: allCities
+        data: tidySort(allCities)
       });
     }
 
@@ -76,9 +86,7 @@ exports.getCitiesByStatePublic = async (req, res) => {
       .lean();
 
     if (!result) {
-      return res
-        .status(404)
-        .json({ status: false, message: "State not found" });
+      return res.status(404).json({ status: false, message: "State not found" });
     }
 
     return res.status(200).json({
@@ -86,7 +94,7 @@ exports.getCitiesByStatePublic = async (req, res) => {
       message: "Cities fetched successfully.",
       data: {
         state: result.state,
-        cities: result.cities || []
+        cities: tidySort(result.cities)
       }
     });
   } catch (error) {
