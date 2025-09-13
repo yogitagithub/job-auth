@@ -300,7 +300,8 @@ exports.getProfile = async (req, res) => {
       state: p.state?.state || null,
       city: p.city,
       pincode: p.pincode,
-      image: p.image || null
+      image: p.image || null,
+       aboutCompany: p.aboutCompany ?? null
     };
 
     return res.status(200).json({
