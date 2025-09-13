@@ -6,6 +6,9 @@ const mongoose = require("mongoose");
 
 const tidy = s => String(s || "").trim().replace(/\s+/g, " ");
 
+
+
+
 exports.addMySkills = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -19,6 +22,7 @@ exports.addMySkills = async (req, res) => {
     let names = Array.isArray(req.body?.skills) ? req.body.skills : [];
     names = names.map(tidy).filter(Boolean);
 
+    // dedupe by lowercase
     const seen = new Set();
     names = names.filter(n => {
       const k = n.toLowerCase();
@@ -38,11 +42,13 @@ exports.addMySkills = async (req, res) => {
       return res.status(400).json({ status: false, message: "Please complete your profile before adding skills." });
     }
 
-    // resolve only admin-approved (active) skills
+    // resolve only admin-approved skills
     const found = await Skill.find({
       isDeleted: false,
       skill: { $in: names }
-    }).collation({ locale: "en", strength: 2 }).session(session);
+    })
+      .collation({ locale: "en", strength: 2 })
+      .session(session);
 
     const byNorm = new Map(found.map(s => [tidy(s.skill).toLowerCase(), s]));
     const acceptedDocs = [];
@@ -53,10 +59,7 @@ exports.addMySkills = async (req, res) => {
 
     if (!acceptedDocs.length) {
       await session.abortTransaction(); session.endSession();
-      return res.status(422).json({
-        status: false,
-        message: "No valid skills found in admin list."
-      });
+      return res.status(422).json({ status: false, message: "No valid skills found in admin list." });
     }
 
     let jss = await JobSeekerSkill.findOne({ userId }).session(session);
@@ -84,6 +87,7 @@ exports.addMySkills = async (req, res) => {
       });
     }
 
+    // 1) Update JobSeekerSkill
     if (toAddIds.length) {
       await JobSeekerSkill.updateOne(
         { _id: jss._id },
@@ -91,11 +95,21 @@ exports.addMySkills = async (req, res) => {
         { session }
       );
 
-      const incOps = toAddIds.map(_id => ({
-        updateOne: { filter: { _id }, update: { $inc: { count: 1 } } }
-      }));
-      await Skill.bulkWrite(incOps, { session });
+      // increment per-skill counters (optional)
+      if (toAddIds.length) {
+        const incOps = toAddIds.map(_id => ({
+          updateOne: { filter: { _id }, update: { $inc: { count: 1 } } }
+        }));
+        await Skill.bulkWrite(incOps, { session });
+      }
     }
+
+    // 2) Flip the profile flag based on finalTotal (>= 3)
+    await JobSeekerProfile.updateOne(
+      { _id: jsProfile._id, isDeleted: false },
+      { $set: { isSkillsAdded: finalTotal >= 3 } },
+      { session }
+    );
 
     await session.commitTransaction(); session.endSession();
 
@@ -104,7 +118,8 @@ exports.addMySkills = async (req, res) => {
       message: toAddIds.length
         ? "Skills added successfully."
         : "All provided skills were already added earlier.",
-      data: acceptedDocs.map(s => s.skill)
+      data: acceptedDocs.map(s => s.skill),
+     
     });
 
   } catch (err) {
@@ -112,6 +127,7 @@ exports.addMySkills = async (req, res) => {
     return res.status(500).json({ status: false, message: "Error adding skills", error: err.message });
   }
 };
+
 
 
 

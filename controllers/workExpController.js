@@ -2,33 +2,26 @@ const WorkExperience = require("../models/WorkExperience");
 const JobSeekerProfile = require("../models/JobSeekerProfile");
 const mongoose = require("mongoose");
 
+
+
+
 exports.createWorkExp = async (req, res) => {
+  const session = await mongoose.startSession();
   try {
-    const { userId, role } = req.user;
+    const { userId, role } = req.user || {};
 
     if (role !== "job_seeker") {
-      return res.status(403).json({
-        status: false,
-        message: "Only job seekers can add their work experience.",
-      });
+      return res.status(403).json({ status: false, message: "Only job seekers can add their work experience." });
     }
 
-    const jobSeekerProfile = await JobSeekerProfile.findOne({ userId });
-
+    const jobSeekerProfile = await JobSeekerProfile.findOne({ userId }).session(session);
     if (!jobSeekerProfile) {
-      return res.status(400).json({
-        status: false,
-        message: "Please complete your job seeker profile first.",
-      });
+      return res.status(400).json({ status: false, message: "Please complete your job seeker profile first." });
     }
 
     const body = req.body;
-
     if (!body || (Array.isArray(body) && body.length === 0)) {
-      return res.status(400).json({
-        status: false,
-        message: "No experience data provided.",
-      });
+      return res.status(400).json({ status: false, message: "No experience data provided." });
     }
 
     const experiencesToAdd = Array.isArray(body) ? body : [body];
@@ -36,28 +29,92 @@ exports.createWorkExp = async (req, res) => {
     const sanitizedExperiences = experiencesToAdd.map((exp) => ({
       userId,
       jobSeekerId: jobSeekerProfile._id,
-      companyName: exp.companyName?.trim() === "" ? null : exp.companyName ?? null,
-      jobTitle: exp.jobTitle?.trim() === "" ? null : exp.jobTitle ?? null,
-      sessionFrom: exp.sessionFrom?.trim?.() === "" ? null : exp.sessionFrom ?? null,
-      sessionTo: exp.sessionTo?.trim?.() === "" ? null : exp.sessionTo ?? null,
-      roleDescription: exp.roleDescription?.trim() === "" ? null : exp.roleDescription ?? null,
+      companyName: (exp.companyName?.trim?.() || null),
+      jobTitle: (exp.jobTitle?.trim?.() || null),
+      sessionFrom: (exp.sessionFrom?.trim?.() || null),
+      sessionTo: (exp.sessionTo?.trim?.() || null),
+      roleDescription: (exp.roleDescription?.trim?.() || null),
+      // add other fields as per your schema
     }));
 
-    await WorkExperience.insertMany(sanitizedExperiences);
+    await session.withTransaction(async () => {
+      // 1) create experiences
+      await WorkExperience.insertMany(sanitizedExperiences, { session });
 
-    return res.status(201).json({
-      status: true,
-      message: "Work experience records saved successfully.",
+      // 2) flip flags on the profile
+      await JobSeekerProfile.updateOne(
+        { _id: jobSeekerProfile._id, isDeleted: false },
+        { $set: { isExperienceAdded: true, isExperienced: true } }, // isExperienced optional; remove if you don’t want it auto-set
+        { session }
+      );
     });
+
+    return res.status(201).json({ status: true, message: "Work experience records saved successfully." });
   } catch (error) {
     console.error("Error saving work experience:", error);
-    res.status(500).json({
-      status: false,
-      message: "Server error.",
-      error: error.message,
-    });
+    return res.status(500).json({ status: false, message: "Server error.", error: error.message });
+  } finally {
+    session.endSession();
   }
 };
+
+
+// exports.createWorkExp = async (req, res) => {
+//   try {
+//     const { userId, role } = req.user;
+
+//     if (role !== "job_seeker") {
+//       return res.status(403).json({
+//         status: false,
+//         message: "Only job seekers can add their work experience.",
+//       });
+//     }
+
+//     const jobSeekerProfile = await JobSeekerProfile.findOne({ userId });
+
+//     if (!jobSeekerProfile) {
+//       return res.status(400).json({
+//         status: false,
+//         message: "Please complete your job seeker profile first.",
+//       });
+//     }
+
+//     const body = req.body;
+
+//     if (!body || (Array.isArray(body) && body.length === 0)) {
+//       return res.status(400).json({
+//         status: false,
+//         message: "No experience data provided.",
+//       });
+//     }
+
+//     const experiencesToAdd = Array.isArray(body) ? body : [body];
+
+//     const sanitizedExperiences = experiencesToAdd.map((exp) => ({
+//       userId,
+//       jobSeekerId: jobSeekerProfile._id,
+//       companyName: exp.companyName?.trim() === "" ? null : exp.companyName ?? null,
+//       jobTitle: exp.jobTitle?.trim() === "" ? null : exp.jobTitle ?? null,
+//       sessionFrom: exp.sessionFrom?.trim?.() === "" ? null : exp.sessionFrom ?? null,
+//       sessionTo: exp.sessionTo?.trim?.() === "" ? null : exp.sessionTo ?? null,
+//       roleDescription: exp.roleDescription?.trim() === "" ? null : exp.roleDescription ?? null,
+//     }));
+
+//     await WorkExperience.insertMany(sanitizedExperiences);
+
+//     return res.status(201).json({
+//       status: true,
+//       message: "Work experience records saved successfully.",
+//     });
+//   } catch (error) {
+//     console.error("Error saving work experience:", error);
+//     res.status(500).json({
+//       status: false,
+//       message: "Server error.",
+//       error: error.message,
+//     });
+//   }
+// };
 
 exports.getMyWorkExp = async (req, res) => {
   try {

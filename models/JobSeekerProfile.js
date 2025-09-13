@@ -8,14 +8,17 @@ const profileSchema = new mongoose.Schema(
         ref: "User",
         required: true
       },
+      
       phoneNumber: {
         type: String,
         required: true
       },
+
        image: {
     type: String,
     trim: true
    },
+
     name: {
       type: String,
       trim: true,
@@ -89,16 +92,26 @@ const profileSchema = new mongoose.Schema(
   },
 
 
-  isExperienced: { 
+  isExperienced: {   
     type: Boolean, 
     default: false 
   },
+
+
+ 
 
    isResumeAdded:     { type: Boolean, default: false },
     isEducationAdded:  { type: Boolean, default: false },
     isSkillsAdded:     { type: Boolean, default: false },
     isExperienceAdded: { type: Boolean, default: false },
 
+
+     adminRecommendedSeeker: {
+      type: Boolean,
+      default: false
+    },
+
+    
 
   CurrentSalary: {
     type: Number,

@@ -3,64 +3,121 @@ const JobSeekerProfile = require("../models/JobSeekerProfile");
 const mongoose = require("mongoose");
 
 
+
+
 exports.createEducation = async (req, res) => {
+  const session = await mongoose.startSession();
   try {
-    const { userId, role } = req.user;
+    const { userId, role } = req.user || {};
 
     if (role !== "job_seeker") {
-      return res.status(403).json({
-        status: false,
-        message: "Only job seekers can add education.",
-      });
+      return res.status(403).json({ status: false, message: "Only job seekers can add education." });
     }
 
-    const jobSeekerProfile = await JobSeekerProfile.findOne({ userId });
-
+    const jobSeekerProfile = await JobSeekerProfile.findOne({ userId }).session(session);
     if (!jobSeekerProfile) {
-      return res.status(400).json({
-        status: false,
-        message: "Please complete your job seeker profile first.",
-      });
+      return res.status(400).json({ status: false, message: "Please complete your job seeker profile first." });
     }
 
     const body = req.body;
-
     if (!body || (Array.isArray(body) && body.length === 0)) {
-      return res.status(400).json({
-        status: false,
-        message: "No education data provided.",
-      });
+      return res.status(400).json({ status: false, message: "No education data provided." });
     }
 
     const educationsToAdd = Array.isArray(body) ? body : [body];
 
-    
     const sanitizedEducations = educationsToAdd.map((edu) => ({
       userId,
       jobSeekerId: jobSeekerProfile._id,
-      degree: edu.degree?.trim() === "" ? null : edu.degree ?? null,
-      boardOfUniversity: edu.boardOfUniversity?.trim() === "" ? null : edu.boardOfUniversity ?? null,
-      sessionFrom: edu.sessionFrom?.trim?.() === "" ? null : edu.sessionFrom ?? null,
-      sessionTo: edu.sessionTo?.trim?.() === "" ? null : edu.sessionTo ?? null,
-      marks: edu.marks?.trim() === "" ? null : edu.marks ?? null,
-      gradeOrPercentage: edu.gradeOrPercentage?.trim() === "" ? null : edu.gradeOrPercentage ?? null,
+      degree: (edu.degree?.trim?.() || null),
+      boardOfUniversity: (edu.boardOfUniversity?.trim?.() || null),
+      sessionFrom: (edu.sessionFrom?.trim?.() || null),
+      sessionTo: (edu.sessionTo?.trim?.() || null),
+      marks: (edu.marks?.toString?.().trim?.() || null),
+      gradeOrPercentage: (edu.gradeOrPercentage?.toString?.().trim?.() || null),
     }));
 
-    await JobSeekerEducation.insertMany(sanitizedEducations);
+    await session.withTransaction(async () => {
+      // 1) Insert education rows
+      await JobSeekerEducation.insertMany(sanitizedEducations, { session });
 
-    res.status(201).json({
-      status: true,
-      message: "Education records saved successfully.",
+      // 2) Flip the flag on profile
+      await JobSeekerProfile.updateOne(
+        { _id: jobSeekerProfile._id, isDeleted: false },
+        { $set: { isEducationAdded: true } },
+        { session }
+      );
     });
+
+    return res.status(201).json({ status: true, message: "Education records saved successfully." });
   } catch (error) {
     console.error("Error saving education:", error);
-    res.status(500).json({
-      status: false,
-      message: "Server error.",
-      error: error.message,
-    });
+    return res.status(500).json({ status: false, message: "Server error.", error: error.message });
+  } finally {
+    session.endSession();
   }
 };
+
+
+
+// exports.createEducation = async (req, res) => {
+//   try {
+//     const { userId, role } = req.user;
+
+//     if (role !== "job_seeker") {
+//       return res.status(403).json({
+//         status: false,
+//         message: "Only job seekers can add education.",
+//       });
+//     }
+
+//     const jobSeekerProfile = await JobSeekerProfile.findOne({ userId });
+
+//     if (!jobSeekerProfile) {
+//       return res.status(400).json({
+//         status: false,
+//         message: "Please complete your job seeker profile first.",
+//       });
+//     }
+
+//     const body = req.body;
+
+//     if (!body || (Array.isArray(body) && body.length === 0)) {
+//       return res.status(400).json({
+//         status: false,
+//         message: "No education data provided.",
+//       });
+//     }
+
+//     const educationsToAdd = Array.isArray(body) ? body : [body];
+
+    
+//     const sanitizedEducations = educationsToAdd.map((edu) => ({
+//       userId,
+//       jobSeekerId: jobSeekerProfile._id,
+//       degree: edu.degree?.trim() === "" ? null : edu.degree ?? null,
+//       boardOfUniversity: edu.boardOfUniversity?.trim() === "" ? null : edu.boardOfUniversity ?? null,
+//       sessionFrom: edu.sessionFrom?.trim?.() === "" ? null : edu.sessionFrom ?? null,
+//       sessionTo: edu.sessionTo?.trim?.() === "" ? null : edu.sessionTo ?? null,
+//       marks: edu.marks?.trim() === "" ? null : edu.marks ?? null,
+//       gradeOrPercentage: edu.gradeOrPercentage?.trim() === "" ? null : edu.gradeOrPercentage ?? null,
+//     }));
+
+//     await JobSeekerEducation.insertMany(sanitizedEducations);
+
+//     res.status(201).json({
+//       status: true,
+//       message: "Education records saved successfully.",
+//     });
+//   } catch (error) {
+//     console.error("Error saving education:", error);
+//     res.status(500).json({
+//       status: false,
+//       message: "Server error.",
+//       error: error.message,
+//     });
+//   }
+// };
 
 exports.getMyEducation = async (req, res) => {
   try {

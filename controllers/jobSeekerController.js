@@ -659,3 +659,204 @@ jobProfile: seeker.jobProfile?.name || null,
   }
 };
 
+
+//admin recommended job seeker profiles
+exports.adminRecommendJobSeeker = async (req, res) => {
+  try {
+    const { role } = req.user || {};
+    if (role !== "admin") {
+      return res.status(403).json({ status: false, message: "Only admin can recommend job posts." });
+    }
+
+    const { id, adminRecommendJobSeeker } = req.body || {};
+    if (!id || !mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ status: false, message: "Valid job post id is required." });
+    }
+
+    const profile = await JobSeekerProfile.findById(id);
+
+    // 1) Not found
+    if (!profile) {
+      return res.status(404).json({ status: false, message: "Job profile not found." });
+    }
+
+    // 2) Found but already soft-deleted
+    if (profile.isDeleted === true) {
+      return res.status(400).json({
+        status: false,
+        message: "This job profile has been soft deleted and cannot be recommended."
+      });
+    }
+
+    // Default to true (recommend) if omitted
+    const nextVal = (typeof adminRecommendJobSeeker === "boolean") ? adminRecommendJobSeeker : true;
+
+   
+
+      // If recommending (true), ensure all sections are completed
+    if (nextVal === true) {
+      const requiredFlags = ["isExperienceAdded", "isSkillsAdded", "isEducationAdded", "isResumeAdded"];
+      const missing = requiredFlags.filter(flag => !profile[flag]);
+
+      if (missing.length > 0) {
+        return res.status(409).json({
+          status: false,
+          message: "Cannot recommend: the following sections are incomplete.",
+          missingSections: missing
+        });
+      }
+    }
+
+
+       // Idempotent response
+    if (profile.adminRecommendedSeeker === nextVal) {
+      return res.status(200).json({
+        status: true,
+        message: nextVal
+          ? "Profile is already marked as admin-recommended."
+          : "Profile recommendation is already revoked.",
+        data: {
+          id: profile._id,
+          adminRecommendedSeeker: profile.adminRecommendedSeeker
+        }
+      });
+    }
+
+
+
+    profile.adminRecommendedSeeker = nextVal;
+    await profile.save();    
+
+
+
+    return res.status(200).json({
+      status: true,
+      message: nextVal ? "Profile marked as admin-recommended." : "Profile recommendation revoked.",
+      data: {
+        id: profile._id,
+        adminRecommendedSeeker: profile.adminRecommendedSeeker
+      }
+    });
+
+
+  } catch (err) {
+    console.error("adminRecommendJobPost error:", err);
+    return res.status(500).json({ 
+      status: false, 
+      message: "Server error", error: err.message 
+    });
+  }
+};
+
+
+
+
+
+const pickName = (obj) => obj?.name ?? obj?.title ?? obj?.label ?? null;
+
+
+const formatDDMMYYYY = (d) => {
+  if (!d) return null;
+  const dt = new Date(d);
+  const dd = String(dt.getDate()).padStart(2, "0");
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const yyyy = dt.getFullYear();
+  return `${dd}-${mm}-${yyyy}`;
+};
+
+//get recommended job profile list for employers only
+exports.getRecommendedProfiles = async (req, res) => {
+  try {
+    const { role } = req.user || {};
+    if (role !== "employer") {
+      return res.status(403).json({
+        status: false,
+        message: "Only employers can access recommended job seeker profiles."
+      });
+    }
+
+    // pagination
+    const page  = Math.max(parseInt(req.query.page, 10)  || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+    const skip  = (page - 1) * limit;
+
+    // base filter: recommended + active (not soft-deleted)
+    const filter = { adminRecommendedSeeker: true, isDeleted: false };
+
+    // count
+    const totalRecord = await JobSeekerProfile.countDocuments(filter);
+    const totalPage   = Math.max(Math.ceil(totalRecord / limit), 1);
+
+    // query
+    const profiles = await JobSeekerProfile.find(filter)
+      .sort({ updatedAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .select(`
+        userId image name gender email phoneNumber dateOfBirth
+        isExperienced CurrentSalary state city industryType jobProfile
+        isResumeAdded isEducationAdded isSkillsAdded isExperienceAdded
+        adminRecommendedSeeker alternatePhoneNumber panCardNumber address pincode
+      `)
+      .populate("industryType", "name")
+      .populate("jobProfile", "name title label")
+      .populate("state", "state name") // supports either field in your StateCity model
+      .lean();
+
+    // shape payload
+    const data = profiles.map(p => ({
+      _id: p._id,
+      userId: p.userId,
+      image: p.image ?? null,
+      name: p.name ?? null,
+      gender: p.gender ?? null,
+      dob: formatDDMMYYYY(p.dateOfBirth),
+      isExperienced: !!p.isExperienced,
+      currentSalary: p.CurrentSalary ?? null,
+
+        alternatePhoneNumber: p.alternatePhoneNumber ?? null,
+      panCardNumber: p.panCardNumber ?? null,
+
+      // location
+       address: p.address ?? null,
+        pincode: p.pincode ?? null,
+      state: p.state?.state ?? p.state?.name ?? null,
+      city: p.city ?? null,
+
+      // meta / taxonomy
+      industryType: pickName(p.industryType),
+      jobProfile: pickName(p.jobProfile),
+
+      // completion flags (useful for UI)
+      isResumeAdded: !!p.isResumeAdded,
+      isEducationAdded: !!p.isEducationAdded,
+      isSkillsAdded: !!p.isSkillsAdded,
+      isExperienceAdded: !!p.isExperienceAdded,
+
+      adminRecommendedSeeker: !!p.adminRecommendedSeeker,
+     
+
+      // expose contact if your product rules allow it:
+      email: p.email ?? null,
+      phoneNumber: p.phoneNumber ?? null
+    }));
+
+    return res.status(200).json({
+      status: true,
+      message: "Recommended job seeker profiles fetched successfully.",
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data
+    });
+  } catch (err) {
+    console.error("getRecommendedProfiles error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Server error",
+      error: err.message
+    });
+  }
+};
+
+

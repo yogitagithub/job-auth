@@ -2,105 +2,91 @@ const Resume = require("../models/Resume");
 const fs = require("fs");
 const path = require("path");
 const JobSeekerProfile = require("../models/JobSeekerProfile");
+const mongoose = require("mongoose");
+
+
 
 exports.createResume = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
-    const { userId, role } = req.user;
-
+    const { userId, role } = req.user || {};
     if (role !== "job_seeker") {
-      return res.status(403).json({
-        status: false,
-        message: "Only job seekers can upload resumes.",
-      });
+      await session.abortTransaction(); session.endSession();
+      return res.status(403).json({ status: false, message: "Only job seekers can upload resumes." });
     }
 
-    const jobSeekerProfile = await JobSeekerProfile.findOne({ userId });
-    if (!jobSeekerProfile) {
-      return res.status(400).json({
-        status: false,
-        message: "Please complete your job seeker profile first.",
-      });
+    const profile = await JobSeekerProfile.findOne({ userId, isDeleted: false })
+      .select("_id")
+      .session(session);
+
+    if (!profile) {
+      await session.abortTransaction(); session.endSession();
+      return res.status(400).json({ status: false, message: "Please complete your job seeker profile first." });
     }
 
     if (!req.file) {
-      return res.status(400).json({
-        status: false,
-        message: "No file uploaded.",
-      });
+      await session.abortTransaction(); session.endSession();
+      return res.status(400).json({ status: false, message: "No file uploaded." });
     }
 
-    // Fetch regardless of isDeleted so we can detect soft-deleted state
-    const existingResume = await Resume.findOne({ userId });
+    // Only consider active (not soft-deleted) resume for updates
+    const activeResume = await Resume.findOne({ userId, isDeleted: { $ne: true } }).session(session);
 
-    // If a resume exists but is soft-deleted, block the update
-    if (existingResume && existingResume.isDeleted === true) {
-      return res.status(400).json({
-        status: false,
-        message: "This resume has been soft deleted and cannot be updated. Please create a new resume entry.",
-      });
-    }
+    const fileUrl = `${process.env.BASE_URL}/uploads/resumes/${req.file.filename}`;
 
-    if (existingResume) {
-      // Delete old file if present (best-effort)
+    if (activeResume) {
+      // Best-effort delete of the previous file
       try {
-        const oldFilePath = path.join(
-          __dirname,
-          "..",
-          "uploads",
-          "resumes",
-          path.basename(existingResume.fileUrl || "")
-        );
-        if (oldFilePath && fs.existsSync(oldFilePath)) {
-          fs.unlinkSync(oldFilePath);
-        }
+        const prevName = path.basename(activeResume.fileUrl || "");
+        const prevPath = path.join(__dirname, "..", "uploads", "resumes", prevName);
+        if (prevName && fs.existsSync(prevPath)) fs.unlinkSync(prevPath);
       } catch (e) {
-        // don't fail the request because of filesystem issues
-        console.warn("Warning: Could not remove old resume file:", e.message);
+        console.warn("Could not remove old resume file:", e.message);
       }
 
-      // Update metadata
-      existingResume.fileUrl  = `${process.env.BASE_URL}/uploads/resumes/${req.file.filename}`;
-      existingResume.fileName = req.file.originalname;
-      existingResume.fileType = req.file.mimetype;
-      existingResume.fileSize = req.file.size;
-
-      await existingResume.save();
-
-      return res.status(200).json({
-        status: true,
-        message: "Resume updated successfully. Old resume deleted.",
-        data: { resume: existingResume.fileUrl },
-      });
+      // Update doc
+      activeResume.fileUrl = fileUrl;
+      activeResume.fileName = req.file.originalname;
+      activeResume.fileType = req.file.mimetype;
+      activeResume.fileSize = req.file.size;
+      activeResume.isDeleted = false; // ensure active
+      await activeResume.save({ session });
+    } else {
+      // Create new
+      await Resume.create([{
+        userId,
+        jobSeekerId: profile._id,
+        fileUrl,
+        fileName: req.file.originalname,
+        fileType: req.file.mimetype,
+        fileSize: req.file.size,
+        isDeleted: false
+      }], { session });
     }
 
-    // No previous resume -> create new
-    const fileUrl = `${process.env.BASE_URL}/uploads/resumes/${req.file.filename}`;
-    const newResume = new Resume({
-      userId,
-      jobSeekerId: jobSeekerProfile._id,
-      fileUrl,
-      fileName: req.file.originalname,
-      fileType: req.file.mimetype,
-      fileSize: req.file.size,
-    });
+    // Flip profile flag
+    await JobSeekerProfile.updateOne(
+      { _id: profile._id },
+      { $set: { isResumeAdded: true } },
+      { session }
+    );
 
-    await newResume.save();
+    await session.commitTransaction(); session.endSession();
 
     return res.status(200).json({
       status: true,
-      message: "Resume uploaded successfully.",
-      data: { resume: newResume.fileUrl },
+      message: activeResume ? "Resume updated successfully." : "Resume uploaded successfully.",
+      data: { resume: fileUrl }
     });
 
   } catch (error) {
+    await session.abortTransaction(); session.endSession();
     console.error("Error uploading resume:", error);
-    return res.status(500).json({
-      status: false,
-      message: "Server error.",
-      error: error.message,
-    });
+    return res.status(500).json({ status: false, message: "Server error.", error: error.message });
   }
 };
+
 
 exports.getMyResume = async (req, res) => {
   try {
