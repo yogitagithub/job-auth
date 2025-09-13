@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const { saveProfile, getProfile, updateProfileImage, getProfileImage, 
-  deleteProfile, getAllJobSeekers, getRecommendedProfiles, getTopProfiles } = require('../controllers/jobSeekerController');
+  deleteProfile, getAllJobSeekers, getRecommendedProfiles, getTopProfiles, getProfileProgress } = require('../controllers/jobSeekerController');
 const { verifyToken } = require('../middleware/authMiddleware');
 const uploadImage = require('../middleware/uploadImage');
 
@@ -29,6 +29,11 @@ router.get('/recommended-profiles', verifyToken, getRecommendedProfiles);
 
 //get top job profile list for employers only
 router.get('/top-profiles', verifyToken, getTopProfiles);
+
+
+//get progress bar for job seeker profile completion
+router.get('/progress-bar', verifyToken, getProfileProgress);
+
 
 
 

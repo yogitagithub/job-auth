@@ -841,96 +841,6 @@ exports.adminTopJobSeeker = async (req, res) => {
 
 
 
-// exports.adminTopJobSeeker = async (req, res) => {
-//   try {
-//     const { role } = req.user || {};
-//     if (role !== "admin") {
-//       return res.status(403).json({ status: false, message: "Only admin can recommend job profiles." });
-//     }
-
-//     const { id, adminTopProfiles } = req.body || {};
-//     if (!id || !mongoose.isValidObjectId(id)) {
-//       return res.status(400).json({ status: false, message: "Valid job profile id is required." });
-//     }
-
-//     const profile = await JobSeekerProfile.findById(id);
-
-//     // 1) Not found
-//     if (!profile) {
-//       return res.status(404).json({ status: false, message: "Job profile not found." });
-//     }
-
-//     // 2) Found but already soft-deleted
-//     if (profile.isDeleted === true) {
-//       return res.status(400).json({
-//         status: false,
-//         message: "This job profile has been soft deleted and cannot be recommended."
-//       });
-//     }
-
-//     // Default to true (recommend) if omitted
-//     const nextVal = (typeof adminTopProfiles === "boolean") ? adminTopProfiles : true;
-
-   
-
-//       // If recommending (true), ensure all sections are completed
-//     if (nextVal === true) {
-//       const requiredFlags = ["isExperienceAdded", "isSkillsAdded", "isEducationAdded", "isResumeAdded"];
-//       const missing = requiredFlags.filter(flag => !profile[flag]);
-
-//       if (missing.length > 0) {
-//         return res.status(409).json({
-//           status: false,
-//           message: "Cannot recommend: the following sections are incomplete.",
-//           missingSections: missing
-//         });
-//       }
-//     }
-
-
-//        // Idempotent response
-//     if (profile.adminTopProfiles === nextVal) {
-//       return res.status(200).json({
-//         status: true,
-//         message: nextVal
-//           ? "Profile is already marked as admin-top-list."
-//           : "Profile top profile list is already revoked.",
-//         data: {
-//           id: profile._id,
-//           adminTopProfiles: profile.adminTopProfiles
-//         }
-//       });
-//     }
-
-
-
-//     profile.adminTopProfiles = nextVal;
-//     await profile.save();    
-
-
-
-//     return res.status(200).json({
-//       status: true,
-//       message: nextVal ? "Profile marked as admin-top-profile." : "Profile top profile revoked.",
-//       data: {
-//         id: profile._id,
-//         adminTopProfiles: profile.adminTopProfiles
-//       }
-//     });
-
-
-//   } catch (err) {
-//     console.error("adminTopJobSeeker error:", err);
-//     return res.status(500).json({ 
-//       status: false, 
-//       message: "Server error", error: err.message 
-//     });
-//   }
-// };
-
-
-
-
 
 const pickName = (obj) => obj?.name ?? obj?.title ?? obj?.label ?? null;
 
@@ -1137,3 +1047,84 @@ exports.getTopProfiles = async (req, res) => {
 };
 
 
+
+
+//get progress bar for job seeker profile completion
+exports.getProfileProgress = async (req, res) => {
+  try {
+    const { userId, role } = req.user; // coming from verifyToken
+
+    // Restrict access: only job seekers allowed
+    if (role !== "job_seeker") {
+      return res.status(403).json({
+        status: false,
+        message: "Access denied. Only job seekers can view profile progress.",
+      });
+    }
+
+    const profile = await JobSeekerProfile.findOne({ userId });
+    if (!profile) {
+      return res.status(404).json({
+        status: false,
+        message: "Profile not found.",
+      });
+    }
+
+
+       // Check if soft deleted
+    if (profile.isDeleted) {
+      return res.status(409).json({   // 409 Conflict is good for "disabled" state
+        status: false,
+        message: "Your profile is currently disabled.",
+      });
+    }
+
+    let completedSections = 0;
+
+    // ✅ 1. Basic profile check
+    const basicFields = [
+      "name",
+      "phoneNumber",
+      "email",
+      "dateOfBirth",
+      "gender",
+      "state",
+      "city",
+      "pincode",
+      "industryType",
+      "jobProfile",
+    ];
+
+    const hasBasic = basicFields.every(field => profile[field]);
+    if (hasBasic) completedSections++;
+
+    // ✅ 2. Work experience
+    if (profile.isExperienceAdded) completedSections++;
+
+    // ✅ 3. Education
+    if (profile.isEducationAdded) completedSections++;
+
+    // ✅ 4. Skills
+    if (profile.isSkillsAdded) completedSections++;
+
+    // ✅ 5. Resume
+    if (profile.isResumeAdded) completedSections++;
+
+    // ✅ Calculate % (5 sections = 100%)
+    const progressPercent = (completedSections / 5) * 100;
+
+    return res.status(200).json({
+      status: true,
+      message: "Profile progress fetched successfully.",
+      progress: progressPercent,
+     
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      status: false,
+      message: "Server error",
+    });
+  }
+};
