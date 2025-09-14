@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const uploadImage = require('../middleware/uploadImage');
-const { saveProfile, getProfile, deleteCompanyProfile, updateProfileImage, getProfileImage, getAllCompanies } = require('../controllers/companyProfileController');
+const { saveProfile, getProfile, deleteCompanyProfile, updateProfileImage, getProfileImage, getAllCompanies, getEmployerProfileProgress } = require('../controllers/companyProfileController');
 const { verifyToken } = require('../middleware/authMiddleware');
 const uploadCertificate = require("../middleware/uploadCertificate");
 
@@ -23,6 +23,10 @@ router.get('/company-profile-image',
     getProfileImage);
 
 router.get("/public-companies", getAllCompanies);
+
+
+//get progress bar for employer profile completion
+router.get('/company-progress-bar', verifyToken, getEmployerProfileProgress);
 
 
 module.exports = router;

@@ -1111,7 +1111,8 @@ exports.getProfileProgress = async (req, res) => {
     if (profile.isResumeAdded) completedSections++;
 
     // ✅ Calculate % (5 sections = 100%)
-    const progressPercent = (completedSections / 5) * 100;
+    const progressPercent = `${Math.round((completedSections / 5) * 100)}%`;
+
 
     return res.status(200).json({
       status: true,

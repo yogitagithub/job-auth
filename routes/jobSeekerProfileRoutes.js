@@ -32,7 +32,7 @@ router.get('/top-profiles', verifyToken, getTopProfiles);
 
 
 //get progress bar for job seeker profile completion
-router.get('/progress-bar', verifyToken, getProfileProgress);
+router.get('/seeker-progress-bar', verifyToken, getProfileProgress);
 
 
 

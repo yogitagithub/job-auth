@@ -568,5 +568,91 @@ exports.getAllCompanies = async (req, res) => {
 
 
 
+//get progress bar for employer profile completion
+exports.getEmployerProfileProgress = async (req, res) => {
+  try {
+    const { userId, role } = req.user;
+
+    // 1) Only Employers allowed
+    if (role !== "employer") {
+      return res.status(403).json({
+        status: false,
+        message: "Access denied. Only employers can view company profile progress.",
+      });
+    }
+
+    // 2) Fetch employer profile (do NOT filter by isDeleted so we can message properly)
+    const profile = await CompanyProfile.findOne({ userId });
+    if (!profile) {
+      return res.status(404).json({
+        status: false,
+        message: "Company profile not found.",
+      });
+    }
+
+    // 3) Soft-deleted?
+    if (profile.isDeleted) {
+      return res.status(423).json({
+        status: false,
+        message: "Your company profile is disabled.",
+      });
+    }
+
+    // 4) Fields to count toward progress (adjust as you like)
+    const FIELDS = [
+      "phoneNumber",
+      "companyName",
+      "industryType",
+      "contactPersonName",
+      "panCardNumber",
+      "gstNumber",
+      // nested gstCertificate: count if fileUrl present
+      "gstCertificate.fileUrl",
+      "alternatePhoneNumber",
+      "email",
+      "companyAddress",
+      "state",
+      "city",
+      "pincode",
+      "image",
+      "aboutCompany",
+    ];
+
+    // Helper: get nested value by path
+    const getVal = (obj, path) =>
+      path.split(".").reduce((o, k) => (o && o[k] !== undefined ? o[k] : undefined), obj);
+
+    // Helper: consider a field "filled" if truthy & not empty string after trim
+    const isFilled = (val) => {
+      if (val === null || val === undefined) return false;
+      if (typeof val === "string") return val.trim().length > 0;
+      if (Array.isArray(val)) return val.length > 0;
+      // for ObjectId / numbers / objects: truthy is fine
+      return Boolean(val);
+    };
+
+    const filled = FIELDS.reduce((acc, key) => acc + (isFilled(getVal(profile, key)) ? 1 : 0), 0);
+    const total  = FIELDS.length;
+
+   const progress = `${Math.round((filled / total) * 100)}%`; // string with %
+
+
+    return res.status(200).json({
+      status: true,
+      message: "Company profile progress fetched successfully.",
+      progress, // e.g., 60
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
+      status: false,
+      message: "Server error.",
+    });
+  }
+};
+
+
+
+
 
 
