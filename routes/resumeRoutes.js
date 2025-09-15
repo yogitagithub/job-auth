@@ -11,6 +11,6 @@ router.delete('/delete-resume', verifyToken, deleteResume);
 
 
 //employer can get job seeker resume 
-router.get('/employer-get-resume', verifyToken, getSeekerResumeForEmployer );
+router.get('/getResume', verifyToken, getSeekerResumeForEmployer );
 
 module.exports = router;
