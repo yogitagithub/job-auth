@@ -754,6 +754,152 @@ exports.getApplicantsDetails = async (req, res) => {
 
 
 
+//get full details of job seeker by employer by passing job seeker id
+exports.getSeekerApplicantDetails = async (req, res) => {
+  try {
+    const { role, userId } = req.user || {};
+    const { jobSeekerId } = req.body || {};
+
+    // ---- ACL ----
+    if (!(role === "employer" || role === "admin")) {
+      return res.status(403).json({ status: false, message: "Only employers can view seeker details." });
+    }
+
+    // ---- validate ----
+    if (!jobSeekerId || !mongoose.isValidObjectId(jobSeekerId)) {
+      return res.status(400).json({ status: false, message: "Valid jobSeekerId is required in body." });
+    }
+
+    // ---- employer's active posts ----
+    const employerPosts = await JobPost.find({ userId, isDeleted: false }).select("_id").lean();
+    if (role === "employer" && employerPosts.length === 0) {
+      return res.status(403).json({ status: false, message: "You have no active job posts." });
+    }
+    const employerPostIds = employerPosts.map(p => p._id);
+
+    // ---- gate: must have an ACTIVE (non-rejected) app to ANY employer post ----
+    const gateFilter = {
+      jobSeekerId: mongoose.Types.ObjectId.createFromHexString(jobSeekerId),
+      status: "Applied",
+      employerApprovalStatus: { $ne: "Rejected" },
+      isDeleted: { $ne: true } // harmless if field absent
+    };
+    if (role === "employer") gateFilter.jobPostId = { $in: employerPostIds };
+
+    const hasActive = await JobApplication.exists(gateFilter);
+    if (!hasActive) {
+      return res.status(403).json({
+        status: false,
+        message:
+          role === "admin"
+            ? "No active (non-rejected) application found for this job seeker."
+            : "This candidate has no active (non-rejected) application to your job posts."
+      });
+    }
+
+    // ---- seeker profile (must be active) ----
+    const seeker = await JobSeekerProfile.findById(jobSeekerId)
+      .select("name phoneNumber email state city image jobProfile dateOfBirth gender panCardNumber address alternatePhoneNumber pincode industryType isDeleted")
+      .populate([
+        { path: "state", select: "state" },
+        { path: "jobProfile", select: "jobProfile name" },
+        { path: "industryType", select: "industryType name" }
+      ])
+      .lean();
+
+    if (!seeker) return res.status(404).json({ status: false, message: "Job seeker not found." });
+    if (seeker.isDeleted) {
+      return res.status(409).json({ status: false, message: "This job seeker profile is disabled." });
+    }
+
+    // ---- related sections ----
+    const [educations, experiences, jsSkills, resumes] = await Promise.all([
+      JobSeekerEducation.find({ jobSeekerId }).select({
+        jobSeekerId: 1, _id: 0,
+        degree: 1,
+        boardOfUniversity: 1, boardofuniversity: 1,
+        sessionFrom: 1, sessionfrom: 1,
+        sessionTo: 1, sessionto: 1,
+        marks: 1,
+        gradeOrPercentage: 1, gradeorPercentage: 1
+      }).lean(),
+      WorkExperience.find({ jobSeekerId }).select("jobSeekerId companyName jobTitle sessionFrom sessionTo roleDescription -_id").lean(),
+      JobSeekerSkill.find({ jobSeekerId, isDeleted: false })
+        .select("jobSeekerId skillIds -_id")
+        .populate({ path: "skillIds", select: "skill" })
+        .lean(),
+      Resume.find({ jobSeekerId }).select("jobSeekerId fileName -_id").lean()
+    ]);
+
+    // ---- helpers ----
+    const formatDate = (date) => {
+      if (!date) return null;
+      const d = new Date(date);
+      const dd = String(d.getDate()).padStart(2, "0");
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const yyyy = d.getFullYear();
+      return `${dd}-${mm}-${yyyy}`;
+    };
+    const normalizeEdu = (e) => ({
+      degree: e.degree ?? null,
+      boardOfUniversity: e.boardOfUniversity ?? e.boardofuniversity ?? null,
+      sessionFrom: formatDate(e.sessionFrom ?? e.sessionfrom),
+      sessionTo: formatDate(e.sessionTo ?? e.sessionto),
+      marks: e.marks ?? null,
+      gradeOrPercentage: e.gradeOrPercentage ?? e.gradeorPercentage ?? null
+    });
+    const normalizeExp = (x) => ({
+      companyName: x.companyName ?? null,
+      jobTitle: x.jobTitle ?? null,
+      sessionFrom: formatDate(x.sessionFrom),
+      sessionTo: formatDate(x.sessionTo),
+      roleDescription: x.roleDescription ?? null
+    });
+    const skills = jsSkills.reduce((acc, doc) => {
+      const names = (doc.skillIds || [])
+        .map(s => (s && typeof s === "object" && "skill" in s) ? s.skill : s)
+        .filter(Boolean);
+      return Array.from(new Set([...(acc || []), ...names]));
+    }, []);
+    const normalizeResume = (r) => ({ fileName: r.fileName ?? null });
+
+    // ---- response (no latestApplication / appliedToJobPostIds) ----
+    const data = {
+      jobSeekerId: jobSeekerId.toString(),
+      jobSeekerName: seeker.name ?? null,
+      email: seeker.email ?? null,
+      phoneNumber: seeker.phoneNumber ?? null,
+      alternatePhoneNumber: seeker.alternatePhoneNumber ?? null,
+      image: seeker.image ?? null,
+      dateOfBirth: formatDate(seeker.dateOfBirth),
+      gender: seeker.gender ?? null,
+      panCardNumber: seeker.panCardNumber ?? null,
+      address: seeker.address ?? null,
+      pincode: seeker.pincode ?? null,
+      state: seeker.state?.state ?? null,
+      city: seeker.city ?? null,
+      jobProfile: seeker.jobProfile ? (seeker.jobProfile.jobProfile || seeker.jobProfile.name || null) : null,
+      industryType: seeker.industryType ? (seeker.industryType.industryType || seeker.industryType.name || null) : null,
+      educations: educations.map(normalizeEdu),
+      experiences: experiences.map(normalizeExp),
+      skills,
+      resumes: resumes.map(normalizeResume)
+    };
+
+    return res.status(200).json({ status: true, message: "Job seeker details fetched successfully.", data });
+  } catch (err) {
+    console.error("getSeekerApplicantDetails error:", err);
+    return res.status(500).json({ status: false, message: "Server error", error: err.message });
+  }
+};
+
+
+
+
+
+
+
+
 
 
 exports.getMyApplications = async (req, res) => {

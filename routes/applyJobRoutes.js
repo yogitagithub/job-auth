@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { applyJobs, withdrawApplication, getApplicantsForJob, 
     getApplicantsDetails, getMyApplications, getApprovedApplicants, 
-    updateEmployerApprovalStatus, getApplicantsForEmployer  } = require('../controllers/applyJobController');
+    updateEmployerApprovalStatus, getApplicantsForEmployer, getSeekerApplicantDetails } = require('../controllers/applyJobController');
 const { verifyToken } = require('../middleware/authMiddleware');
 
 
@@ -23,5 +23,9 @@ router.put('/withdraw-application', verifyToken, withdrawApplication);
 router.get('/getAll-appliedJobs', verifyToken, getMyApplications);
 router.put("/:applicationId/employer-approval", verifyToken, updateEmployerApprovalStatus);
 router.get("/approved-applicants", verifyToken, getApprovedApplicants);
+
+
+//get full details of job seeker by employer by passing job seeker id
+router.get("/seeker-applicant", verifyToken, getSeekerApplicantDetails);
 
 module.exports = router;
