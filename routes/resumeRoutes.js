@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { createResume, deleteResume, getMyResume } = require('../controllers/resumeController');
+const { createResume, deleteResume, getMyResume, getSeekerResumeForEmployer } = require('../controllers/resumeController');
 const { verifyToken } = require('../middleware/authMiddleware');
 const uploadResume = require("../middleware/uploadResume");
 
@@ -8,5 +8,9 @@ const uploadResume = require("../middleware/uploadResume");
 router.post('/upload-resume', verifyToken,  uploadResume.single("resume"), createResume);
 router.get('/get-resume', verifyToken, getMyResume );
 router.delete('/delete-resume', verifyToken, deleteResume);
+
+
+//employer can get job seeker resume 
+router.get('/employer-get-resume', verifyToken, getSeekerResumeForEmployer );
 
 module.exports = router;

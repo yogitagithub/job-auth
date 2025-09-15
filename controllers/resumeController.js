@@ -2,6 +2,8 @@ const Resume = require("../models/Resume");
 const fs = require("fs");
 const path = require("path");
 const JobSeekerProfile = require("../models/JobSeekerProfile");
+const JobPost = require("../models/JobPost");
+const JobApplication = require("../models/JobApplication");
 const mongoose = require("mongoose");
 
 
@@ -192,4 +194,114 @@ exports.deleteResume = async (req, res) => {
     });
   }
 };
+
+//employer can get job seeker resume 
+exports.getSeekerResumeForEmployer = async (req, res) => {
+  try {
+    const { userId, role } = req.user || {};
+    const { jobSeekerId } = req.body || {};
+
+    // ✅ allow only employers
+    if (role !== "employer") {
+      return res.status(403).json({
+        status: false,
+        message: "Only employers can access this resource.",
+      });
+    }
+
+    // ✅ validate input
+    if (!jobSeekerId || !mongoose.isValidObjectId(jobSeekerId)) {
+      return res.status(400).json({
+        status: false,
+        message: "Valid jobSeekerId is required.",
+      });
+    }
+
+    // ✅ employer must have active (non-deleted) posts
+    const posts = await JobPost.find({ userId, isDeleted: false })
+      .select("_id")
+      .lean();
+    if (!posts.length) {
+      return res.status(403).json({
+        status: false,
+        message: "You have no active job posts.",
+      });
+    }
+    const postIds = posts.map(p => p._id);
+
+    // ✅ gate: seeker must have an active, non-rejected application to employer's posts
+    const hasActiveApp = await JobApplication.exists({
+      jobSeekerId: mongoose.Types.ObjectId.createFromHexString(jobSeekerId),
+      jobPostId: { $in: postIds },
+      status: "Applied",
+      employerApprovalStatus: { $ne: "Rejected" },
+      isDeleted: { $ne: true } // harmless if field isn't present
+    });
+    if (!hasActiveApp) {
+      return res.status(403).json({
+        status: false,
+        message: "This candidate has no active (non-rejected) application to your job posts.",
+      });
+    }
+
+    // ✅ seeker must exist & not be soft-deleted
+    const seeker = await JobSeekerProfile.findById(jobSeekerId)
+      .select("_id userId isDeleted")
+      .lean();
+    if (!seeker) {
+      return res.status(404).json({ status: false, message: "Job seeker not found." });
+    }
+    if (seeker.isDeleted) {
+      return res.status(409).json({
+        status: false,
+        message: "This job seeker profile is disabled.",
+      });
+    }
+
+    // ✅ fetch resume (support both storage patterns: by jobSeekerId or by userId)
+    const resume = await Resume.findOne({
+      $or: [{ jobSeekerId }, { userId: seeker.userId }],
+    }).lean();
+
+    if (!resume) {
+      return res.status(200).json({
+        status: false,
+        message: "No resume found for this user.",
+      });
+    }
+
+    if (resume.isDeleted === true) {
+      return res.status(400).json({
+        status: false,
+        message: "This resume has been soft deleted and cannot be viewed.",
+      });
+    }
+
+    const data = {
+      id: resume._id,
+      userId: resume.userId,
+      jobSeekerId: resume.jobSeekerId || null,
+      fileUrl: resume.fileUrl,
+      fileName: resume.fileName,
+      fileType: resume.fileType,
+      fileSize: resume.fileSize,
+      createdAt: resume.createdAt,
+      updatedAt: resume.updatedAt,
+    };
+
+    return res.status(200).json({
+      status: true,
+      message: "Resume fetched successfully.",
+      data,
+    });
+  } catch (error) {
+    console.error("getCandidateResumeForEmployer error:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: error.message,
+    });
+  }
+};
+
 
