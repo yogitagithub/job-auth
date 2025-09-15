@@ -758,7 +758,7 @@ exports.getApplicantsDetails = async (req, res) => {
 exports.getSeekerApplicantDetails = async (req, res) => {
   try {
     const { role, userId } = req.user || {};
-    const { jobSeekerId } = req.body || {};
+      const { jobSeekerId } = req.params || {}; 
 
     // ---- ACL ----
     if (!(role === "employer" || role === "admin")) {

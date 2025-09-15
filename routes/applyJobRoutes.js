@@ -26,6 +26,6 @@ router.get("/approved-applicants", verifyToken, getApprovedApplicants);
 
 
 //get full details of job seeker by employer by passing job seeker id
-router.get("/jobSeekerDetails", verifyToken, getSeekerApplicantDetails);
+router.get("/jobSeekerDetails/:jobSeekerId", verifyToken, getSeekerApplicantDetails);
 
 module.exports = router;
