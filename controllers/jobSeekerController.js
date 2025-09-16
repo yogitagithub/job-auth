@@ -2,6 +2,7 @@ const JobSeekerProfile = require("../models/JobSeekerProfile");
 const IndustryType = require("../models/AdminIndustry");
 const JobProfile = require("../models/AdminJobProfile");
 const StateCity = require("../models/StateCity");
+const Skill = require("../models/Skills");
 
 const JobSeekerEducation = require("../models/Education");
 const WorkExperience = require("../models/WorkExperience");
@@ -591,55 +592,93 @@ exports.deleteProfile = async (req, res) => {
 // without token
 exports.getAllJobSeekers = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
+    const page  = parseInt(req.query.page, 10)  || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const skip  = (page - 1) * limit;
 
-    // Count only non-deleted companies
+    // Count only non-deleted profiles
     const totalSeekers = await JobSeekerProfile.countDocuments({ isDeleted: false });
 
-    const seekers = await JobSeekerProfile.find({ isDeleted: false }) // ✅ filter here
+    // Fetch page of seekers
+    const seekers = await JobSeekerProfile.find({ isDeleted: false })
       .populate("industryType", "name")
-         .populate("jobProfile", "name")
-      .populate("state", "state")
+      .populate("jobProfile",   "name")
+      .populate("state",        "state")
       .skip(skip)
       .limit(limit)
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
-    if (!seekers || seekers.length === 0) {
+    if (!seekers.length) {
       return res.status(404).json({
         status: false,
         message: "No job seekers profiles found."
       });
     }
 
-    const responseData = seekers.map(seeker => ({
+    // ---- Fetch skills for all seekers on this page in ONE query ----
+    const seekerIds = seekers.map(s => s._id);
+
+    const skillsDocs = await JobSeekerSkill.find({
+        jobSeekerId: { $in: seekerIds },
+        isDeleted: false
+      })
+      // Your Skill schema uses field "skill", so select it:
+      .populate({ path: "skillIds", select: "skill", model: "Skill", options: { lean: true } })
+      .select("jobSeekerId skillIds")
+      .lean();
+
+    // Build jobSeekerId -> ["React JS", "Node JS", ...]
+    const skillsMap = new Map();
+
+    const getSkillText = (obj) => (obj && typeof obj === "object" && obj.skill) ? obj.skill : null;
+
+    for (const doc of skillsDocs) {
+      let names = [];
+
+      // If populate worked, entries are objects with { _id, skill }
+      const populated = Array.isArray(doc.skillIds) &&
+                        doc.skillIds.length > 0 &&
+                        typeof doc.skillIds[0] === "object" &&
+                        doc.skillIds[0] !== null;
+
+      if (populated) {
+        names = doc.skillIds.map(getSkillText).filter(Boolean);
+      } else if (doc.skillIds?.length) {
+        // Fallback: populate didn’t run (ref/model mismatch) -> look up by IDs
+        const raw = await Skill.find({ _id: { $in: doc.skillIds } })
+          .select("skill")
+          .lean();
+        names = raw.map(s => s?.skill).filter(Boolean);
+      }
+
+      if (names.length) {
+        skillsMap.set(String(doc.jobSeekerId), names);
+      }
+    }
+
+    // ---- Build response ----
+    const data = seekers.map(seeker => ({
       id: seeker._id,
       userId: seeker.userId,
       phoneNumber: seeker.phoneNumber,
-       jobSeekerName: seeker.name, 
+      jobSeekerName: seeker.name || null,
       industryType: seeker.industryType?.name || null,
-jobProfile: seeker.jobProfile?.name || null,
-
-      // contactPersonName: seeker.contactPersonName,
-
-      panCardNumber: seeker.panCardNumber,
-      // gstNumber: seeker.gstNumber,
-      alternatePhoneNumber: seeker.alternatePhoneNumber,
-
-       dateOfBirth: seeker.dateOfBirth 
-        ? seeker.dateOfBirth.toISOString().split("T")[0] // ✅ formats as "YYYY-MM-DD"
-        : null,
-
-        
-      email: seeker.email,
-      gender: seeker.gender,
-      address: seeker.address,
+      jobProfile:   seeker.jobProfile?.name   || null,
+      panCardNumber: seeker.panCardNumber || null,
+      alternatePhoneNumber: seeker.alternatePhoneNumber || null,
+      dateOfBirth: seeker.dateOfBirth ? new Date(seeker.dateOfBirth).toISOString().split("T")[0] : null,
+      email: seeker.email || null,
+      gender: seeker.gender || null,
+      address: seeker.address || null,
       state: seeker.state?.state || null,
-      city: seeker.city,
-      pincode: seeker.pincode,
-      image: seeker.image,
-       currentSalary: seeker.CurrentSalary || null 
+      city: seeker.city || null,
+      pincode: seeker.pincode || null,
+      image: seeker.image || null,
+      // support either CurrentSalary or camelCase
+      currentSalary: seeker.CurrentSalary ?? seeker.currentSalary ?? null,
+      // If no skills found -> null, else array of strings
+      skills: skillsMap.get(String(seeker._id)) || null
     }));
 
     return res.json({
@@ -648,17 +687,20 @@ jobProfile: seeker.jobProfile?.name || null,
       totalSeekers,
       currentPage: page,
       totalPages: Math.ceil(totalSeekers / limit),
-      data: responseData
+      data
     });
   } catch (error) {
     console.error("Error fetching job seekers:", error);
-    res.status(500).json({
+    return res.status(500).json({
       status: false,
       message: "Server error.",
       error: error.message
     });
   }
 };
+
+
+
 
 
 //admin recommended job seeker profiles
