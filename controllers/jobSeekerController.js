@@ -700,6 +700,138 @@ exports.getAllJobSeekers = async (req, res) => {
 };
 
 
+//without token get job seeker details
+exports.getSeekerDetails = async (req, res) => {
+  try {
+    const { jobSeekerId } = req.params || {};
+
+    // ---- validate ----
+    if (!jobSeekerId || !mongoose.isValidObjectId(jobSeekerId)) {
+      return res.status(400).json({ status: false, message: "Valid jobSeekerId is required in params." });
+    }
+
+    // ---- seeker profile (must be active) ----
+    const seeker = await JobSeekerProfile.findById(jobSeekerId)
+      .select("name phoneNumber email state city image jobProfile dateOfBirth gender panCardNumber address alternatePhoneNumber pincode industryType isDeleted CurrentSalary currentSalary")
+      .populate([
+        { path: "state", select: "state" },
+        { path: "jobProfile", select: "jobProfile name" },
+        { path: "industryType", select: "industryType name" }
+      ])
+      .lean();
+
+    if (!seeker) {
+      return res.status(404).json({ status: false, message: "Job seeker not found." });
+    }
+    if (seeker.isDeleted) {
+      return res.status(409).json({ status: false, message: "This job seeker profile is disabled." });
+    }
+
+    // ---- related sections ----
+    const [educations, experiences, jsSkills, resumes] = await Promise.all([
+      JobSeekerEducation.find({ jobSeekerId }).select({
+        jobSeekerId: 1, _id: 0,
+        degree: 1,
+        boardOfUniversity: 1, boardofuniversity: 1,
+        sessionFrom: 1, sessionfrom: 1,
+        sessionTo: 1, sessionto: 1,
+        marks: 1,
+        gradeOrPercentage: 1, gradeorPercentage: 1
+      }).lean(),
+
+      WorkExperience.find({ jobSeekerId })
+        .select("jobSeekerId companyName jobTitle sessionFrom sessionTo roleDescription -_id")
+        .lean(),
+
+      JobSeekerSkill.find({ jobSeekerId, isDeleted: false })
+        .select("jobSeekerId skillIds -_id")
+        .populate({ path: "skillIds", select: "skill", model: "Skill" }) // your Skill schema uses field "skill"
+        .lean(),
+
+      Resume.find({ jobSeekerId, isDeleted: { $ne: true } })
+        .select("jobSeekerId fileName fileUrl -_id")
+        .lean()
+    ]);
+
+    // ---- helpers ----
+    const formatDate = (date) => {
+      if (!date) return null;
+      const d = new Date(date);
+      const dd = String(d.getDate()).padStart(2, "0");
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const yyyy = d.getFullYear();
+      return `${dd}-${mm}-${yyyy}`;
+    };
+
+    const normalizeEdu = (e) => ({
+      degree: e.degree ?? null,
+      boardOfUniversity: e.boardOfUniversity ?? e.boardofuniversity ?? null,
+      sessionFrom: formatDate(e.sessionFrom ?? e.sessionfrom),
+      sessionTo: formatDate(e.sessionTo ?? e.sessionto),
+      marks: e.marks ?? null,
+      gradeOrPercentage: e.gradeOrPercentage ?? e.gradeorPercentage ?? null
+    });
+
+    const normalizeExp = (x) => ({
+      companyName: x.companyName ?? null,
+      jobTitle: x.jobTitle ?? null,
+      sessionFrom: formatDate(x.sessionFrom),
+      sessionTo: formatDate(x.sessionTo),
+      roleDescription: x.roleDescription ?? null
+    });
+
+    // skills -> array of strings or null
+    const skillNames = Array.from(
+      new Set(
+        (jsSkills || [])
+          .flatMap(doc => (doc.skillIds || []))
+          .map(s => (s && typeof s === "object" && "skill" in s) ? s.skill : null)
+          .filter(Boolean)
+      )
+    );
+    const skills = skillNames.length ? skillNames : null;
+
+    const normalizedResumes = (resumes || []).map(r => ({
+      fileName: r.fileName ?? null
+     
+    }));
+
+    // ---- response ----
+    const data = {
+      jobSeekerId: jobSeekerId.toString(),
+      jobSeekerName: seeker.name ?? null,
+      email: seeker.email ?? null,
+      phoneNumber: seeker.phoneNumber ?? null,
+      alternatePhoneNumber: seeker.alternatePhoneNumber ?? null,
+      image: seeker.image ?? null,
+      dateOfBirth: formatDate(seeker.dateOfBirth),
+      gender: seeker.gender ?? null,
+      panCardNumber: seeker.panCardNumber ?? null,          // consider removing from public if needed
+      address: seeker.address ?? null,
+      pincode: seeker.pincode ?? null,
+      state: seeker.state?.state ?? null,
+      city: seeker.city ?? null,
+      jobProfile: seeker.jobProfile ? (seeker.jobProfile.jobProfile || seeker.jobProfile.name || null) : null,
+      industryType: seeker.industryType ? (seeker.industryType.industryType || seeker.industryType.name || null) : null,
+      currentSalary: seeker.CurrentSalary ?? seeker.currentSalary ?? null,
+      educations: (educations || []).map(normalizeEdu),
+      experiences: (experiences || []).map(normalizeExp),
+      skills,
+      resumes: normalizedResumes
+    };
+
+    return res.status(200).json({
+      status: true,
+      message: "Job seeker details fetched successfully.",
+      data
+    });
+  } catch (err) {
+    console.error("getPublicJobSeekerDetails error:", err);
+    return res.status(500).json({ status: false, message: "Server error", error: err.message });
+  }
+};
+
+
 
 
 
