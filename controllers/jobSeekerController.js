@@ -617,7 +617,7 @@ exports.getAllJobSeekers = async (req, res) => {
       id: seeker._id,
       userId: seeker.userId,
       phoneNumber: seeker.phoneNumber,
-      jobSeekerName: seeker.companyName,
+       jobSeekerName: seeker.name, 
       industryType: seeker.industryType?.name || null,
 jobProfile: seeker.jobProfile?.name || null,
 
@@ -638,7 +638,8 @@ jobProfile: seeker.jobProfile?.name || null,
       state: seeker.state?.state || null,
       city: seeker.city,
       pincode: seeker.pincode,
-      image: seeker.image
+      image: seeker.image,
+       currentSalary: seeker.CurrentSalary || null 
     }));
 
     return res.json({
