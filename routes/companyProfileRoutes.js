@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const uploadImage = require('../middleware/uploadImage');
-const { saveProfile, getProfile, deleteCompanyProfile, updateProfileImage, getProfileImage, getAllCompanies, getEmployerProfileProgress, getCompanyProfileViews, recordCompanyProfileView } = require('../controllers/companyProfileController');
+const { saveProfile, getProfile, deleteCompanyProfile, updateProfileImage, getProfileImage, getAllCompanies, getEmployerProfileProgress, getCompanyProfileViews, recordCompanyProfileView, getCompanyDashboard } = require('../controllers/companyProfileController');
 const { verifyToken } = require('../middleware/authMiddleware');
 const uploadCertificate = require("../middleware/uploadCertificate");
 
@@ -34,6 +34,11 @@ router.get('/company-progress-bar', verifyToken, getEmployerProfileProgress);
 router.get('/profileView', verifyToken, getCompanyProfileViews);
 
 router.post("/record-profile/:companyId", verifyToken, recordCompanyProfileView);
+
+
+//dashboard route
+router.get('/companyDashboard', verifyToken, getCompanyDashboard);
+
 
 
 
