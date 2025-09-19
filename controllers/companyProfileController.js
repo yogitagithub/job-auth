@@ -1,5 +1,6 @@
 const CompanyProfile = require("../models/CompanyProfile");
 const IndustryType = require("../models/AdminIndustry");
+const JobSeekerProfile  = require("../models/JobSeekerProfile");
 const StateCity = require("../models/StateCity");
 
 const fs = require("fs");
@@ -650,6 +651,298 @@ exports.getEmployerProfileProgress = async (req, res) => {
     });
   }
 };
+
+
+//get profile views of a company profile by job seeker
+exports.recordCompanyProfileView = async (req, res) => {
+  try {
+    const { companyId } = req.params;
+    const { userId, role } = req.user; // from verifyToken
+
+    if (role !== "job_seeker") {
+      return res.status(403).json({
+        status: false,
+        message: "Only job seekers can record company profile views.",
+      });
+    }
+
+    if (!mongoose.isValidObjectId(companyId)) {
+      return res.status(400).json({ status: false, message: "Invalid companyId." });
+    }
+
+    // NEW: pull the caller's JobSeekerProfile _id and name
+    const seeker = await JobSeekerProfile.findOne({ userId })
+      .select("_id name")
+      .lean();
+    if (!seeker) {
+      return res.status(404).json({
+        status: false,
+        message: "Job seeker profile not found for this user.",
+      });
+    }
+
+    // NEW: get company name + isDeleted up front (and reuse for response)
+    const company = await CompanyProfile.findById(companyId)
+      .select("_id companyName isDeleted")
+      .lean();
+
+    if (!company) {
+      return res.status(404).json({ status: false, message: "Company profile not found." });
+    }
+    if (company.isDeleted) {
+      return res.status(410).json({ status: false, message: "This company profile has been deleted." });
+    }
+
+    const now = new Date();
+
+    // helper to format dd-mm-yyyy (UTC; switch to 'Asia/Kolkata' if you prefer IST)
+    const formatDDMMYYYY = (d) => {
+      // Using en-GB gives dd/mm/yyyy; convert slashes to dashes
+      return new Intl.DateTimeFormat("en-GB", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        timeZone: "UTC",
+      })
+        .format(d)
+        .replace(/\//g, "-");
+    };
+
+    // 1) try to update existing subdoc (positional $)
+    const updExisting = await CompanyProfile.updateOne(
+      { _id: companyId, isDeleted: false, "profileViews.jobSeekerId": seeker._id },
+      {
+        $inc: { "profileViews.$.viewCount": 1, totalViews: 1 },
+        $set: { "profileViews.$.lastViewedAt": now },
+      }
+    );
+
+    const responseData = {
+      companyId,
+      companyName: company.companyName,             // NEW
+      jobSeekerProfileId: seeker._id,
+      jobSeekerName: seeker.name || null,           // NEW
+      lastViewedAt: formatDDMMYYYY(now),            // NEW (formatted)
+    };
+
+    if (updExisting.modifiedCount === 1) {
+      return res.status(200).json({
+        status: true,
+        message: "Profile view recorded (existing viewer).",
+        data: responseData,
+      });
+    }
+
+    // 2) not present -> push new viewer entry
+    const pushNew = await CompanyProfile.updateOne(
+      { _id: companyId, isDeleted: false },
+      {
+        $inc: { totalViews: 1 },
+        $push: {
+          profileViews: {
+            jobSeekerId: seeker._id,
+            lastViewedAt: now,
+            viewCount: 1,
+          },
+        },
+      }
+    );
+
+    if (pushNew.modifiedCount === 0) {
+      return res.status(500).json({ status: false, message: "Could not record profile view." });
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "Profile view recorded (new viewer).",
+      data: responseData,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ status: false, message: "Server error while recording profile view." });
+  }
+};
+
+// exports.recordCompanyProfileView = async (req, res) => {
+//   try {
+//     const { companyId } = req.params;
+//     const { userId, role } = req.user; // from verifyToken
+
+//     if (role !== "job_seeker") {
+//       return res.status(403).json({
+//         status: false,
+//         message: "Only job seekers can record company profile views.",
+//       });
+//     }
+
+//     if (!mongoose.isValidObjectId(companyId)) {
+//       return res.status(400).json({ status: false, message: "Invalid companyId." });
+//     }
+
+//     // find the caller's JobSeekerProfile _id
+//     const seeker = await JobSeekerProfile.findOne({ userId }).select("_id").lean();
+//     if (!seeker) {
+//       return res.status(404).json({
+//         status: false,
+//         message: "Job seeker profile not found for this user.",
+//       });
+//     }
+
+//     const now = new Date();
+
+//     // 1) try to update existing subdoc (positional $)
+//     const updExisting = await CompanyProfile.updateOne(
+//       { _id: companyId, isDeleted: false, "profileViews.jobSeekerId": seeker._id },
+//       {
+//         $inc: { "profileViews.$.viewCount": 1, totalViews: 1 },
+//         $set: { "profileViews.$.lastViewedAt": now },
+//       }
+//     );
+
+//     if (updExisting.modifiedCount === 1) {
+//       return res.status(200).json({
+//         status: true,
+//         message: "Profile view recorded (existing viewer).",
+//         data: { companyId, jobSeekerProfileId: seeker._id, lastViewedAt: now },
+//       });
+//     }
+
+//     // 2) not present -> push new viewer entry
+//     const pushNew = await CompanyProfile.updateOne(
+//       { _id: companyId, isDeleted: false },
+//       {
+//         $inc: { totalViews: 1 },
+//         $push: {
+//           profileViews: {
+//             jobSeekerId: seeker._id,
+//             lastViewedAt: now,
+//             viewCount: 1,
+//           },
+//         },
+//       }
+//     );
+
+//     if (pushNew.modifiedCount === 0) {
+//       // either company not found or soft-deleted
+//       // re-check to give better message
+//       const cmp = await CompanyProfile.findById(companyId).select("isDeleted").lean();
+//       if (!cmp) {
+//         return res.status(404).json({ status: false, message: "Company profile not found." });
+//       }
+//       if (cmp.isDeleted) {
+//         return res.status(410).json({ status: false, message: "This company profile has been deleted." });
+//       }
+//       return res.status(500).json({ status: false, message: "Could not record profile view." });
+//     }
+
+//     return res.status(200).json({
+//       status: true,
+//       message: "Profile view recorded (new viewer).",
+//       data: { companyId, jobSeekerProfileId: seeker._id, lastViewedAt: now },
+//     });
+//   } catch (err) {
+//     console.error(err);
+//     return res.status(500).json({ status: false, message: "Server error while recording profile view." });
+//   }
+// };
+
+
+
+
+const formatDateDDMMYYYY = (date) => {
+  const d = new Date(date);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}-${mm}-${yyyy}`;
+};
+
+const timeAgo = (date) => {
+  const diffMs = Date.now() - new Date(date).getTime();
+  const sec = Math.max(0, Math.floor(diffMs / 1000));
+  if (sec < 60) return `${sec} second${sec !== 1 ? "s" : ""} ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} minute${min !== 1 ? "s" : ""} ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} hour${hr !== 1 ? "s" : ""} ago`;
+  const day = Math.floor(hr / 24);
+  return `${day} day${day !== 1 ? "s" : ""} ago`;
+};
+
+
+//get profile views of a company profile by job seeker
+exports.getCompanyProfileViews = async (req, res) => {
+  try {
+    const { userId, role } = req.user; // from verifyToken
+
+    // ---- ACL: only employers ----
+    if (role !== "employer") {
+      return res.status(403).json({
+        status: false,
+        message: "Access denied. Only employers can view company profile viewers.",
+      });
+    }
+
+    // ---- Find employer's own active company profile ----
+    const company = await CompanyProfile.findOne({ userId, isDeleted: false })
+      .select("totalViews profileViews")
+      .populate("profileViews.jobSeekerId", "name") // no email
+      .lean();
+
+    if (!company) {
+      return res.status(404).json({
+        status: false,
+        message:
+          "No active company profile found for this employer. Create a profile to see viewers.",
+      });
+    }
+
+    // ---- Pagination by number of viewers ----
+    const page = Math.max(1, parseInt(req.query.page || "1", 10));
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit || "10", 10)));
+
+    const allViews = Array.isArray(company.profileViews) ? company.profileViews : [];
+    const sorted = allViews.sort(
+      (a, b) => new Date(b.lastViewedAt) - new Date(a.lastViewedAt)
+    );
+
+    // counts
+    const totalViewers = sorted.length;                              // number of unique job seekers
+    const totalRecord = sorted.reduce((sum, v) => sum + (v.viewCount || 0), 0); // total views
+
+    const totalPage = Math.max(1, Math.ceil(totalViewers / limit));
+    const currentPage = Math.min(page, totalPage);
+    const start = (currentPage - 1) * limit;
+    const paged = sorted.slice(start, start + limit);
+
+    return res.status(200).json({
+      status: true,
+      message: "Company profile views fetched successfully.",
+   data: {   totalRecord,          // ✅ sum of viewCount (e.g., 2 if one seeker viewed twice)
+      totalPage,            // based on number of viewers
+      currentPage,
+      totalViewers,         // number of unique job seekers
+      profileViewers: paged.map((v) => ({
+        jobSeekerProfileId: v.jobSeekerId?._id || null,
+        name: v.jobSeekerId?.name || null,
+        viewCount: v.viewCount,
+        lastViewedDate: formatDateDDMMYYYY(v.lastViewedAt), // ✅ dd-mm-yyyy
+        lastViewedAgo: timeAgo(v.lastViewedAt),             // ✅ e.g., "2 minutes ago"
+      })
+   )},
+    });
+  } catch (err) {
+    console.error("Error fetching company profile viewers:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Server error while fetching company profile viewers.",
+    });
+  }
+};
+
+
+
+
 
 
 

@@ -24,11 +24,11 @@ router.get('/jobSeeker-profile-image',
 
 
 //get recommended job profile list for employers only
-router.get('/recommended-profiles', verifyToken, getRecommendedProfiles);
+router.get('/recommendedProfiles', verifyToken, getRecommendedProfiles);
 
 
 //get top job profile list for employers only
-router.get('/top-profiles', verifyToken, getTopProfiles);
+router.get('/topProfiles', verifyToken, getTopProfiles);
 
 
 //get progress bar for job seeker profile completion

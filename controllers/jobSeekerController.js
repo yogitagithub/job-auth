@@ -1061,7 +1061,7 @@ exports.getRecommendedProfiles = async (req, res) => {
         userId image name gender email phoneNumber dateOfBirth
         isExperienced CurrentSalary state city industryType jobProfile
         isResumeAdded isEducationAdded isSkillsAdded isExperienceAdded
-        adminRecommendedSeeker alternatePhoneNumber panCardNumber address pincode
+        adminRecommendedSeeker alternatePhoneNumber panCardNumber address pincode adminTopProfiles
       `)
       .populate("industryType", "name")
       .populate("jobProfile", "name title label")
@@ -1069,7 +1069,7 @@ exports.getRecommendedProfiles = async (req, res) => {
       .lean();
 
     // shape payload
-    const data = profiles.map(p => ({
+    const jobSeekers = profiles.map(p => ({
       _id: p._id,
       userId: p.userId,
       image: p.image ?? null,
@@ -1099,6 +1099,7 @@ exports.getRecommendedProfiles = async (req, res) => {
       isExperienceAdded: !!p.isExperienceAdded,
 
       adminRecommendedSeeker: !!p.adminRecommendedSeeker,
+      adminTopProfiles: !!p.adminTopProfiles,
      
 
       // expose contact if your product rules allow it:
@@ -1109,10 +1110,12 @@ exports.getRecommendedProfiles = async (req, res) => {
     return res.status(200).json({
       status: true,
       message: "Recommended job seeker profiles fetched successfully.",
-      totalRecord,
+    data: {
+        totalRecord,
       totalPage,
       currentPage: page,
-      data
+      jobSeekers
+    }
     });
   } catch (err) {
     console.error("getRecommendedProfiles error:", err);
@@ -1133,7 +1136,7 @@ exports.getTopProfiles = async (req, res) => {
     if (role !== "employer") {
       return res.status(403).json({
         status: false,
-        message: "Only employers can access recommended job seeker profiles."
+        message: "Only employers can access top job seeker profiles."
       });
     }
 
@@ -1158,7 +1161,7 @@ exports.getTopProfiles = async (req, res) => {
         userId image name gender email phoneNumber dateOfBirth
         isExperienced CurrentSalary state city industryType jobProfile
         isResumeAdded isEducationAdded isSkillsAdded isExperienceAdded
-        adminRecommendedSeeker alternatePhoneNumber panCardNumber address pincode
+        adminRecommendedSeeker alternatePhoneNumber panCardNumber address pincode adminTopProfiles
       `)
       .populate("industryType", "name")
       .populate("jobProfile", "name title label")
@@ -1166,7 +1169,7 @@ exports.getTopProfiles = async (req, res) => {
       .lean();
 
     // shape payload
-    const data = profiles.map(p => ({
+    const jobSeekers = profiles.map(p => ({
       _id: p._id,
       userId: p.userId,
       image: p.image ?? null,
@@ -1196,6 +1199,7 @@ exports.getTopProfiles = async (req, res) => {
       isExperienceAdded: !!p.isExperienceAdded,
 
       adminRecommendedSeeker: !!p.adminRecommendedSeeker,
+       adminTopProfiles: !!p.adminTopProfiles,
      
 
       // expose contact if your product rules allow it:
@@ -1206,10 +1210,12 @@ exports.getTopProfiles = async (req, res) => {
     return res.status(200).json({
       status: true,
       message: "Top job seeker profiles fetched successfully.",
+     data: { 
       totalRecord,
       totalPage,
       currentPage: page,
-      data
+      jobSeekers
+     }
     });
   } catch (err) {
     console.error("getTopProfiles error:", err);
@@ -1304,3 +1310,8 @@ exports.getProfileProgress = async (req, res) => {
     });
   }
 };
+
+
+
+
+

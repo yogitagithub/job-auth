@@ -91,7 +91,23 @@ const companyProfileSchema = new mongoose.Schema({
    isDeleted: { 
     type: Boolean, 
     default: false 
-  }
+  },
+
+    profileViews: [
+      {
+        jobSeekerId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "JobSeekerProfile",
+          required: true,
+        },
+
+
+        lastViewedAt: { type: Date, default: Date.now },
+        viewCount: { type: Number, default: 1 },
+      },
+    ],
+
+     totalViews: { type: Number, default: 0 },
   
 }, {
   timestamps: true

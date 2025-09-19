@@ -3,6 +3,7 @@ const CompanyProfile = require("../models/CompanyProfile");
 const IndustryType = require("../models/AdminIndustry");
 const Category = require("../models/AdminCategory");
 const StateCity = require("../models/StateCity");
+const SavedJob = require("../models/SavedJobSeeker");
 
 const SalaryType = require("../models/AdminSalaryType");
 const JobType = require("../models/AdminJobType");
@@ -479,57 +480,53 @@ exports.adminRecommendJobPost = async (req, res) => {
       return res.status(400).json({ status: false, message: "Valid job post id is required." });
     }
 
-    const post = await JobPost.findById(id);
+    // default to approving (true) if omitted
+    const nextVal = (typeof adminRecommended === "boolean") ? adminRecommended : true;
 
-    // 1) Not found
+    // First fetch to (a) validate guards and (b) support idempotent messaging
+    const post = await JobPost.findById(id).lean();
     if (!post) {
       return res.status(404).json({ status: false, message: "Job post not found." });
     }
 
-    // 2) Found but already soft-deleted
-    if (post.isDeleted === true) {
-      return res.status(400).json({
-        status: false,
-        message: "This job post has been soft deleted and cannot be recommended."
-      });
+    // Soft-deleted cannot be recommended or modified (you can relax this for revoke if you want)
+    if (post.isDeleted) {
+      return res.status(400).json({ status: false, message: "Cannot modify a soft-deleted job post." });
     }
 
-    // Default to true (approve) if omitted
-    const nextVal = (typeof adminRecommended === "boolean") ? adminRecommended : true;
-
-    // Can only APPROVE when status is ACTIVE
+    // If approving, must be active
     if (nextVal === true && post.status !== "active") {
-      return res.status(400).json({
-        status: false,
-        message: `Cannot recommend job post while status is '${post.status}'.`
-      });
+      return res.status(400).json({ status: false, message: `Cannot recommend job post while status is '${post.status}'.` });
     }
 
-    // Idempotent response if no actual change
+    // Idempotent: if value is already the same, don't write—just inform
     if (post.adminRecommended === nextVal) {
       return res.status(200).json({
         status: true,
         message: nextVal ? "Job post is already recommended." : "Job post recommendation is already revoked.",
-        data: { id: post._id, adminRecommended: post.adminRecommended, status: post.status }
+        
       });
     }
 
-    post.adminRecommended = nextVal;
-    await post.save();
+    // Perform the update
+    const updated = await JobPost.findOneAndUpdate(
+      { _id: id },                        // guards already checked above
+      { $set: { adminRecommended: nextVal } },
+      { new: true, projection: { _id: 1, adminRecommended: 1 } }
+    );
 
     return res.status(200).json({
       status: true,
       message: nextVal ? "Job post recommended." : "Job post recommendation revoked.",
-      data: { id: post._id, adminRecommended: post.adminRecommended, status: post.status }
+      data: { id: updated._id, adminRecommended: updated.adminRecommended }
     });
   } catch (err) {
     console.error("adminRecommendJobPost error:", err);
-    return res.status(500).json({ 
-      status: false, 
-      message: "Server error", error: err.message 
-    });
+    return res.status(500).json({ status: false, message: "Server error", error: err.message });
   }
 };
+
+
 
 
 
@@ -551,7 +548,7 @@ exports.getRecommendedJobs = async (req, res) => {
     const skip  = (page - 1) * limit;
 
     // ---- filter ----
-    const filter = { adminRecommended: true, status: "active", isDeleted: false };
+    const filter = { adminRecommended: true, isDeleted: false };
 
     // ---- count ----
     const totalRecord = await JobPost.countDocuments(filter);
@@ -603,7 +600,7 @@ const formatDDMMYYYY = (d) => {
       .lean();
 
     // ---- shape/flatten the payload ----
-    const data = posts.map(p => ({
+    const jobPosts = posts.map(p => ({
       _id: p._id,
       userId: p.userId,
 
@@ -651,11 +648,14 @@ const formatDDMMYYYY = (d) => {
     return res.status(200).json({
       status: true,
       message: "Recommended job posts fetched successfully.",
+       data: {
       totalRecord,
       totalPage,
       currentPage: page,
-      data
+      jobPosts 
+    }
     });
+
 
   } catch (err) {
     console.error("getRecommendedJobs error:", err);
@@ -1268,7 +1268,7 @@ exports.getAllJobPostsPublic = async (req, res) => {
 
 
 
-//with flags updation agter admin approval only for employer
+//with flags updation after admin approval only for employer
 exports.updateJobPostById = async (req, res) => {
   try {
     const {
@@ -2804,7 +2804,7 @@ exports.getBasedOnSkillsJobs = async (req, res) => {
 
 
      // reshape output
-   const data = pageDocs.map(job => {
+   const jobPosts = pageDocs.map(job => {
   // 1) pull out populated refs and the rest of the raw fields
   const {
     companyId,
@@ -2858,15 +2858,208 @@ const companyImage = companyId?.image ?? null;
 
     return res.status(200).json({
       status: true,
-      message: "Job posts fetched successfully.",
-      totalRecord,
+      message: "Based on skills job posts where fetched successfully.",
+     data: {
+       totalRecord,
       totalPage,
       currentPage: page,
-      data
+      jobPosts
+     }
     });
 
   } catch (err) {
     console.error(err);
+    return res.status(500).json({ 
+      status: false, 
+      message: "Server error", 
+      error: err.message 
+    });
+  }
+};
+
+
+
+//job seeker can save the job post
+exports.toggleSavedJob = async (req, res) => {
+  try {
+    const { role, userId } = req.user || {};
+    if (role !== "job_seeker") {
+      return res.status(403).json({ status: false, message: "Only job seekers can save jobs." });
+    }
+
+    const { jobPostId } = req.params || {};
+    if (!jobPostId || !mongoose.isValidObjectId(jobPostId)) {
+      return res.status(400).json({ status: false, message: "Valid jobPostId is required in params." });
+    }
+
+    // Validate job
+    const post = await JobPost.findById(jobPostId).select("status isDeleted").lean();
+    if (!post) {
+      return res.status(404).json({ status: false, message: "Job post not found." });
+    }
+    if (post.isDeleted) {
+      return res.status(400).json({ status: false, message: "Cannot save a soft-deleted job post." });
+    }
+    if (post.status !== "active") {
+      return res.status(400).json({ status: false, message: `Cannot save job post while status is '${post.status}'.` });
+    }
+
+    // Upsert → idempotent
+    const r = await SavedJob.updateOne(
+      { userId, jobPostId },
+      { $setOnInsert: { userId, jobPostId } },
+      { upsert: true }
+    );
+
+    const already = r.matchedCount > 0; // existed
+    return res.status(200).json({
+      status: true,
+      message: already ? "Job already saved." : "Job saved.",
+      data: { jobPostId }
+    });
+  } catch (err) {
+    console.error("toggleSavedJob error:", err);
     return res.status(500).json({ status: false, message: "Server error", error: err.message });
   }
 };
+
+
+
+//get the saved job post list which job seeker has saved
+exports.getSeekerSavedJobs = async (req, res) => {
+  try {
+    const { role, userId } = req.user || {};
+    if (role !== "job_seeker") {
+      return res.status(403).json({ status: false, message: "Only job seekers can view saved jobs." });
+    }
+
+    // ---- pagination ----
+    const page  = Math.max(parseInt(req.query.page, 10)  || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+    const skip  = (page - 1) * limit;
+
+    // by default we show only active & not-deleted jobs
+    const jobMatch = { isDeleted: false, status: "active" };
+
+    // ---- exact count of visible rows (respecting jobMatch) ----
+    const countAgg = await SavedJob.aggregate([
+      { $match: { userId: new mongoose.Types.ObjectId(userId) } },
+      { $lookup: {
+          from: "jobposts",
+          localField: "jobPostId",
+          foreignField: "_id",
+          as: "job"
+        }
+      },
+      { $unwind: "$job" },
+      { $match: { "job.isDeleted": false, "job.status": "active" } },
+      { $count: "c" }
+    ]);
+    const totalRecord = countAgg[0]?.c || 0;
+    const totalPage   = Math.max(Math.ceil(totalRecord / limit), 1);
+
+    // helpers
+    const pickName = (o) => o?.name ?? o?.title ?? o?.label ?? o?.range ?? o?.experience ?? null;
+    const formatDDMMYYYY = (d) => {
+      if (!d) return null;
+      const dt = new Date(d);
+      const dd = String(dt.getDate()).padStart(2, "0");
+      const mm = String(dt.getMonth() + 1).padStart(2, "0");
+      const yyyy = dt.getFullYear();
+      return `${dd}-${mm}-${yyyy}`;
+    };
+
+    // ---- fetch page of saved jobs + hydrate job details ----
+    const rows = await SavedJob.find({ userId })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate({
+        path: "jobPostId",
+        match: jobMatch,
+        select: `
+          userId companyId category industryType jobTitle jobDescription salaryType
+          displayPhoneNumber displayEmail jobType skills minSalary maxSalary state city
+          experience otherField workingShift jobProfile status hourlyRate expiredDate
+          isApplied isLatest appliedCandidates isAdminApproved adminRecommended isDeleted
+        `,
+        populate: [
+          { path: "companyId",   select: "companyName image" },
+          { path: "category",    select: "name" },
+          { path: "industryType",select: "name" },
+          { path: "jobType",     select: "name" },
+          { path: "skills",      select: "skill" },
+          { path: "state",       select: "state name" },
+          { path: "workingShift",select: "name title" },
+          { path: "otherField",  select: "name title" },
+          { path: "experience",  select: "name label range experience title" },
+          { path: "salaryType",  select: "name title label" },
+           { path: "jobProfile",  select: "name title label profileName" }
+        ]
+      })
+      .lean();
+
+    // ---- shape payload (skip any null jobPostId due to match filter) ----
+    const jobPosts = rows
+      .filter(r => r.jobPostId) // excludes inactive/soft-deleted
+      .map(r => {
+        const p = r.jobPostId;
+        return {
+          _id: p._id,
+          userId: p.userId,
+
+          companyName: p.companyId?.companyName ?? null,
+          companyImage: p.companyId?.image ?? null,
+
+          category:     pickName(p.category),
+          industryType: pickName(p.industryType),
+          jobType:      pickName(p.jobType),
+          workingShift: pickName(p.workingShift),
+          otherField:   pickName(p.otherField),
+          experience:   pickName(p.experience),
+          jobProfile: pickName(p.jobProfile),
+
+          state:  p.state?.state ?? p.state?.name ?? null,
+          city:   p.city,
+          skills: Array.isArray(p.skills) ? p.skills.map(s => s?.skill).filter(Boolean) : [],
+
+          jobTitle:        p.jobTitle,
+          jobDescription:  p.jobDescription,
+          salaryType:      pickName(p.salaryType),
+          minSalary:       p.minSalary,
+          maxSalary:       p.maxSalary,
+          displayPhoneNumber: p.displayPhoneNumber,
+          displayEmail:       p.displayEmail,
+
+          
+          status:       p.status,
+          hourlyRate:   p.hourlyRate,
+          expiredDate:  formatDDMMYYYY(p.expiredDate),
+
+          isApplied:         p.isApplied,
+          isLatest:          p.isLatest,
+          appliedCandidates: p.appliedCandidates,
+          isAdminApproved:   p.isAdminApproved,
+          adminRecommended:  p.adminRecommended,
+
+          savedAt: formatDDMMYYYY(r.createdAt) // when user saved it
+        };
+      });
+
+    return res.status(200).json({
+      status: true,
+      message: "Saved jobs fetched successfully.",
+      result: {
+        totalRecord,
+        totalPage,
+        currentPage: page,
+        jobPosts
+      }
+    });
+  } catch (err) {
+    console.error("getSeekerSavedJobs error:", err);
+    return res.status(500).json({ status: false, message: "Server error", error: err.message });
+  }
+};
+
+

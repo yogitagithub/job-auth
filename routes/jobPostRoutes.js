@@ -5,7 +5,7 @@ const { createJobPost, getAllJobPosts,
     getJobPostById, updateJobPostById, 
     updateJobPostStatus, deleteJobPostById, 
     getAllJobPostsPublic, getJobDetailsPublic, 
-    getTopCategories, getBasedOnSkillsJobs, getRecommendedJobs } = require('../controllers/jobPostController');
+    getTopCategories, getBasedOnSkillsJobs, getRecommendedJobs, toggleSavedJob, getSeekerSavedJobs } = require('../controllers/jobPostController');
     
 const { verifyToken } = require('../middleware/authMiddleware');
 
@@ -33,12 +33,21 @@ router.get("/top-categories", getTopCategories);
 
 
 //get job list based on job seeker skills
-router.get("/based-on-skills", verifyToken, getBasedOnSkillsJobs);
+router.get("/jobPostsBasedOnSkills", verifyToken, getBasedOnSkillsJobs);
 
 
 
 //get recommended job list for job seekers only
-router.get("/recommended-jobPost", verifyToken, getRecommendedJobs);
+router.get("/recommendedJobPost", verifyToken, getRecommendedJobs);
+
+
+//job seeker can save the job post
+router.post("/savedJobs/:jobPostId", verifyToken, toggleSavedJob);
+
+
+//get the saved job post list which job seeker has saved
+router.get("/seekerSavedJobs", verifyToken, getSeekerSavedJobs);
+
 
 
 
