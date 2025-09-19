@@ -639,7 +639,9 @@ exports.getEmployerProfileProgress = async (req, res) => {
     const filled = FIELDS.reduce((acc, key) => acc + (isFilled(getVal(profile, key)) ? 1 : 0), 0);
     const total  = FIELDS.length;
 
-   const progress = `${Math.round((filled / total) * 100)}%`; // string with %
+   const progress = total
+      ? Math.min(100, Math.max(0, Math.round((filled / total) * 100)))
+      : 0;
 
 
     return res.status(200).json({
