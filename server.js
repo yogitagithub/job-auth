@@ -21,6 +21,7 @@ const CareerPreferenceRoutes = require("./routes/careerRoutes");
 const reviewRoutes = require("./routes/reviewRoutes");
 const screenRoutes = require("./routes/splashScreenRoutes");
 const bankRoutes = require("./routes/bankDetailsRoutes");
+const taskRoutes = require("./routes/taskRoutes");
 
 const adminRoutes = require("./routes/adminRoutes");
 
@@ -54,6 +55,7 @@ app.use('/api/auth', applyJobRoutes);
 app.use('/api/auth', reviewRoutes);
 app.use('/api/auth', stateCityRoutes);
 app.use('/api/auth', CareerPreferenceRoutes);
+app.use('/api/auth', taskRoutes);
 
 app.use('/api/auth', screenRoutes);
 app.use('/api/auth', bankRoutes);
