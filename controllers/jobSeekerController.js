@@ -8,6 +8,8 @@ const JobSeekerEducation = require("../models/Education");
 const WorkExperience = require("../models/WorkExperience");
 const JobSeekerSkill = require("../models/JobSeekerSkill");
 const Resume = require("../models/Resume");
+const Task = require("../models/Task");
+
 
 const fs = require("fs");
 const fsp = fs.promises;
@@ -1308,6 +1310,88 @@ exports.getProfileProgress = async (req, res) => {
       status: false,
       message: "Server error",
     });
+  }
+};
+
+
+//dashboard of job seeker 
+const formatHours = (h) => {
+  const v = Math.round(Number(h || 0) * 100) / 100;
+  return `${v} ${v === 1 ? "hour" : "hours"}`;
+};
+const formatINR = (v) => `₹ ${Number(v || 0).toFixed(2)}`;
+
+
+exports.getJobSeekerDashboard = async (req, res) => {
+  try {
+    const { role, userId } = req.user || {};
+    if (role !== "job_seeker") {
+      return res.status(403).json({ status: false, message: "Only job seekers can view this dashboard." });
+    }
+
+    // Aggregation pipeline
+    const pipeline = [
+      { $match: { employerApprovedTask: "Approved" } },
+
+      {
+        $lookup: {
+          from: "jobapplications",
+          let: { jaId: "$jobApplicationId" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$_id", "$$jaId"] } } },
+            { $project: { _id: 1, userId: 1, jobPostId: 1 } },
+          ],
+          as: "jobApp",
+        },
+      },
+      { $unwind: "$jobApp" },
+
+      { $match: { "jobApp.userId": new mongoose.Types.ObjectId(userId) } },
+
+      {
+        $lookup: {
+          from: "jobposts",
+          localField: "jobApp.jobPostId",
+          foreignField: "_id",
+          as: "jobPost",
+        },
+      },
+      { $unwind: "$jobPost" },
+
+      {
+        $addFields: {
+          earning: {
+            $multiply: [
+              { $ifNull: ["$workedHours", 0] },
+              { $ifNull: ["$jobPost.hourlyRate", 0] },
+            ],
+          },
+        },
+      },
+
+      {
+        $group: {
+          _id: null,
+          totalHours: { $sum: "$workedHours" },
+          totalEarnings: { $sum: "$earning" }
+        },
+      },
+    ];
+
+    const agg = await Task.aggregate(pipeline);
+    const totalHours = agg.length ? Math.round(agg[0].totalHours * 100) / 100 : 0;
+    const totalEarnings = agg.length ? Math.round(agg[0].totalEarnings * 100) / 100 : 0;
+
+    return res.json({
+      status: true,
+      message: "Job seeker dashboard metrics fetched successfully.",
+      data: {
+        hoursWorked: formatHours(totalHours),     // e.g. "5 hours"
+        totalEarnings: formatINR(totalEarnings)  // e.g. "₹ 500.00"
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ status: false, message: err?.message || "Server error." });
   }
 };
 

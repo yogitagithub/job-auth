@@ -2,6 +2,8 @@ const mongoose = require("mongoose");
 const Task = require("../models/Task");
 const JobApplication = require("../models/JobApplication");
 const JobPost = require("../models/JobPost");
+const JobSeekerProfile = require("../models/JobSeekerProfile");
+
 
 
 // turn "14:00:00", "14:00", "2 pm", "02:30 PM" into a Date for today
@@ -51,6 +53,8 @@ const formatHours = (h) => {
   // 1.5 -> "1.5 hours", 1 -> "1 hour"
   return `${v} ${v === 1 ? "hour" : "hours"}`;
 };
+
+const formatINR = (v) => `₹ ${Number(v || 0).toFixed(2)}`;
 
 
 
@@ -234,6 +238,108 @@ exports.updateTask = async (req, res) => {
     };
 
     return res.json({ status: true, message: "Task approval status updated.", data });
+  } catch (err) {
+    return res.status(500).json({ status: false, message: err?.message || "Server error." });
+  }
+};
+
+
+
+//details of updated task view by employer and job seeker
+exports.updatedTaskDetails = async (req, res) => {
+  try {
+    const { role, userId } = req.user || {};
+    const { jobApplicationId } = req.params || {};
+
+    if (!jobApplicationId || !mongoose.isValidObjectId(jobApplicationId)) {
+      return res.status(400).json({ status: false, message: "Valid jobApplicationId is required." });
+    }
+
+    // Load the application to verify ownership and to get jobPostId
+    const jobApp = await JobApplication
+      .findById(jobApplicationId)
+      .select("_id userId jobPostId employerApprovalStatus")
+      .lean();
+
+    if (!jobApp) {
+      return res.status(404).json({ status: false, message: "Job application not found." });
+    }
+
+    // Role-based access control
+    if (role === "job_seeker") {
+      if (String(jobApp.userId) !== String(userId)) {
+        return res.status(403).json({ status: false, message: "Not authorized for this application." });
+      }
+    } else if (role === "employer" || role === "admin") {
+      // Verify employer owns the job post (skip for admin)
+      if (role !== "admin") {
+        const owns = await JobPost.exists({ _id: jobApp.jobPostId, userId });
+        if (!owns) {
+          return res.status(403).json({ status: false, message: "Not authorized for this job post." });
+        }
+      }
+    } else {
+      return res.status(403).json({ status: false, message: "Access denied." });
+    }
+
+
+     // Fetch jobPost along with company
+    const jobPost = await JobPost.findById(jobApp.jobPostId)
+      .populate("companyId", "companyName") // <- populate companyId to get companyName
+      .select("hourlyRate jobTitle companyId")
+      .lean();
+
+      const hourlyRate = Number(jobPost?.hourlyRate || 0);
+    const companyName = jobPost?.companyId?.companyName || null;
+
+
+     // ✅ Fetch JobSeekerProfile with jobProfile populated
+    const seeker = await JobSeekerProfile.findOne({ userId: jobApp.userId })
+      .populate("jobProfile", "name") // assumes JobProfile has "name" field
+      .select("jobProfile")
+      .lean();
+
+
+       const jobProfileName = seeker?.jobProfile?.name || null;
+
+    // Aggregate approved tasks for this application
+    const agg = await Task.aggregate([
+      {
+        $match: {
+          jobApplicationId: new mongoose.Types.ObjectId(jobApplicationId),
+          employerApprovedTask: "Approved",
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalHours: { $sum: "$workedHours" },
+          approvedCount: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const totalHours = agg.length ? Math.round(agg[0].totalHours * 100) / 100 : 0;
+    const approvedCount = agg.length ? agg[0].approvedCount : 0;
+    const totalSalary = Math.round((totalHours * hourlyRate) * 100) / 100;
+
+   
+  
+
+    return res.json({
+      status: true,
+      message: "Completed task summary fetched successfully.",
+       data: {
+    jobApplicationId,
+    jobTitle: jobPost?.jobTitle || null,
+       companyName, 
+        jobProfile: jobProfileName,
+    approvedTasks: approvedCount,
+    totalWorkedHours: formatHours(totalHours), // e.g., "5 hours"
+    hourlyRate: formatINR(hourlyRate),        // e.g., "₹ 200.00"
+    totalSalary: formatINR(totalSalary)       // e.g., "₹ 1000.00"
+  }
+    });
   } catch (err) {
     return res.status(500).json({ status: false, message: err?.message || "Server error." });
   }
