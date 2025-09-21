@@ -1331,24 +1331,21 @@ const resume = !!hasResume;
 
 
 //dashboard of job seeker 
-const formatHours = (h) => {
-  const v = Math.round(Number(h || 0) * 100) / 100;
-  return `${v} ${v === 1 ? "hour" : "hours"}`;
-};
-const formatINR = (v) => `₹ ${Number(v || 0).toFixed(2)}`;
-
-
 exports.getJobSeekerDashboard = async (req, res) => {
   try {
     const { role, userId } = req.user || {};
     if (role !== "job_seeker") {
-      return res.status(403).json({ status: false, message: "Only job seekers can view this dashboard." });
+      return res.status(403).json({
+        status: false,
+        message: "Only job seekers can view this dashboard.",
+      });
     }
 
-    // Aggregation pipeline
+    // Aggregate approved tasks for this job seeker
     const pipeline = [
       { $match: { employerApprovedTask: "Approved" } },
 
+      // Join -> JobApplication (to find tasks belonging to this seeker)
       {
         $lookup: {
           from: "jobapplications",
@@ -1361,9 +1358,9 @@ exports.getJobSeekerDashboard = async (req, res) => {
         },
       },
       { $unwind: "$jobApp" },
-
       { $match: { "jobApp.userId": new mongoose.Types.ObjectId(userId) } },
 
+      // Join -> JobPost (to get hourlyRate)
       {
         $lookup: {
           from: "jobposts",
@@ -1374,6 +1371,7 @@ exports.getJobSeekerDashboard = async (req, res) => {
       },
       { $unwind: "$jobPost" },
 
+      // Compute earning per task
       {
         $addFields: {
           earning: {
@@ -1385,38 +1383,36 @@ exports.getJobSeekerDashboard = async (req, res) => {
         },
       },
 
+      // Totals
       {
         $group: {
           _id: null,
-          totalHours: { $sum: "$workedHours" },
-          totalEarnings: { $sum: "$earning" }
+          totalHours: { $sum: { $ifNull: ["$workedHours", 0] } },
+          totalEarnings: { $sum: "$earning" },
+          completedJobs: { $sum: 1 }, // or use $addToSet of jobPostId if you want distinct jobs
         },
       },
     ];
 
     const agg = await Task.aggregate(pipeline);
+    const totals = agg[0] || { totalHours: 0, totalEarnings: 0, completedJobs: 0 };
 
-    // round to 2 decimals but keep them as *numbers* (not strings)
-    const round2 = (n) => Math.round((n || 0) * 100) / 100;
+    // round to 2 decimals, send as strings (no units)
+    const round2 = (n) => (Math.round((n || 0) * 100) / 100).toString();
 
-   const totalHours = agg.length ? round2(agg[0].totalHours) : 0;
-    const totalEarnings = agg.length ? round2(agg[0].totalEarnings) : 0;
+    const dashBoard = [
+      { id: "hoursWorked",   label: "Hours worked",   value: round2(totals.totalHours),   icon: "timer" },
+      { id: "totalEarnings", label: "Total Earnings", value: round2(totals.totalEarnings), icon: "rupee" },
+      { id: "completedJobs", label: "Completed jobs", value: "0",                         icon: "briefcase" },
+    ];
 
-    return res.json({
+    return res.status(200).json({
       status: true,
-      message: "Job seeker dashboard metrics fetched successfully.",
-      data: {
-        hoursWorked: totalHours,     // e.g. "5 hours"
-        totalEarnings: totalEarnings, // e.g. "₹ 500.00"
-        Completedjobs: 0  
-      },
+      message: "Dashboard data fetched successfully",
+      data: { dashBoard },
     });
   } catch (err) {
     return res.status(500).json({ status: false, message: err?.message || "Server error." });
   }
 };
-
-
-
-
 
