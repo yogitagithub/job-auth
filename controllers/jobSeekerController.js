@@ -1387,7 +1387,8 @@ exports.getJobSeekerDashboard = async (req, res) => {
       message: "Job seeker dashboard metrics fetched successfully.",
       data: {
         hoursWorked: formatHours(totalHours),     // e.g. "5 hours"
-        totalEarnings: formatINR(totalEarnings)  // e.g. "₹ 500.00"
+        totalEarnings: formatINR(totalEarnings), // e.g. "₹ 500.00"
+        Completedjobs: 0  
       },
     });
   } catch (err) {
