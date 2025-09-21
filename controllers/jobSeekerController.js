@@ -1235,9 +1235,8 @@ exports.getTopProfiles = async (req, res) => {
 //get progress bar for job seeker profile completion
 exports.getProfileProgress = async (req, res) => {
   try {
-    const { userId, role } = req.user; // coming from verifyToken
+    const { userId, role } = req.user; // from verifyToken
 
-    // Restrict access: only job seekers allowed
     if (role !== "job_seeker") {
       return res.status(403).json({
         status: false,
@@ -1247,25 +1246,24 @@ exports.getProfileProgress = async (req, res) => {
 
     const profile = await JobSeekerProfile.findOne({ userId });
     if (!profile) {
-      return res.status(404).json({
-        status: false,
-        message: "Profile not found.",
-      });
+      return res.status(404).json({ status: false, message: "Profile not found." });
     }
 
-
-       // Check if soft deleted
     if (profile.isDeleted) {
-      return res.status(409).json({   // 409 Conflict is good for "disabled" state
+      return res.status(409).json({
         status: false,
         message: "Your profile is currently disabled.",
       });
     }
 
-    let completedSections = 0;
+    const isPresent = (v) => {
+      if (v === null || v === undefined) return false;
+      if (typeof v === "string") return v.trim().length > 0;
+      if (Array.isArray(v)) return v.length > 0;
+      return true;
+    };
 
-    // ✅ 1. Basic profile check
-    const basicFields = [
+    const basicFieldsList = [
       "name",
       "phoneNumber",
       "email",
@@ -1277,41 +1275,124 @@ exports.getProfileProgress = async (req, res) => {
       "industryType",
       "jobProfile",
     ];
+    const basicFields = basicFieldsList.every((f) => isPresent(profile[f]));
 
-    const hasBasic = basicFields.every(field => profile[field]);
-    if (hasBasic) completedSections++;
+    const workExperience = !!profile.isExperienceAdded;
+    const education      = !!profile.isEducationAdded;
+    const skills         = !!profile.isSkillsAdded;
+    const resume         = !!profile.isResumeAdded;
 
-    // ✅ 2. Work experience
-    if (profile.isExperienceAdded) completedSections++;
+    let completed = 0;
+    if (basicFields) completed++;
+    if (workExperience) completed++;
+    if (education) completed++;
+    if (skills) completed++;
+    if (resume) completed++;
 
-    // ✅ 3. Education
-    if (profile.isEducationAdded) completedSections++;
-
-    // ✅ 4. Skills
-    if (profile.isSkillsAdded) completedSections++;
-
-    // ✅ 5. Resume
-    if (profile.isResumeAdded) completedSections++;
-
-    // ✅ Calculate % (5 sections = 100%)
-     const progress = Math.min(100, Math.max(0, Math.round((completedSections / 5) * 100)));
-
+    const progress = Math.min(100, Math.max(0, Math.round((completed / 5) * 100)));
 
     return res.status(200).json({
       status: true,
       message: "Profile progress fetched successfully.",
-      progress,
-     
+      progress,         // number 0..100
+      basicFields,      // boolean
+      workExperience,   // boolean
+      education,        // boolean
+      skills,           // boolean
+      resume            // boolean
     });
-
   } catch (error) {
     console.error(error);
-    res.status(500).json({
-      status: false,
-      message: "Server error",
-    });
+    return res.status(500).json({ status: false, message: "Server error" });
   }
 };
+
+
+
+// exports.getProfileProgress = async (req, res) => {
+//   try {
+//     const { userId, role } = req.user; // coming from verifyToken
+
+//     // Restrict access: only job seekers allowed
+//     if (role !== "job_seeker") {
+//       return res.status(403).json({
+//         status: false,
+//         message: "Access denied. Only job seekers can view profile progress.",
+//       });
+//     }
+
+//     const profile = await JobSeekerProfile.findOne({ userId });
+//     if (!profile) {
+//       return res.status(404).json({
+//         status: false,
+//         message: "Profile not found.",
+//       });
+//     }
+
+
+//        // Check if soft deleted
+//     if (profile.isDeleted) {
+//       return res.status(409).json({   // 409 Conflict is good for "disabled" state
+//         status: false,
+//         message: "Your profile is currently disabled.",
+//       });
+//     }
+
+//     let completedSections = 0;
+
+//     // ✅ 1. Basic profile check
+//     const basicFields = [
+//       "name",
+//       "phoneNumber",
+//       "email",
+//       "dateOfBirth",
+//       "gender",
+//       "state",
+//       "city",
+//       "pincode",
+//       "industryType",
+//       "jobProfile",
+//     ];
+
+//     const hasBasic = basicFields.every(field => profile[field]);
+//     if (hasBasic) completedSections++;
+
+//     // ✅ 2. Work experience
+//     if (profile.isExperienceAdded) completedSections++;
+
+//     // ✅ 3. Education
+//     if (profile.isEducationAdded) completedSections++;
+
+//     // ✅ 4. Skills
+//     if (profile.isSkillsAdded) completedSections++;
+
+//     // ✅ 5. Resume
+//     if (profile.isResumeAdded) completedSections++;
+
+//     // ✅ Calculate % (5 sections = 100%)
+//      const progress = Math.min(100, Math.max(0, Math.round((completedSections / 5) * 100)));
+
+
+//     return res.status(200).json({
+//       status: true,
+//       message: "Profile progress fetched successfully.",
+//       progress,
+     
+//     });
+
+//   } catch (error) {
+//     console.error(error);
+//     res.status(500).json({
+//       status: false,
+//       message: "Server error",
+//     });
+//   }
+// };
+
+
+
+
+
 
 
 //dashboard of job seeker 
