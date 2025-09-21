@@ -1379,15 +1379,19 @@ exports.getJobSeekerDashboard = async (req, res) => {
     ];
 
     const agg = await Task.aggregate(pipeline);
-    const totalHours = agg.length ? Math.round(agg[0].totalHours * 100) / 100 : 0;
-    const totalEarnings = agg.length ? Math.round(agg[0].totalEarnings * 100) / 100 : 0;
+
+    // round to 2 decimals but keep them as *numbers* (not strings)
+    const round2 = (n) => Math.round((n || 0) * 100) / 100;
+
+   const totalHours = agg.length ? round2(agg[0].totalHours) : 0;
+    const totalEarnings = agg.length ? round2(agg[0].totalEarnings) : 0;
 
     return res.json({
       status: true,
       message: "Job seeker dashboard metrics fetched successfully.",
       data: {
-        hoursWorked: formatHours(totalHours),     // e.g. "5 hours"
-        totalEarnings: formatINR(totalEarnings), // e.g. "₹ 500.00"
+        hoursWorked: totalHours,     // e.g. "5 hours"
+        totalEarnings: totalEarnings, // e.g. "₹ 500.00"
         Completedjobs: 0  
       },
     });
