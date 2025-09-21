@@ -1277,10 +1277,26 @@ exports.getProfileProgress = async (req, res) => {
     ];
     const basicFields = basicFieldsList.every((f) => isPresent(profile[f]));
 
-    const workExperience = !!profile.isExperienceAdded;
-    const education      = !!profile.isEducationAdded;
-    const skills         = !!profile.isSkillsAdded;
-    const resume         = !!profile.isResumeAdded;
+    // 👇 compute from DB instead of the flag
+    const hasExp = await WorkExperience.exists({ userId, isDeleted: { $ne: true } });
+    const workExperience = !!hasExp;
+
+
+    // in getProfileProgress
+const hasEdu = await JobSeekerEducation.exists({ userId, isDeleted: { $ne: true } });
+const education = !!hasEdu;
+
+ // in getProfileProgress
+const hasSkills = await JobSeekerSkill.exists({
+  userId,
+  isDeleted: { $ne: true },
+  skillIds: { $exists: true, $ne: [] },
+});
+const skills = !!hasSkills;
+
+    // in getProfileProgress
+  const hasResume = await Resume.exists({ userId, isDeleted: { $ne: true } });
+const resume = !!hasResume;
 
     let completed = 0;
     if (basicFields) completed++;
@@ -1307,87 +1323,6 @@ exports.getProfileProgress = async (req, res) => {
   }
 };
 
-
-
-// exports.getProfileProgress = async (req, res) => {
-//   try {
-//     const { userId, role } = req.user; // coming from verifyToken
-
-//     // Restrict access: only job seekers allowed
-//     if (role !== "job_seeker") {
-//       return res.status(403).json({
-//         status: false,
-//         message: "Access denied. Only job seekers can view profile progress.",
-//       });
-//     }
-
-//     const profile = await JobSeekerProfile.findOne({ userId });
-//     if (!profile) {
-//       return res.status(404).json({
-//         status: false,
-//         message: "Profile not found.",
-//       });
-//     }
-
-
-//        // Check if soft deleted
-//     if (profile.isDeleted) {
-//       return res.status(409).json({   // 409 Conflict is good for "disabled" state
-//         status: false,
-//         message: "Your profile is currently disabled.",
-//       });
-//     }
-
-//     let completedSections = 0;
-
-//     // ✅ 1. Basic profile check
-//     const basicFields = [
-//       "name",
-//       "phoneNumber",
-//       "email",
-//       "dateOfBirth",
-//       "gender",
-//       "state",
-//       "city",
-//       "pincode",
-//       "industryType",
-//       "jobProfile",
-//     ];
-
-//     const hasBasic = basicFields.every(field => profile[field]);
-//     if (hasBasic) completedSections++;
-
-//     // ✅ 2. Work experience
-//     if (profile.isExperienceAdded) completedSections++;
-
-//     // ✅ 3. Education
-//     if (profile.isEducationAdded) completedSections++;
-
-//     // ✅ 4. Skills
-//     if (profile.isSkillsAdded) completedSections++;
-
-//     // ✅ 5. Resume
-//     if (profile.isResumeAdded) completedSections++;
-
-//     // ✅ Calculate % (5 sections = 100%)
-//      const progress = Math.min(100, Math.max(0, Math.round((completedSections / 5) * 100)));
-
-
-//     return res.status(200).json({
-//       status: true,
-//       message: "Profile progress fetched successfully.",
-//       progress,
-     
-//     });
-
-//   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({
-//       status: false,
-//       message: "Server error",
-//     });
-//   }
-// };
 
 
 

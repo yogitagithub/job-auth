@@ -175,11 +175,22 @@ exports.deleteResume = async (req, res) => {
       });
     }
 
-    // Soft delete
-    resume.isDeleted = true;
-    // if your schema supports it, also store a timestamp:
-    resume.deletedAt = new Date(); // add deletedAt: { type: Date } in schema if you want
-    await resume.save();
+    // Soft delete the resume
+    await Resume.updateOne(
+      { _id: resume._id, userId },
+      { $set: { isDeleted: true, deletedAt: new Date() } }
+    );
+
+    // 🔁 Recompute the profile flag from DB (handles single or multiple resumes)
+    const hasRemaining = await Resume.exists({
+      userId,
+      isDeleted: { $ne: true },
+    });
+
+    await JobSeekerProfile.updateOne(
+      { userId },
+      { $set: { isResumeAdded: !!hasRemaining } }
+    );
 
     return res.status(200).json({
       status: true,

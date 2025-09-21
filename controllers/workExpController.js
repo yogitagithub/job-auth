@@ -443,6 +443,18 @@ exports.deleteWorkExperienceById = async (req, res) => {
       { $set: { isDeleted: true, deletedAt: new Date() } }
     );
 
+
+      // 🔁 Recompute the flag on the profile from ground truth
+    const hasRemaining = await WorkExperience.exists({
+      userId,
+      isDeleted: { $ne: true },
+    });
+
+     await JobSeekerProfile.updateOne(
+      { userId },
+      { $set: { isExperienceAdded: !!hasRemaining, isExperienced: !!hasRemaining } }
+    );
+
     return res.status(200).json({
       status: true,
       message: "Work experience deleted successfully (soft delete).",
