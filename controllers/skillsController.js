@@ -354,55 +354,70 @@ exports.deleteSkill = async (req, res) => {
 
 
 // DELETE one skill from the logged-in job seeker's skills
-exports.removeSingleSkill = async (req, res) => {
+const escapeRegex = (s = "") => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+
+exports.removeSingleSkillByName = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
     const { userId, role } = req.user || {};
-    const { skillId } = req.params;
+    const rawName = decodeURIComponent(req.params.skillName || "").trim();
 
-    // role check
     if (role !== "job_seeker") {
       await session.abortTransaction(); session.endSession();
       return res.status(403).json({ status: false, message: "Only job seekers can modify their skills." });
     }
-    // id validation
-    if (!mongoose.Types.ObjectId.isValid(skillId)) {
+    if (!rawName) {
       await session.abortTransaction(); session.endSession();
-      return res.status(400).json({ status: false, message: "Invalid skillId." });
+      return res.status(400).json({ status: false, message: "skillName is required in the URL." });
     }
-    const skillObjId = new mongoose.Types.ObjectId(skillId);
 
-    // find active JobSeekerSkill doc
+    // 1) Load the user's active skills doc
     const jss = await JobSeekerSkill.findOne({ userId, isDeleted: { $ne: true } })
+      .select("_id jobSeekerId skillIds")
+      .lean()
       .session(session);
+
     if (!jss) {
       await session.abortTransaction(); session.endSession();
       return res.status(404).json({ status: false, message: "Skill list not found." });
     }
 
-    // ensure the skill exists in the array
-    const hasSkill = (jss.skillIds || []).some(id => id.equals(skillObjId));
-    if (!hasSkill) {
+    // 2) Find the *owned* skill by name (case-insensitive), using the `skill` field
+    //    Also fallback to `name` if your schema ever had that.
+    const rx = new RegExp(`^${escapeRegex(rawName)}$`, "i");
+    const skill = await Skill.findOne({
+      _id: { $in: jss.skillIds },
+      isDeleted: { $ne: true },
+      $or: [{ skill: rx }, { name: rx }],  // supports either field
+    })
+      .select("_id skill name")
+      .session(session);
+
+    if (!skill) {
       await session.abortTransaction(); session.endSession();
-      return res.status(404).json({ status: false, message: "Skill not present in your list." });
+      return res.status(404).json({
+        status: false,
+        message: `Skill '${rawName}' is not present in your list.`,
+      });
     }
 
-    // pull the skill from the array and return updated doc
+    // 3) Pull it from the array
     const updated = await JobSeekerSkill.findOneAndUpdate(
       { _id: jss._id },
-      { $pull: { skillIds: skillObjId } },
+      { $pull: { skillIds: skill._id } },
       { new: true, session }
     );
 
-    // decrement global Skill.count (remove if you don't track counts)
+    // 4) Optional: decrement global counter if you track it
     await Skill.updateOne(
-      { _id: skillObjId, count: { $gt: 0 } },
+      { _id: skill._id, count: { $gt: 0 } },
       { $inc: { count: -1 } },
       { session }
     );
 
-    // if no skills left, flip the profile flag
+    // 5) If no skills left, flip profile flag
     if (!updated.skillIds.length) {
       await JobSeekerProfile.updateOne(
         { _id: jss.jobSeekerId },
@@ -417,19 +432,94 @@ exports.removeSingleSkill = async (req, res) => {
       status: true,
       message: "Skill removed successfully.",
       data: {
-        removedSkillId: skillId,
-        remainingSkillIds: updated.skillIds,
-        isSkillsAdded: !!updated.skillIds.length
-      }
+        removedSkillId: String(skill._id),
+        removedSkillName: skill.skill || skill.name,
+        
+      },
     });
   } catch (err) {
     await session.abortTransaction(); session.endSession();
-    return res.status(500).json({
-      status: false,
-      message: "Error removing skill",
-      error: err.message
-    });
+    return res.status(500).json({ status: false, message: "Error removing skill", error: err.message });
   }
 };
+
+
+// exports.removeSingleSkill = async (req, res) => {
+//   const session = await mongoose.startSession();
+//   session.startTransaction();
+//   try {
+//     const { userId, role } = req.user || {};
+//     const { skillId } = req.params;
+
+//     // role check
+//     if (role !== "job_seeker") {
+//       await session.abortTransaction(); session.endSession();
+//       return res.status(403).json({ status: false, message: "Only job seekers can modify their skills." });
+//     }
+//     // id validation
+//     if (!mongoose.Types.ObjectId.isValid(skillId)) {
+//       await session.abortTransaction(); session.endSession();
+//       return res.status(400).json({ status: false, message: "Invalid skillId." });
+//     }
+//     const skillObjId = new mongoose.Types.ObjectId(skillId);
+
+//     // find active JobSeekerSkill doc
+//     const jss = await JobSeekerSkill.findOne({ userId, isDeleted: { $ne: true } })
+//       .session(session);
+//     if (!jss) {
+//       await session.abortTransaction(); session.endSession();
+//       return res.status(404).json({ status: false, message: "Skill list not found." });
+//     }
+
+//     // ensure the skill exists in the array
+//     const hasSkill = (jss.skillIds || []).some(id => id.equals(skillObjId));
+//     if (!hasSkill) {
+//       await session.abortTransaction(); session.endSession();
+//       return res.status(404).json({ status: false, message: "Skill not present in your list." });
+//     }
+
+//     // pull the skill from the array and return updated doc
+//     const updated = await JobSeekerSkill.findOneAndUpdate(
+//       { _id: jss._id },
+//       { $pull: { skillIds: skillObjId } },
+//       { new: true, session }
+//     );
+
+//     // decrement global Skill.count (remove if you don't track counts)
+//     await Skill.updateOne(
+//       { _id: skillObjId, count: { $gt: 0 } },
+//       { $inc: { count: -1 } },
+//       { session }
+//     );
+
+//     // if no skills left, flip the profile flag
+//     if (!updated.skillIds.length) {
+//       await JobSeekerProfile.updateOne(
+//         { _id: jss.jobSeekerId },
+//         { $set: { isSkillsAdded: false } },
+//         { session }
+//       );
+//     }
+
+//     await session.commitTransaction(); session.endSession();
+
+//     return res.status(200).json({
+//       status: true,
+//       message: "Skill removed successfully.",
+//       data: {
+//         removedSkillId: skillId,
+//         remainingSkillIds: updated.skillIds,
+//         isSkillsAdded: !!updated.skillIds.length
+//       }
+//     });
+//   } catch (err) {
+//     await session.abortTransaction(); session.endSession();
+//     return res.status(500).json({
+//       status: false,
+//       message: "Error removing skill",
+//       error: err.message
+//     });
+//   }
+// };
 
 
