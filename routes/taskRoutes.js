@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { uploadTask, updateTask, updatedTaskDetails } = require('../controllers/taskController');
+const { uploadTask, updateTask, updatedTaskDetails, updateTaskPayment } = require('../controllers/taskController');
 const { verifyToken } = require('../middleware/authMiddleware');
 
 //task upload by job seeker
@@ -12,7 +12,9 @@ router.put('/update-task', verifyToken, updateTask);
 //details of updated task view by employer and job seeker
 router.get('/updated-task-details/:jobApplicationId', verifyToken, updatedTaskDetails);
 
- 
+ //update isPaid field by employer only
+ router.patch("/task-payment/:taskId", verifyToken, updateTaskPayment);
+
 
 
 module.exports = router;

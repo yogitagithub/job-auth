@@ -41,6 +41,13 @@ const taskSchema = new mongoose.Schema(
      
     },
 
+
+    isPaid: {
+  type: Boolean,
+  default: false,
+},
+
+
    
 
     submittedAt: { type: Date, default: Date.now },

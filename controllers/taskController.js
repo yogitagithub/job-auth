@@ -344,3 +344,88 @@ exports.updatedTaskDetails = async (req, res) => {
     return res.status(500).json({ status: false, message: err?.message || "Server error." });
   }
 };
+
+
+//update isPaid field by employer only
+exports.updateTaskPayment = async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const { isPaid } = req.body;
+    const { userId, role } = req.user; // from verifyToken
+
+    // 0) Validate role & input
+    if (role !== "employer") {
+      return res.status(403).json({
+        status: false,
+        message: "Only employers can update isPaid status.",
+      });
+    }
+    if (typeof isPaid !== "boolean") {
+      return res.status(400).json({
+        status: false,
+        message: "isPaid must be a boolean.",
+      });
+    }
+
+    // 1) Load task → jobApplication → jobPost(userId) to verify ownership
+    const task = await Task.findById(taskId).populate({
+      path: "jobApplicationId",
+      select: "jobPostId",
+      populate: { path: "jobPostId", model: "JobPost", select: "userId" },
+    });
+
+    if (!task) {
+      return res.status(404).json({ status: false, message: "Task not found." });
+    }
+
+    const ownerId = task?.jobApplicationId?.jobPostId?.userId;
+    if (!ownerId) {
+      return res.status(400).json({
+        status: false,
+        message:
+          "Job post owner not found. Check JobApplication.jobPostId and JobPost.userId links.",
+      });
+    }
+
+    const ownerMatches =
+      ownerId instanceof mongoose.Types.ObjectId
+        ? ownerId.equals(userId)
+        : String(ownerId) === String(userId);
+
+    if (!ownerMatches) {
+      return res.status(403).json({
+        status: false,
+        message: "You can only update isPaid for your own job post tasks.",
+      });
+    }
+
+    // 2) Update field (only isPaid)
+    task.isPaid = isPaid;
+    await task.save();
+
+    // 3) Build clean response (no __v, createdAt, updatedAt, jobApplicationId)
+    const data = {
+      _id: task._id,
+      title: task.title,
+      description: task.description,
+      startTime: task.startTime,
+      endTime: task.endTime,
+      workedHours: task.workedHours,
+      progressPercent: task.progressPercent,
+      status: task.status,
+      employerApprovedTask: task.employerApprovedTask,
+      isPaid: task.isPaid,
+      submittedAt: task.submittedAt,
+    };
+
+    return res.json({
+      status: true,
+      message: "Task payment status updated successfully.",
+      data,
+    });
+  } catch (err) {
+    return res.status(500).json({ status: false, message: err.message });
+  }
+};
+
+
