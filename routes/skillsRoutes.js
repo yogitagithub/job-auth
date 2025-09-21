@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { addMySkills, getMySkills, updateSkill, deleteSkill } = require('../controllers/skillsController');
+const { addMySkills, getMySkills, updateSkill, deleteSkill, removeSingleSkill } = require('../controllers/skillsController');
 const { listAdminSkills } = require('../controllers/adminController');
 
 const { verifyToken } = require('../middleware/authMiddleware');
@@ -10,6 +10,9 @@ router.post('/add-skills', verifyToken, addMySkills);
  router.get('/get-skills', verifyToken, getMySkills);
   router.put('/update-skills', verifyToken, updateSkill);
 router.delete('/delete-skills', verifyToken, deleteSkill);
+
+// DELETE one skill from the logged-in job seeker's skills
+router.delete("/delete-skill/:skillId", verifyToken, removeSingleSkill);
 
 
 //get list of admin skill list on the basis of search, populara and active
