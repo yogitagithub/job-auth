@@ -379,7 +379,7 @@ exports.getApplicantsForJob = async (req, res) => {
 
 
 
-// for employer only without job post id
+// for employer only without job post id filter applied
 exports.getApplicantsForEmployer = async (req, res) => {
   try {
     const { role, userId } = req.user;

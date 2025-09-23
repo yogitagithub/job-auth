@@ -866,8 +866,8 @@ exports.getCompanyProfileViews = async (req, res) => {
 };
 
 
-//company dashboard
-exports.getCompanyDashboard = async (req, res) => {
+//company dashboard for website
+exports.getCompanyDashboardWeb = async (req, res) => {
   try {
     const { userId, role } = req.user || {};
 
@@ -934,6 +934,79 @@ exports.getCompanyDashboard = async (req, res) => {
     });
   }
 };
+
+
+//company dashboard for mobile
+exports.getCompanyDashboard = async (req, res) => {
+  try {
+    const { userId, role } = req.user || {};
+
+    // ACL — only employer can access
+    if (role !== "employer") {
+      return res.status(403).json({
+        status: false,
+        message: "Access denied. Only employers can view the dashboard.",
+      });
+    }
+
+    // ----- 1) Posted jobs (exclude soft-deleted) -----
+    const basePostFilter = { userId, isDeleted: false };
+
+    // Get count and ids in parallel
+    const [postedJobsCount, employerPosts] = await Promise.all([
+      JobPost.countDocuments(basePostFilter),
+      JobPost.find(basePostFilter).select("_id").lean(),
+    ]);
+
+    // ----- 2) Candidates applied (only for NON-deleted posts) -----
+    let candidatesAppliedCount = 0;
+    if (employerPosts.length) {
+      const jobPostIds = employerPosts.map((p) => p._id);
+      candidatesAppliedCount = await JobApplication.countDocuments({
+        jobPostId: { $in: jobPostIds },
+        status: "Applied", // exclude Withdrawn
+      });
+    }
+
+    // ----- 3) Profile views -----
+    const company = await CompanyProfile.findOne({ userId, isDeleted: false })
+      .select("totalViews profileViews")
+      .lean();
+
+    let profileViewsTotal = 0;
+    if (company) {
+      if (typeof company.totalViews === "number") {
+        profileViewsTotal = company.totalViews;
+      } else if (Array.isArray(company.profileViews)) {
+        profileViewsTotal = company.profileViews.reduce(
+          (sum, v) => sum + (v.viewCount || 0),
+          0
+        );
+      }
+    }
+
+    // ---- Shape the response same as job seeker dashboard ----
+    const dashBoard = [
+      { id: "postedJobs", label: "Posted Jobs", value: postedJobsCount.toString(), icon: "briefcase" },
+      { id: "candidatesApplied", label: "Candidates Applied", value: candidatesAppliedCount.toString(), icon: "users" },
+      { id: "profileViews", label: "Profile Views", value: profileViewsTotal.toString(), icon: "eye" },
+    ];
+
+    return res.status(200).json({
+      status: true,
+      message: "Employer dashboard metrics fetched successfully.",
+      data: { dashBoard },
+    });
+
+  } catch (err) {
+    console.error("getEmployerDashboard error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Server error while fetching dashboard metrics.",
+    });
+  }
+};
+
 
 
 
