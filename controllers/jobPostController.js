@@ -1855,7 +1855,9 @@ exports.getJobDetailsPublic = async (req, res) => {
       .populate({ path: "otherField",   select: "name" })
        .populate({ path: "workingShift",   select: "name" })
         .populate({ path: "jobProfile",   select: "name" })
+         .populate({ path: "skills",       select: "skill" })
       .populate({ path: "state",        select: "state" });
+      
 
     if (!jobPost) {
       return res.status(404).json({ status: false, message: "Job post not found." });
@@ -1889,7 +1891,13 @@ exports.getJobDetailsPublic = async (req, res) => {
 
       jobTitle:           jobPost.jobTitle ?? null,
       jobDescription:     jobPost.jobDescription ?? null,
-      skills:             jobPost.skills ?? null,
+     
+
+       skills: Array.isArray(jobPost.skills)
+    ? jobPost.skills.map(s => s?.skill).filter(Boolean)   // ⬅️ names
+    : [],
+
+    
       minSalary:          jobPost.minSalary ?? null,
       maxSalary:          jobPost.maxSalary ?? null,
       displayPhoneNumber: jobPost.displayPhoneNumber ?? null,
