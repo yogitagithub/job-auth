@@ -10,6 +10,10 @@ const JobSeekerSkill = require("../models/JobSeekerSkill");
 const Resume = require("../models/Resume");
 const Task = require("../models/Task");
 
+const JobApplication = require("../models/JobApplication");
+const JobPost = require("../models/JobPost");
+const CompanyProfile = require("../models/CompanyProfile");
+
 
 const fs = require("fs");
 const fsp = fs.promises;
@@ -1496,6 +1500,199 @@ exports.getSeekerDashboardWeb = async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ status: false, message: err?.message || "Server error." });
+  }
+};
+
+
+
+//get employer approved job applications
+exports.getEmployerApprovedApplicants = async (req, res) => {
+  try {
+    const { role, userId } = req.user || {};
+    if (role !== "job_seeker") {
+      return res.status(403).json({
+        status: false,
+        message: "Only job seekers can view their approved applications.",
+      });
+    }
+
+
+      // ---- Pagination params ----
+    const page = Math.max(parseInt(req.query.page || "1", 10), 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit || "10", 10), 1), 50);
+    const skip = (page - 1) * limit;
+
+    const matchStage = {
+      userId: new mongoose.Types.ObjectId(userId),
+      employerApprovalStatus: "Approved",
+    };
+
+    const pipeline = [
+      { $match: matchStage },
+
+      // Join JobPost
+      {
+        $lookup: {
+          from: "jobposts",
+          localField: "jobPostId",
+          foreignField: "_id",
+          as: "jobPost",
+        },
+      },
+      { $unwind: "$jobPost" },
+
+      // Optional: ignore soft-deleted / inactive posts
+      { $match: { "jobPost.isDeleted": false } },
+
+      // Join Company
+      {
+        $lookup: {
+          from: "companyprofiles",
+          localField: "jobPost.companyId",
+          foreignField: "_id",
+          as: "company",
+        },
+      },
+      { $unwind: { path: "$company", preserveNullAndEmptyArrays: true } },
+
+      // Join Seeker
+      {
+        $lookup: {
+          from: "jobseekerprofiles",
+          localField: "jobSeekerId",
+          foreignField: "_id",
+          as: "seeker",
+        },
+      },
+      { $unwind: "$seeker" },
+
+
+        // JobType
+      {
+        $lookup: {
+          from: "jobtypes",                // adjust if your collection name differs
+          localField: "jobPost.jobType",
+          foreignField: "_id",
+          as: "jobTypeDoc",
+        },
+      },
+      { $unwind: { path: "$jobTypeDoc", preserveNullAndEmptyArrays: true } },
+
+      // SalaryType
+      {
+        $lookup: {
+          from: "salarytypes",
+          localField: "jobPost.salaryType",
+          foreignField: "_id",
+          as: "salaryTypeDoc",
+        },
+      },
+      { $unwind: { path: "$salaryTypeDoc", preserveNullAndEmptyArrays: true } },
+
+      // State (StateCity)
+      {
+        $lookup: {
+          from: "statecities",
+          localField: "jobPost.state",
+          foreignField: "_id",
+          as: "stateDoc",
+        },
+      },
+      { $unwind: { path: "$stateDoc", preserveNullAndEmptyArrays: true } },
+
+      // Shape the row object
+      {
+        $project: {
+          _id: 1,
+         
+
+            // ⬇️ format appliedAt -> "04-09-2025"
+    appliedAt: {
+      $dateToString: {
+        format: "%d-%m-%Y",
+        date: "$appliedAt",
+         // optional; remove or change if you prefer UTC
+      }
+    },
+
+
+          employerApprovalStatus: 1,
+          jobPostId: 1,
+
+          jobTitle: "$jobPost.jobTitle",
+          hourlyRate: "$jobPost.hourlyRate",
+         
+
+          // ✅ names instead of IDs (fall back between common field names)
+          jobTypeName: { $ifNull: ["$jobTypeDoc.name", "$jobTypeDoc.type"] },
+          salaryTypeName: { $ifNull: ["$salaryTypeDoc.name", "$salaryTypeDoc.type"] },
+          state: {
+            $ifNull: ["$stateDoc.state", "$stateDoc.name"] // whichever your schema uses
+          },
+
+
+          city: "$jobPost.city",
+
+           //Flattened company fields
+          companyName: "$company.companyName",
+          companyImage: { $ifNull: ["$company.logo", "$company.image"] },
+
+         //seeker flattened here
+    seekerName: "$seeker.name",
+    seekerImage: "$seeker.image"
+
+         
+        },
+      },
+
+      { $sort: { appliedAt: -1, _id: -1 } },
+    
+
+
+
+     // ---- Do pagination and total in one pass ----
+      {
+        $facet: {
+          applications: [{ $skip: skip }, { $limit: limit }],
+          total: [{ $count: "count" }],
+        },
+      },
+      {
+        $addFields: {
+          totalRecord: { $ifNull: [{ $arrayElemAt: ["$total.count", 0] }, 0] },
+        },
+      },
+      { $project: { total: 0 } }
+      ];
+
+         const agg = await JobApplication.aggregate(pipeline);
+    const applications = agg?.[0]?.applications || [];
+    const totalRecord = agg?.[0]?.totalRecord || 0;
+    const totalPage = totalRecord === 0 ? 0 : Math.ceil(totalRecord / limit);
+
+
+
+     return res.status(200).json({
+      status: true,
+      message: "Approved job applications fetched successfully.",
+      data: {
+        totalRecord,
+        totalPage,
+        currentPage: page,
+        approvedJobApplications, // rename to "jobSeekers" if you want it to match that other endpoint
+      },
+    });
+    
+
+   
+    
+  } catch (err) {
+    console.error("getEmployerApprovedApplicants (no pagination) error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Something went wrong while fetching approved applications.",
+      error: err.message,
+    });
   }
 };
 

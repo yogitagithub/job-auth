@@ -2,7 +2,8 @@ const express = require("express");
 const router = express.Router();
 
 const { saveProfile, getProfile, updateProfileImage, getProfileImage, 
-  deleteProfile, getAllJobSeekers, getRecommendedProfiles, getTopProfiles, getProfileProgress, getSeekerDetails, getJobSeekerDashboard, getSeekerDashboardWeb } = require('../controllers/jobSeekerController');
+  deleteProfile, getAllJobSeekers, getRecommendedProfiles, getTopProfiles, getProfileProgress, 
+  getSeekerDetails, getJobSeekerDashboard, getSeekerDashboardWeb, getEmployerApprovedApplicants } = require('../controllers/jobSeekerController');
 const { verifyToken } = require('../middleware/authMiddleware');
 const uploadImage = require('../middleware/uploadImage');
 
@@ -42,6 +43,10 @@ router.get('/job-seeker-dashboard',verifyToken, getJobSeekerDashboard);
 
 //dashboard of job seeker (website)
 router.get('/seeker-dashboard',verifyToken, getSeekerDashboardWeb);
+
+
+//get employer approved job applications
+router.get('/employerApprovedApplicants',verifyToken, getEmployerApprovedApplicants);
 
 
 
