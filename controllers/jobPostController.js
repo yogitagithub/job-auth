@@ -1209,6 +1209,7 @@ exports.getAllJobPostsPublic = async (req, res) => {
         .populate({ path: "workingShift",   select: "name" })
          .populate({ path: "jobProfile",   select: "name" })
       .populate({ path: "state",        select: "state" })
+       .populate({ path: "skills", select: "skill" })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -1234,7 +1235,12 @@ exports.getAllJobPostsPublic = async (req, res) => {
 
       jobTitle:           j.jobTitle ?? null,
       jobDescription:     j.jobDescription ?? null,
-      skills:             j.skills ?? null,
+     
+        skills: Array.isArray(j.skills)
+  ? j.skills.map(s => s?.skill).filter(Boolean)
+  : [],
+
+  
       minSalary:          j.minSalary ?? null,
       maxSalary:          j.maxSalary ?? null,
       displayPhoneNumber: j.displayPhoneNumber ?? null,
