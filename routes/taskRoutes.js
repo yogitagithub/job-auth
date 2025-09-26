@@ -1,13 +1,16 @@
 const express = require("express");
 const router = express.Router();
-const { uploadTask, updateTask, updatedTaskDetails, updateTaskPayment } = require('../controllers/taskController');
+const { uploadTask, updateTask, updatedTaskDetails, updateTaskPayment, getMyTasks } = require('../controllers/taskController');
 const { verifyToken } = require('../middleware/authMiddleware');
 const uploadCertificate = require("../middleware/uploadCertificate");
 
 //task upload by job seeker
-// router.post('/upload-task', verifyToken, uploadTask);
+
 router.post("/upload-task", verifyToken, uploadCertificate.single("file"), uploadTask);
 
+
+//get all the task 
+router.get("/my-tasks", verifyToken, getMyTasks);
 
 
 //updating task by employer
