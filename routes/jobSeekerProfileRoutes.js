@@ -3,7 +3,7 @@ const router = express.Router();
 
 const { saveProfile, getProfile, updateProfileImage, getProfileImage, 
   deleteProfile, getAllJobSeekers, getRecommendedProfiles, getTopProfiles, getProfileProgress, 
-  getSeekerDetails, getJobSeekerDashboard, getSeekerDashboardWeb, getEmployerApprovedApplicants } = require('../controllers/jobSeekerController');
+  getSeekerDetails, getJobSeekerDashboard, getSeekerDashboardWeb, getEmployerApprovedApplicants, getTopIndustryTypes } = require('../controllers/jobSeekerController');
 const { verifyToken } = require('../middleware/authMiddleware');
 const uploadImage = require('../middleware/uploadImage');
 
@@ -47,6 +47,10 @@ router.get('/seeker-dashboard',verifyToken, getSeekerDashboardWeb);
 
 //get employer approved job applications
 router.get('/employerApprovedApplicants',verifyToken, getEmployerApprovedApplicants);
+
+
+//top 5 industry types and its job seeker list in array format without token
+router.get("/top-industryTypes", getTopIndustryTypes);
 
 
 

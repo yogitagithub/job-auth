@@ -1696,3 +1696,173 @@ exports.getEmployerApprovedApplicants = async (req, res) => {
   }
 };
 
+
+
+
+//top 5 industry types and its job seeker list in array format without token
+function daysAgo(dt) {
+  if (!dt) return null;
+  const diff = Math.max(0, Date.now() - new Date(dt).getTime());
+  const d = Math.floor(diff / (1000 * 60 * 60 * 24));
+  if (d === 0) return "today";
+  if (d === 1) return "1 day ago";
+  return `${d} days ago`;
+}
+
+exports.getTopIndustryTypes = async (req, res) => {
+  try {
+    // Allow both your old query keys and new ones
+    const industryLimit = Math.max(
+      parseInt(req.query.industryLimit, 10) ||
+      parseInt(req.query.categoryLimit, 10) || 5,
+      1
+    );
+    const profilesPerIndustry = Math.max(
+      parseInt(req.query.profilesPerIndustry, 10) ||
+      parseInt(req.query.postsPerCategory, 10) || 6,
+      1
+    );
+
+    // Resolve collection names from models
+    const COL = {
+      seekers:        JobSeekerProfile.collection.name,
+      industryTypes:  IndustryType.collection.name,
+      jobProfiles:    JobProfile.collection.name,
+      states:         StateCity.collection.name
+    };
+
+    const pipeline = [
+      // 1) Group JobSeekerProfile by industryType (exclude deleted)
+      { $match: { isDeleted: false, industryType: { $type: "objectId" } } },
+      { $group: { _id: "$industryType", seekerCount: { $sum: 1 } } },
+      { $sort: { seekerCount: -1 } },
+      { $limit: industryLimit },
+
+      // 2) Join IndustryType doc (ensure not deleted)
+      {
+        $lookup: {
+          from: COL.industryTypes,
+          let: { indId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$_id", "$$indId"] },
+                    { $eq: ["$isDeleted", false] }
+                  ]
+                }
+              }
+            },
+            { $project: { _id: 1, name: 1 } }
+          ],
+          as: "ind"
+        }
+      },
+      { $unwind: "$ind" },
+
+      // 3) Fetch up to M latest seekers for each industry
+      {
+        $lookup: {
+          from: COL.seekers,
+          let: { indId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$industryType", "$$indId"] },
+                    { $eq: ["$isDeleted", false] }
+                  ]
+                }
+              }
+            },
+            { $sort: { createdAt: -1 } },
+            { $limit: profilesPerIndustry },
+
+            // Lookups for display names
+            {
+              $lookup: {
+                from: COL.jobProfiles,
+                localField: "jobProfile",
+                foreignField: "_id",
+                as: "jp"
+              }
+            },
+            {
+              $lookup: {
+                from: COL.states,
+                localField: "state",
+                foreignField: "_id",
+                as: "st"
+              }
+            },
+
+            // Flatten fields
+            {
+              $addFields: {
+                jobProfile: { $first: "$jp.name" },
+                state: { $first: "$st.state" }
+              }
+            },
+
+            // Keep only needed public fields (omit phone/email by default)
+            {
+              $project: {
+                _id: 1,
+                name: 1,
+                image: 1,
+                gender: 1,
+                jobProfile: 1,
+                state: 1,
+                city: 1,
+                isExperienced: 1,
+                adminRecommendedSeeker: 1,
+                adminTopProfiles: 1,
+                createdAt: 1
+              }
+            }
+          ],
+          as: "seekers"
+        }
+      },
+
+      // 4) Final per-industry shape
+      {
+        $project: {
+          _id: 0,
+          industryTypeId: "$ind._id",
+          industryTypeName: "$ind.name",
+          seekers: "$seekers"
+        }
+      }
+    ];
+
+    const rows = await JobSeekerProfile.aggregate(pipeline);
+
+    // Add "x days ago" and rename array → jobSeekers (mirrors your jobs array)
+    const data = rows.map(row => ({
+      industryTypeId: row.industryTypeId,
+      industryTypeName: row.industryTypeName,
+      jobSeekers: (row.seekers || []).map(s => ({
+        ...s,
+        profileCreated: daysAgo(s.createdAt)
+      }))
+    }));
+
+    return res.status(200).json({
+      status: true,
+      message: "Top industry types fetched successfully.",
+      data
+    });
+  } catch (err) {
+    console.error("getTopIndustryTypes error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to fetch top industry types.",
+      error: err.message
+    });
+  }
+};
+
+
