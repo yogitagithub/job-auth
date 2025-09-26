@@ -61,113 +61,119 @@ const formatINR = (v) => `₹ ${Number(v || 0).toFixed(2)}`;
 
 //task upload by job seeker
 exports.uploadTask = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
-    // 1) Role gate
-    const { role, userId } = req.user || {};
+    const { userId, role } = req.user || {};
     if (role !== "job_seeker") {
-      return res.status(403).json({
-        status: false,
-        message: "Only job seekers can upload tasks.",
-      });
+      await session.abortTransaction(); session.endSession();
+      return res.status(403).json({ status: false, message: "Only job seekers can create tasks." });
     }
 
-    // 2) Parse & basic validation
     const {
       jobApplicationId,
       title,
       description,
-      startTime,        // ISO string (optional)
-      endTime,          // ISO string (optional)
-      progressPercent,  // number 0..100 (optional)
+      startTime: startTimeStr,
+      endTime: endTimeStr,
+      progressPercent
     } = req.body || {};
 
-    if (!jobApplicationId || !mongoose.isValidObjectId(jobApplicationId)) {
-      return res.status(400).json({ status: false, message: "Valid jobApplicationId is required." });
-    }
-    if (!title || !description) {
-      return res.status(400).json({ status: false, message: "title and description are required." });
+    if (!jobApplicationId || !title || !description) {
+      await session.abortTransaction(); session.endSession();
+      return res.status(400).json({ status: false, message: "jobApplicationId, title and description are required." });
     }
 
-    // 3) Ensure the job application belongs to this user and is Approved
-    const jobApp = await JobApplication.findOne({ _id: jobApplicationId, userId }).lean();
+    // must have an uploaded file (saved by uploadCertificate.single('file'))
+    if (!req.file) {
+      await session.abortTransaction(); session.endSession();
+      return res.status(400).json({ status: false, message: "No file uploaded." });
+    }
+
+    // profile must exist
+    const profile = await JobSeekerProfile.findOne({ userId, isDeleted: false })
+      .select("_id")
+      .session(session);
+    if (!profile) {
+      await session.abortTransaction(); session.endSession();
+      return res.status(400).json({ status: false, message: "Please complete your job seeker profile first." });
+    }
+
+    // job application must belong to this user
+    const jobApp = await JobApplication.findById(jobApplicationId).session(session);
     if (!jobApp) {
-      return res.status(404).json({ status: false, message: "Job application not found for this user." });
+      await session.abortTransaction(); session.endSession();
+      return res.status(404).json({ status: false, message: "Job application not found." });
     }
-    if (jobApp.employerApprovalStatus !== "Approved") {
-      return res.status(403).json({
-        status: false,
-        message: "You are not approved by the employer to submit tasks for this job.",
-      });
+    if (String(jobApp.userId) !== String(userId)) {
+      await session.abortTransaction(); session.endSession();
+      return res.status(403).json({ status: false, message: "You can only create tasks for your own job applications." });
     }
 
-    // 4) Prepare payload
-    const doc = {
+    // build public file URL
+    const BASE = process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
+    const fileUrl = `${BASE}/uploads/certificates/${req.file.filename}`;
+
+    // use YOUR parseTimeToToday helper (accepts "07:00", "7 PM", "07:00:00", etc.)
+    let startTime, endTime;
+    if (startTimeStr) {
+      startTime = parseTimeToToday(String(startTimeStr));
+      if (!startTime) {
+        await session.abortTransaction(); session.endSession();
+        return res.status(400).json({ status: false, message: "Invalid startTime format." });
+      }
+    }
+    if (endTimeStr) {
+      endTime = parseTimeToToday(String(endTimeStr));
+      if (!endTime) {
+        await session.abortTransaction(); session.endSession();
+        return res.status(400).json({ status: false, message: "Invalid endTime format." });
+      }
+    }
+
+    const payload = {
       jobApplicationId,
-      title: String(title).trim(),
-      description: String(description).trim(),
+      title,
+      description,
+      fileUrl,
+      ...(startTime ? { startTime } : {}),
+      ...(endTime ? { endTime } : {}),
     };
 
-   // Optional times (accept "HH:mm[:ss]" or "h[:mm[:ss]] AM/PM")
-if (startTime) {
-  const d = parseTimeToToday(startTime);
-  if (!d) return res.status(400).json({ status: false, message: "Invalid startTime format." });
-  doc.startTime = d;
-}
-if (endTime) {
-  const d = parseTimeToToday(endTime);
-  if (!d) return res.status(400).json({ status: false, message: "Invalid endTime format." });
-  doc.endTime = d;
-}
-
-
-    // Optional progress (clamp to 0..100; schema will derive status)
-    if (typeof progressPercent !== "undefined") {
+    if (progressPercent !== undefined && progressPercent !== null) {
       const p = Number(progressPercent);
-      if (Number.isNaN(p)) {
-        return res.status(400).json({ status: false, message: "progressPercent must be a number." });
+      if (Number.isNaN(p) || p < 0 || p > 100) {
+        await session.abortTransaction(); session.endSession();
+        return res.status(400).json({ status: false, message: "progressPercent must be 0–100." });
       }
-      doc.progressPercent = Math.min(100, Math.max(0, p));
+      payload.progressPercent = p; // status auto-mapped in Task pre('save')
     }
 
-    // 5) Create task (pre-save hook will compute workedHours + status)
-    const task = await Task.create(doc);
+    const [created] = await Task.create([payload], { session });
 
+    await session.commitTransaction(); session.endSession();
 
-    // Build formatted payload for UI
-const data = {
-  _id: task._id,
-  jobApplicationId: task.jobApplicationId,
-  title: task.title,
-  description: task.description,
-
-  // formatted times (HH:mm:ss)
-  startTime: task.startTime ? formatTimeHHMMSS(task.startTime) : null,
-  endTime: task.endTime ? formatTimeHHMMSS(task.endTime) : null,
-
-  // worked hours like "3 hours"
-  workedHours: formatHours(task.workedHours),
-
-  // percent with % sign
-  progressPercent: `${Number(task.progressPercent)}%`,
-
-  status: task.status,
-  employerApprovedTask: task.employerApprovedTask,
-
-  // dd-mm-yyyy
-  submittedAt: formatDateDDMMYYYY(task.submittedAt),
-
-  
-};
-
-
-    return res.status(201).json({
+    return res.status(200).json({
       status: true,
-      message: "Task uploaded successfully.",
-      data
+      message: "Task created successfully.",
+      data: {
+        _id: created._id,
+        title: created.title,
+        description: created.description,
+        fileUrl: created.fileUrl,
+        startTime: created.startTime,
+        endTime: created.endTime,
+        workedHours: created.workedHours,          // computed by pre('save')
+        progressPercent: created.progressPercent,  // echoes input
+        status: created.status,                    // derived from progress
+        employerApprovedTask: created.employerApprovedTask,
+        submittedAt: created.submittedAt,
+        createdAt: created.createdAt,
+      }
     });
-  } catch (err) {
-    // Handle invalid date ordering (from your pre-save) and other errors
-    const msg = err?.message || "Server error while uploading task.";
+  } catch (error) {
+    await session.abortTransaction(); session.endSession();
+    const msg = error.code === "LIMIT_FILE_SIZE" ? "File too large. Max 5MB." : (error.message || "Server error.");
     return res.status(500).json({ status: false, message: msg });
   }
 };

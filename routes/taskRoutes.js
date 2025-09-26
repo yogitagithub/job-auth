@@ -2,9 +2,13 @@ const express = require("express");
 const router = express.Router();
 const { uploadTask, updateTask, updatedTaskDetails, updateTaskPayment } = require('../controllers/taskController');
 const { verifyToken } = require('../middleware/authMiddleware');
+const uploadCertificate = require("../middleware/uploadCertificate");
 
 //task upload by job seeker
-router.post('/upload-task', verifyToken, uploadTask);
+// router.post('/upload-task', verifyToken, uploadTask);
+router.post("/upload-task", verifyToken, uploadCertificate.single("file"), uploadTask);
+
+
 
 //updating task by employer
 router.put('/update-task', verifyToken, updateTask);

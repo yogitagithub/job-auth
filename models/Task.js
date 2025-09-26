@@ -14,7 +14,7 @@ const taskSchema = new mongoose.Schema(
 
     title: { type: String, required: true },
     description: { type: String, required: true },
-    // fileUrl: { type: String },
+     fileUrl: { type: String },
 
     // ---- Time tracking ----
     startTime: { type: Date },           // set when user starts
