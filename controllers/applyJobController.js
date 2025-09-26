@@ -7,6 +7,7 @@ const Resume = require("../models/Resume");
 const JobPost = require("../models/JobPost");
 const JobProfile = require("../models/AdminJobProfile");
 const IndustryType = require("../models/AdminIndustry");
+const StateCity = require("../models/StateCity");
 
 
 const mongoose = require("mongoose");
@@ -380,11 +381,16 @@ exports.getApplicantsForJob = async (req, res) => {
 
 
 // for employer only without job post id filter applied
+function escapeRegExp(s = "") {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+
 exports.getApplicantsForEmployer = async (req, res) => {
   try {
     const { role, userId } = req.user;
 
-    // ✅ only employers may hit this endpoint
+    // only employers
     if (role !== "employer") {
       return res.status(403).json({
         status: false,
@@ -392,12 +398,7 @@ exports.getApplicantsForEmployer = async (req, res) => {
       });
     }
 
-    // 🔎 optional filters
-    const statusQuery = (req.query.status || "Applied").trim();
-    const statusFilter =
-      statusQuery.toLowerCase() === "all" ? {} : { status: "Applied" };
-
-    // 🔎 pagination
+    // ---------------- pagination ----------------
     const pageParam = parseInt(req.query.page, 10);
     const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
 
@@ -412,7 +413,12 @@ exports.getApplicantsForEmployer = async (req, res) => {
           })();
     const skip = limit ? (page - 1) * limit : 0;
 
-    // ✅ find ALL job posts owned by this employer
+    // ---------------- status filter ----------------
+    const statusQuery = (req.query.status || "Applied").trim();
+    const statusFilter =
+      statusQuery.toLowerCase() === "all" ? {} : { status: "Applied" };
+
+    // ---------------- employer posts ----------------
     const employerPosts = await JobPost.find({
       userId,
       isDeleted: false
@@ -428,20 +434,106 @@ exports.getApplicantsForEmployer = async (req, res) => {
         data: []
       });
     }
-
     const jobPostIds = employerPosts.map(p => p._id);
 
-    // ✅ base filter (all apps for the employer's posts)
-    const filter = { jobPostId: { $in: jobPostIds }, ...statusFilter };
+    // ---------------- filters from Postman (BY NAME) ----------------
+    const industryTypeName = (req.query.industryType || "").trim();
+    const stateName        = (req.query.state || "").trim();
+    const cityName         = (req.query.city || "").trim();
+    const jobProfileName   = (req.query.jobProfile || "").trim();
 
-    // ✅ fetch applications (include jobPostId so we can return it)
+    // Resolve IDs for the names provided. If a name is provided but not found,
+    // we can short-circuit to an empty result.
+    const [
+      industryDoc,
+      jobProfileDoc,
+      stateDoc
+    ] = await Promise.all([
+      industryTypeName
+        ? IndustryType.findOne({
+            name: { $regex: `^${escapeRegExp(industryTypeName)}$`, $options: "i" },
+            isDeleted: false
+          }).select("_id")
+        : null,
+      jobProfileName
+        ? JobProfile.findOne({
+            $or: [
+              { name:       { $regex: `^${escapeRegExp(jobProfileName)}$`, $options: "i" } },
+              { jobProfile: { $regex: `^${escapeRegExp(jobProfileName)}$`, $options: "i" } }
+            ]
+          }).select("_id")
+        : null,
+      stateName
+        ? StateCity.findOne({
+            state: { $regex: `^${escapeRegExp(stateName)}$`, $options: "i" }
+          }).select("_id state")
+        : null
+    ]);
+
+    // If a specific name was provided but no doc found => empty result fast
+    if (industryTypeName && !industryDoc) {
+      return res.status(200).json({
+        status: true,
+        message: "Applicants fetched successfully.",
+        totalRecord: 0, totalPage: 1, currentPage: 1, data: []
+      });
+    }
+    if (jobProfileName && !jobProfileDoc) {
+      return res.status(200).json({
+        status: true,
+        message: "Applicants fetched successfully.",
+        totalRecord: 0, totalPage: 1, currentPage: 1, data: []
+      });
+    }
+    if (stateName && !stateDoc) {
+      return res.status(200).json({
+        status: true,
+        message: "Applicants fetched successfully.",
+        totalRecord: 0, totalPage: 1, currentPage: 1, data: []
+      });
+    }
+
+    // Build a filter to pre-select matching seekers by their profile
+    const seekerFilter = { isDeleted: false };
+    if (industryDoc) seekerFilter.industryType = industryDoc._id;
+    if (jobProfileDoc) seekerFilter.jobProfile = jobProfileDoc._id;
+    if (stateDoc) seekerFilter.state = stateDoc._id;
+    if (cityName)
+      seekerFilter.city = { $regex: `^${escapeRegExp(cityName)}$`, $options: "i" };
+
+    let seekerIds = null;
+    const anySeekerFilter =
+      industryDoc || jobProfileDoc || stateDoc || !!cityName;
+
+    if (anySeekerFilter) {
+      // fetch only ids; if none, short-circuit
+      seekerIds = await JobSeekerProfile.find(seekerFilter).distinct("_id");
+      if (!seekerIds.length) {
+        return res.status(200).json({
+          status: true,
+          message: "Applicants fetched successfully.",
+          totalRecord: 0, totalPage: 1, currentPage: 1, data: []
+        });
+      }
+    }
+
+    // ---------------- final application filter ----------------
+    const filter = {
+      jobPostId: { $in: jobPostIds },
+      ...statusFilter,
+      ...(seekerIds ? { jobSeekerId: { $in: seekerIds } } : {})
+    };
+
+    // ---------------- query + populate ----------------
     const [totalRecord, applications] = await Promise.all([
       JobApplication.countDocuments(filter),
       JobApplication.find(filter)
-        .select("jobPostId userId jobSeekerId status employerApprovalStatus appliedAt createdAt")
+        .select(
+          "jobPostId userId jobSeekerId status employerApprovalStatus appliedAt createdAt"
+        )
         .populate({
           path: "jobSeekerId",
-          match: { isDeleted: false },
+          match: { isDeleted: false }, // (we already filtered by ids if needed)
           select: [
             "name",
             "phoneNumber",
@@ -460,8 +552,8 @@ exports.getApplicantsForEmployer = async (req, res) => {
           ].join(" "),
           populate: [
             { path: "state", select: "state" },
-            { path: "jobProfile", select: "jobProfile name" },
-            { path: "industryType", select: "industryType name" }
+            { path: "jobProfile", select: "name jobProfile" },
+            { path: "industryType", select: "name" }
           ]
         })
         .sort({ createdAt: -1 })
@@ -470,24 +562,23 @@ exports.getApplicantsForEmployer = async (req, res) => {
         .lean()
     ]);
 
-    // 🗓️ local formatter
+    // ---------------- formatting (dd-mm-yyyy) ----------------
+    const pad2 = (n) => String(n).padStart(2, "0");
     const formatDate = (date) => {
       if (!date) return null;
       const d = new Date(date);
-      const day = String(d.getDate()).padStart(2, "0");
-      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const day = pad2(d.getDate());
+      const month = pad2(d.getMonth() + 1);
       const year = d.getFullYear();
       return `${day}-${month}-${year}`;
     };
 
     const data = applications
-      .filter(a => !!a.jobSeekerId)
+      .filter(a => !!a.jobSeekerId) // drop if profile missing
       .map(a => {
         const p = a.jobSeekerId;
         return {
-          // 🔙 include job post id per your request
           jobPostId: a.jobPostId?.toString() || null,
-
           applicationId: a._id.toString(),
           status: a.status,
           employerApprovalStatus: a.employerApprovalStatus,
@@ -510,7 +601,7 @@ exports.getApplicantsForEmployer = async (req, res) => {
             : null,
 
           industryType: p.industryType
-            ? p.industryType.industryType || p.industryType.name || null
+            ? p.industryType.name || null
             : null
         };
       });
@@ -531,6 +622,159 @@ exports.getApplicantsForEmployer = async (req, res) => {
     return res.status(500).json({ status: false, message: "Server error", error: err.message });
   }
 };
+
+
+// exports.getApplicantsForEmployer = async (req, res) => {
+//   try {
+//     const { role, userId } = req.user;
+
+//     // ✅ only employers may hit this endpoint
+//     if (role !== "employer") {
+//       return res.status(403).json({
+//         status: false,
+//         message: "Only employers can view applicants from this endpoint."
+//       });
+//     }
+
+//     // 🔎 optional filters
+//     const statusQuery = (req.query.status || "Applied").trim();
+//     const statusFilter =
+//       statusQuery.toLowerCase() === "all" ? {} : { status: "Applied" };
+
+//     // 🔎 pagination
+//     const pageParam = parseInt(req.query.page, 10);
+//     const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
+
+//     const limitRaw = (req.query.limit || "").toString().toLowerCase();
+//     const limit =
+//       limitRaw === "all"
+//         ? 0
+//         : (() => {
+//             const n = parseInt(limitRaw || "10", 10);
+//             if (!Number.isFinite(n) || n < 1) return 10;
+//             return Math.min(n, 100);
+//           })();
+//     const skip = limit ? (page - 1) * limit : 0;
+
+//     // ✅ find ALL job posts owned by this employer
+//     const employerPosts = await JobPost.find({
+//       userId,
+//       isDeleted: false
+//     }).select("_id");
+
+//     if (!employerPosts.length) {
+//       return res.status(200).json({
+//         status: true,
+//         message: "Applicants fetched successfully.",
+//         totalRecord: 0,
+//         totalPage: 1,
+//         currentPage: 1,
+//         data: []
+//       });
+//     }
+
+//     const jobPostIds = employerPosts.map(p => p._id);
+
+//     // ✅ base filter (all apps for the employer's posts)
+//     const filter = { jobPostId: { $in: jobPostIds }, ...statusFilter };
+
+//     // ✅ fetch applications (include jobPostId so we can return it)
+//     const [totalRecord, applications] = await Promise.all([
+//       JobApplication.countDocuments(filter),
+//       JobApplication.find(filter)
+//         .select("jobPostId userId jobSeekerId status employerApprovalStatus appliedAt createdAt")
+//         .populate({
+//           path: "jobSeekerId",
+//           match: { isDeleted: false },
+//           select: [
+//             "name",
+//             "phoneNumber",
+//             "email",
+//             "state",
+//             "city",
+//             "image",
+//             "jobProfile",
+//             "dateOfBirth",
+//             "gender",
+//             "panCardNumber",
+//             "address",
+//             "alternatePhoneNumber",
+//             "pincode",
+//             "industryType"
+//           ].join(" "),
+//           populate: [
+//             { path: "state", select: "state" },
+//             { path: "jobProfile", select: "jobProfile name" },
+//             { path: "industryType", select: "industryType name" }
+//           ]
+//         })
+//         .sort({ createdAt: -1 })
+//         .skip(skip)
+//         .limit(limit)
+//         .lean()
+//     ]);
+
+//     // 🗓️ local formatter
+//     const formatDate = (date) => {
+//       if (!date) return null;
+//       const d = new Date(date);
+//       const day = String(d.getDate()).padStart(2, "0");
+//       const month = String(d.getMonth() + 1).padStart(2, "0");
+//       const year = d.getFullYear();
+//       return `${day}-${month}-${year}`;
+//     };
+
+//     const data = applications
+//       .filter(a => !!a.jobSeekerId)
+//       .map(a => {
+//         const p = a.jobSeekerId;
+//         return {
+//           // 🔙 include job post id per your request
+//           jobPostId: a.jobPostId?.toString() || null,
+
+//           applicationId: a._id.toString(),
+//           status: a.status,
+//           employerApprovalStatus: a.employerApprovalStatus,
+
+//           jobSeekerName: p.name ?? null,
+//           phoneNumber: p.phoneNumber ?? null,
+//           email: p.email ?? null,
+//           dateOfBirth: formatDate(p.dateOfBirth),
+//           gender: p.gender ?? null,
+//           panCardNumber: p.panCardNumber ?? null,
+//           address: p.address ?? null,
+//           alternatePhoneNumber: p.alternatePhoneNumber ?? null,
+//           pincode: p.pincode ?? null,
+//           state: p.state?.state ?? null,
+//           city: p.city ?? null,
+//           image: p.image ?? null,
+
+//           jobProfile: p.jobProfile
+//             ? p.jobProfile.jobProfile || p.jobProfile.name || null
+//             : null,
+
+//           industryType: p.industryType
+//             ? p.industryType.industryType || p.industryType.name || null
+//             : null
+//         };
+//       });
+
+//     const totalPage = limit && totalRecord > 0 ? Math.ceil(totalRecord / limit) : 1;
+//     const currentPage = limit ? Math.min(page, totalPage || 1) : 1;
+
+//     return res.status(200).json({
+//       status: true,
+//       message: "Applicants fetched successfully.",
+//       totalRecord,
+//       totalPage,
+//       currentPage,
+//       data
+//     });
+//   } catch (err) {
+//     console.error("getApplicantsForEmployer error:", err);
+//     return res.status(500).json({ status: false, message: "Server error", error: err.message });
+//   }
+// };
 
 
 
