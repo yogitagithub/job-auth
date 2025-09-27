@@ -1442,6 +1442,94 @@ exports.getMyApprovedApplications = async (req, res) => {
 
 
 
+//through industry id in response i am getting job seeker list
+exports.getJobSeekersByIndustry = async (req, res) => {
+  try {
+    const { industryId } = req.params;
+
+    // validate industry id
+    if (!mongoose.isValidObjectId(industryId)) {
+      return res.status(400).json({ status: false, message: "Invalid industryId." });
+    }
+
+    // ensure industry exists & not deleted
+    const industry = await IndustryType.findOne({ _id: industryId, isDeleted: false })
+      .select("_id name")
+      .lean();
+    if (!industry) {
+      return res.status(404).json({ status: false, message: "Industry not found." });
+    }
+
+    // pagination
+    const pageParam = parseInt(req.query.page, 10);
+    const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
+
+    const limitRaw = (req.query.limit || "").toString().toLowerCase();
+    const limit =
+      limitRaw === "all"
+        ? 0
+        : (() => {
+            const n = parseInt(limitRaw || "10", 10);
+            if (!Number.isFinite(n) || n < 1) return 10;
+            return Math.min(n, 100);
+          })();
+    const skip = limit ? (page - 1) * limit : 0;
+
+    // base filter
+    const filter = {
+      industryType: industry._id,
+      isDeleted: false,
+    };
+
+    const totalRecord = await JobSeekerProfile.countDocuments(filter);
+
+    const seekers = await JobSeekerProfile.find(filter)
+      .select("name image phoneNumber email state city jobProfile isExperienced")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit || 0) // 0 => no limit
+      .populate({ path: "jobProfile", model: JobProfile, select: "name jobProfile" })
+      .populate({ path: "state", model: StateCity, select: "state" })
+      .lean();
+
+    const data = seekers.map((p) => ({
+      jobSeekerId: String(p._id),
+      name: p.name || null,
+      image: p.image || null,
+      phoneNumber: p.phoneNumber || null,
+      email: p.email || null,
+      state: p.state?.state || null,
+      city: p.city || null,
+      jobProfile: p.jobProfile ? (p.jobProfile.jobProfile || p.jobProfile.name || null) : null,
+      industryTypeId: String(industry._id),
+      industryTypeName: industry.name || null,
+      isExperienced: !!p.isExperienced,
+    }));
+
+    const totalPage = limit && totalRecord > 0 ? Math.ceil(totalRecord / limit) : 1;
+    const currentPage = limit ? Math.min(page, totalPage || 1) : 1;
+
+    return res.status(200).json({
+      status: true,
+      message: "Job seekers fetched successfully.",
+      totalRecord,
+      totalPage,
+      currentPage,
+      data,
+    });
+  } catch (err) {
+    console.error("getJobSeekersByIndustry error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Server error",
+      error: err.message,
+    });
+  }
+};
+
+
+
+
 
 
 
