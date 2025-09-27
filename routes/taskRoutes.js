@@ -10,7 +10,7 @@ router.post("/upload-task", verifyToken, uploadCertificate.single("file"), uploa
 
 
 //get all the task 
-router.get("/my-tasks", verifyToken, getMyTasks);
+router.get("/my-tasks/:applicationId", verifyToken, getMyTasks);
 
 
 //updating task by employer

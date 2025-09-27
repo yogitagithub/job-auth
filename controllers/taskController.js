@@ -439,7 +439,6 @@ exports.updateTaskPayment = async (req, res) => {
 
 
 //get all the task 
-
 exports.getMyTasks = async (req, res) => {
   try {
     const { role, userId } = req.user || {};
@@ -449,6 +448,8 @@ exports.getMyTasks = async (req, res) => {
         message: "Only job seekers or employers can view tasks.",
       });
     }
+
+    const { applicationId } = req.params || {};
 
     // ----- pagination -----
     const pageParam = parseInt(req.query.page, 10);
@@ -465,17 +466,58 @@ exports.getMyTasks = async (req, res) => {
           })();
     const skip = limit ? (page - 1) * limit : 0;
 
-    // ----- build application scope by role -----
-    let appFilter;
-    if (role === "job_seeker") {
-      // apps created by this seeker
-      appFilter = { userId };
-    } else {
-      // employer: apps for employer's posts
-      const myPosts = await JobPost.find({ userId, isDeleted: false })
-        .select("_id")
+    // ----- resolve application scope -> appIds -----
+    let appIds = [];
+
+    if (applicationId) {
+      // Specific application: validate & authorize
+      if (!mongoose.isValidObjectId(applicationId)) {
+        return res.status(400).json({ status: false, message: "Invalid applicationId." });
+      }
+
+      const appDoc = await JobApplication.findById(applicationId)
+        .select("_id userId jobPostId")
         .lean();
-      if (!myPosts.length) {
+
+      if (!appDoc) {
+        return res.status(404).json({ status: false, message: "Job application not found." });
+      }
+
+      if (role === "job_seeker") {
+        if (String(appDoc.userId) !== String(userId)) {
+          return res.status(403).json({ status: false, message: "Not authorized for this application." });
+        }
+      } else {
+        // employer must own the job post
+        const owns = await JobPost.exists({ _id: appDoc.jobPostId, userId, isDeleted: false });
+        if (!owns) {
+          return res.status(403).json({ status: false, message: "Not authorized for this application." });
+        }
+      }
+
+      appIds = [appDoc._id];
+    } else {
+      // All apps in scope (by role)
+      let appFilter;
+      if (role === "job_seeker") {
+        appFilter = { userId };
+      } else {
+        const myPosts = await JobPost.find({ userId, isDeleted: false }).select("_id").lean();
+        if (!myPosts.length) {
+          return res.status(200).json({
+            status: true,
+            message: "Tasks fetched successfully.",
+            totalRecord: 0,
+            totalPage: 1,
+            currentPage: 1,
+            data: [],
+          });
+        }
+        appFilter = { jobPostId: { $in: myPosts.map(p => p._id) } };
+      }
+
+      const apps = await JobApplication.find(appFilter).select("_id").lean();
+      if (!apps.length) {
         return res.status(200).json({
           status: true,
           message: "Tasks fetched successfully.",
@@ -485,33 +527,15 @@ exports.getMyTasks = async (req, res) => {
           data: [],
         });
       }
-      const postIds = myPosts.map(p => p._id);
-      appFilter = { jobPostId: { $in: postIds } };
+      appIds = apps.map(a => a._id);
     }
 
-    // ----- fetch applications in scope -----
-    const scopedApps = await JobApplication.find(appFilter)
-      .select("_id jobPostId")
-      .lean();
+    // ----- fetch tasks in scope -----
+    const taskFilter = { jobApplicationId: { $in: appIds } };
 
-    if (!scopedApps.length) {
-      return res.status(200).json({
-        status: true,
-        message: "Tasks fetched successfully.",
-        totalRecord: 0,
-        totalPage: 1,
-        currentPage: 1,
-        data: [],
-      });
-    }
+    const totalRecord = await Task.countDocuments(taskFilter);
 
-    const appIds = scopedApps.map(a => a._id);
-
-    // ----- totals -----
-    const totalRecord = await Task.countDocuments({ jobApplicationId: { $in: appIds } });
-
-    // ----- fetch tasks + nested populate (app -> post -> company) -----
-    const tasks = await Task.find({ jobApplicationId: { $in: appIds } })
+    const tasks = await Task.find(taskFilter)
       .select(
         "jobApplicationId title description fileUrl startTime endTime workedHours progressPercent status employerApprovedTask submittedAt"
       )
@@ -589,4 +613,155 @@ exports.getMyTasks = async (req, res) => {
     });
   }
 };
+
+
+// exports.getMyTasks = async (req, res) => {
+//   try {
+//     const { role, userId } = req.user || {};
+//     if (!["job_seeker", "employer"].includes(role)) {
+//       return res.status(403).json({
+//         status: false,
+//         message: "Only job seekers or employers can view tasks.",
+//       });
+//     }
+
+//     // ----- pagination -----
+//     const pageParam = parseInt(req.query.page, 10);
+//     const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
+
+//     const limitRaw = (req.query.limit || "").toString().toLowerCase();
+//     const limit =
+//       limitRaw === "all"
+//         ? 0
+//         : (() => {
+//             const n = parseInt(limitRaw || "10", 10);
+//             if (!Number.isFinite(n) || n < 1) return 10;
+//             return Math.min(n, 100);
+//           })();
+//     const skip = limit ? (page - 1) * limit : 0;
+
+//     // ----- build application scope by role -----
+//     let appFilter;
+//     if (role === "job_seeker") {
+//       // apps created by this seeker
+//       appFilter = { userId };
+//     } else {
+//       // employer: apps for employer's posts
+//       const myPosts = await JobPost.find({ userId, isDeleted: false })
+//         .select("_id")
+//         .lean();
+//       if (!myPosts.length) {
+//         return res.status(200).json({
+//           status: true,
+//           message: "Tasks fetched successfully.",
+//           totalRecord: 0,
+//           totalPage: 1,
+//           currentPage: 1,
+//           data: [],
+//         });
+//       }
+//       const postIds = myPosts.map(p => p._id);
+//       appFilter = { jobPostId: { $in: postIds } };
+//     }
+
+//     // ----- fetch applications in scope -----
+//     const scopedApps = await JobApplication.find(appFilter)
+//       .select("_id jobPostId")
+//       .lean();
+
+//     if (!scopedApps.length) {
+//       return res.status(200).json({
+//         status: true,
+//         message: "Tasks fetched successfully.",
+//         totalRecord: 0,
+//         totalPage: 1,
+//         currentPage: 1,
+//         data: [],
+//       });
+//     }
+
+//     const appIds = scopedApps.map(a => a._id);
+
+//     // ----- totals -----
+//     const totalRecord = await Task.countDocuments({ jobApplicationId: { $in: appIds } });
+
+//     // ----- fetch tasks + nested populate (app -> post -> company) -----
+//     const tasks = await Task.find({ jobApplicationId: { $in: appIds } })
+//       .select(
+//         "jobApplicationId title description fileUrl startTime endTime workedHours progressPercent status employerApprovedTask submittedAt"
+//       )
+//       .sort({ createdAt: -1 })
+//       .skip(skip)
+//       .limit(limit || 0)
+//       .populate({
+//         path: "jobApplicationId",
+//         select: "jobPostId",
+//         populate: {
+//           path: "jobPostId",
+//           select: "jobTitle companyId",
+//           populate: {
+//             path: "companyId",
+//             select: "companyName image",
+//           },
+//         },
+//       })
+//       .lean();
+
+//     // ----- response shape -----
+//     const data = tasks.map(t => {
+//       const app = t.jobApplicationId || null;
+//       const jp  = app && app.jobPostId ? app.jobPostId : null;
+//       const co  = jp && jp.companyId ? jp.companyId : null;
+
+//       const jobApplicationId =
+//         app && app._id ? String(app._id) : (t.jobApplicationId ? String(t.jobApplicationId) : null);
+
+//       const fileUrl =
+//         t.fileUrl && String(t.fileUrl).trim() !== "" ? t.fileUrl : null;
+
+//       return {
+//         taskId: String(t._id),
+//         jobApplicationId,
+
+//         jobTitle: jp ? jp.jobTitle || null : null,
+//         companyName: co ? co.companyName || null : null,
+//         companyImage: co ? co.image || null : null,
+
+//         title: t.title,
+//         description: t.description,
+//         fileUrl,                                        // null when missing/empty
+
+//         // formatted strings returned as startTime/endTime
+//         startTime: t.startTime ? formatTimeHHMMSS(t.startTime) : null,
+//         endTime:   t.endTime   ? formatTimeHHMMSS(t.endTime)   : null,
+
+//         workedHours: t.workedHours ?? 0,
+//         progressPercent: t.progressPercent,
+//         status: t.status,
+//         employerApprovedTask: t.employerApprovedTask,
+
+//         submittedDate: t.submittedAt ? formatDateDDMMYYYY(t.submittedAt) : null,
+//       };
+//     });
+
+//     const totalPage = limit && totalRecord > 0 ? Math.ceil(totalRecord / limit) : 1;
+//     const currentPage = limit ? Math.min(page, totalPage || 1) : 1;
+
+//     return res.status(200).json({
+//       status: true,
+//       message: "Tasks fetched successfully.",
+//       totalRecord,
+//       totalPage,
+//       currentPage,
+//       data,
+//     });
+//   } catch (err) {
+//     console.error("getMyTasks error:", err);
+//     return res.status(500).json({
+//       status: false,
+//       message: "Server error",
+//       error: err.message,
+//     });
+//   }
+// };
 
