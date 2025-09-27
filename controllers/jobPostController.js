@@ -2574,10 +2574,9 @@ if (!hasState && hasCity) {
 //top 5 categories and its job post in array format without token
 exports.getTopCategories = async (req, res) => {
   try {
-    const categoryLimit     = Math.max(parseInt(req.query.categoryLimit, 10) || 5, 1);
-    const postsPerCategory  = Math.max(parseInt(req.query.postsPerCategory, 10) || 6, 1);
+    const categoryLimit    = Math.max(parseInt(req.query.categoryLimit, 10) || 5, 1);
+    const postsPerCategory = Math.max(parseInt(req.query.postsPerCategory, 10) || 6, 1);
 
-    // Resolve actual collection names from your models
     const COL = {
       jobPosts:      JobPost.collection.name,
       categories:    Category.collection.name,
@@ -2587,16 +2586,17 @@ exports.getTopCategories = async (req, res) => {
       experiences:   Experience.collection.name,
       workingShifts: WorkingShift.collection.name,
       jobProfiles:   JobProfile.collection.name,
-      states:        StateCity.collection.name
+      states:        StateCity.collection.name,
+      skills:        Skill.collection.name,           // ⬅️ add skills collection
     };
 
     const pipeline = [
-      { $match: { isDeleted: false } },                 // only non-deleted posts
+      { $match: { isDeleted: false } },              // only non-deleted posts
       { $group: { _id: "$category", jobCount: { $sum: 1 } } },
       { $sort: { jobCount: -1 } },
       { $limit: categoryLimit },
 
-      // join category doc (ensure not deleted)
+      // join the category doc (still exclude deleted categories)
       {
         $lookup: {
           from: COL.categories,
@@ -2605,15 +2605,15 @@ exports.getTopCategories = async (req, res) => {
             { $match: { $expr: { $and: [
               { $eq: ["$_id", "$$catId"] },
               { $eq: ["$isDeleted", false] }
-            ]}} },
-            { $project: { _id: 1, name: 1 } }           // no image; we won't return it
+            ] } } },
+            { $project: { _id: 1, name: 1 } }
           ],
           as: "cat"
         }
       },
       { $unwind: "$cat" },
 
-      // fetch up to M latest jobs per category
+      // fetch latest N jobs per category
       {
         $lookup: {
           from: COL.jobPosts,
@@ -2622,7 +2622,7 @@ exports.getTopCategories = async (req, res) => {
             { $match: { $expr: { $and: [
               { $eq: ["$category", "$$catId"] },
               { $eq: ["$isDeleted", false] }
-            ]}} },
+            ] } } },
             { $sort: { createdAt: -1 } },
             { $limit: postsPerCategory },
 
@@ -2635,7 +2635,36 @@ exports.getTopCategories = async (req, res) => {
             { $lookup: { from: COL.jobProfiles,   localField: "jobProfile",  foreignField: "_id", as: "jp" } },
             { $lookup: { from: COL.states,        localField: "state",       foreignField: "_id", as: "st" } },
 
-            // flatten to readable fields
+            // ⬇️ NEW: resolve job skills (return array of skill names)
+            {
+              $lookup: {
+                from: COL.skills,
+                let: { ids: "$skills" },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          { $in: ["$_id", "$$ids"] },
+                          { $eq: ["$isDeleted", false] }
+                        ]
+                      }
+                    }
+                  },
+                  { $project: { _id: 0, skill: 1 } }
+                ],
+                as: "skillDocs"
+              }
+            },
+            {
+              $addFields: {
+                skills: {
+                  $map: { input: "$skillDocs", as: "s", in: "$$s.skill" }
+                }
+              }
+            },
+
+            // flatten readable fields
             {
               $addFields: {
                 company:      { $first: "$company.companyName" },
@@ -2649,7 +2678,7 @@ exports.getTopCategories = async (req, res) => {
               }
             },
 
-            // keep only needed fields in each job item
+            // keep only what you need
             {
               $project: {
                 _id: 1,
@@ -2668,7 +2697,8 @@ exports.getTopCategories = async (req, res) => {
                 maxSalary: 1,
                 status: 1,
                 expiredDate: 1,
-                createdAt: 1
+                createdAt: 1,
+                skills: 1,                              // ⬅️ include resolved skills
               }
             }
           ],
@@ -2676,24 +2706,23 @@ exports.getTopCategories = async (req, res) => {
         }
       },
 
-      // final per-category shape (no image, no totalPosts in output)
       {
         $project: {
           _id: 0,
           categoryId: "$cat._id",
           categoryName: "$cat.name",
-          jobs: "$jobs"          // we’ll rename when building the response
+          jobs: "$jobs"
         }
       }
     ];
 
     const rows = await JobPost.aggregate(pipeline);
 
-    // add "x days ago" & rename jobs → "job postarray"; omit totalPosts & categoryImage
+    // rename jobs → job postarray (and add "x days ago")
     const data = rows.map(row => ({
       categoryId: row.categoryId,
       categoryName: row.categoryName,
-      "jobPost": (row.jobs || []).map(j => ({
+      "job postarray": (row.jobs || []).map(j => ({
         ...j,
         jobPosted: daysAgo(j.createdAt)
       }))
@@ -2713,7 +2742,6 @@ exports.getTopCategories = async (req, res) => {
     });
   }
 };
-
 
 
 
