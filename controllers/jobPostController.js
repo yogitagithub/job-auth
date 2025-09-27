@@ -2723,6 +2723,8 @@ function pickLabel(doc, isState = false) {
   return doc.name ?? doc.title ?? doc.label ?? doc.type ?? doc.range ?? doc.shift ?? null;
 }
 
+
+
 //get job list based on job seeker skills
 exports.getBasedOnSkillsJobs = async (req, res) => {
   try {
@@ -3075,5 +3077,116 @@ exports.getSeekerSavedJobs = async (req, res) => {
     return res.status(500).json({ status: false, message: "Server error", error: err.message });
   }
 };
+
+
+
+//through company id in response i am getting job post list without token
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+function formatDateDDMMYYYY(date) {
+  if (!date) return null;
+  const dt = new Date(date);
+  if (Number.isNaN(dt.getTime())) return null; // invalid date
+  return `${pad2(dt.getDate())}-${pad2(dt.getMonth() + 1)}-${dt.getFullYear()}`;
+}
+
+
+exports.getJobPostByCompany = async (req, res) => {
+  try {
+    const { companyId } = req.params;
+
+    // validate id
+    if (!mongoose.isValidObjectId(companyId)) {
+      return res.status(400).json({ status: false, message: "Invalid companyId." });
+    }
+
+    // pagination
+    const pageParam = parseInt(req.query.page, 10);
+    const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
+
+    const limitRaw = (req.query.limit || "").toString().toLowerCase();
+    const limit =
+      limitRaw === "all"
+        ? 0
+        : (() => {
+            const n = parseInt(limitRaw || "10", 10);
+            if (!Number.isFinite(n) || n < 1) return 10;
+            return Math.min(n, 100);
+          })();
+    const skip = limit ? (page - 1) * limit : 0;
+
+    // filter: all non-deleted posts for this company
+    const filter = { companyId, isDeleted: false };
+
+    const totalRecord = await JobPost.countDocuments(filter);
+
+    const posts = await JobPost.find(filter)
+      .select(
+        "jobTitle jobDescription minSalary maxSalary hourlyRate salaryType jobType experience workingShift jobProfile industryType category state city expiredDate status companyId"
+      )
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit || 0)
+      .populate({ path: "companyId",     model: CompanyProfile,  select: "companyName image" })
+      .populate({ path: "salaryType",    model: SalaryType,      select: "name" })
+      .populate({ path: "jobType",       model: JobType,         select: "name" })
+      .populate({ path: "experience",    model: Experience, select: "name" })
+      .populate({ path: "workingShift",  model: WorkingShift,    select: "name" })
+      .populate({ path: "jobProfile",    model: JobProfile,      select: "name jobProfile" })
+      .populate({ path: "industryType",  model: IndustryType,    select: "name" })
+      .populate({ path: "category",      model: Category,        select: "name" })
+      .populate({ path: "state",         model: StateCity,       select: "state" })
+      .lean();
+
+    const data = posts.map(p => ({
+      jobPostId: String(p._id),
+      jobTitle: p.jobTitle || null,
+      jobDescription: p.jobDescription || null,
+
+      companyName:  p.companyId?.companyName || null,
+      companyImage: p.companyId?.image || null,
+
+      salaryType:    p.salaryType?.name || null,
+      jobType:       p.jobType?.name || null,
+      experience:    p.experience?.name || null,
+      workingShift:  p.workingShift?.name || null,
+      jobProfile:    p.jobProfile ? (p.jobProfile.jobProfile || p.jobProfile.name || null) : null,
+      industryType:  p.industryType?.name || null,
+      category:      p.category?.name || null,
+
+      state: p.state?.state || null,
+      city:  p.city || null,
+
+      minSalary: p.minSalary ?? null,
+      maxSalary: p.maxSalary ?? null,
+      hourlyRate: p.hourlyRate ?? null,
+
+      expiredDate: p.expiredDate ? formatDateDDMMYYYY(p.expiredDate) : null,
+      status: p.status || null,
+    }));
+
+    const totalPage = limit && totalRecord > 0 ? Math.ceil(totalRecord / limit) : 1;
+    const currentPage = limit ? Math.min(page, totalPage || 1) : 1;
+
+    return res.status(200).json({
+      status: true,
+      message: "Job posts fetched successfully.",
+      totalRecord,
+      totalPage,
+      currentPage,
+      data,
+    });
+  } catch (err) {
+    console.error("getJobPostByCompany error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Server error",
+      error: err.message,
+    });
+  }
+};
+
 
 

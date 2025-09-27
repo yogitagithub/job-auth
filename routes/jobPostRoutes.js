@@ -5,7 +5,7 @@ const { createJobPost, getAllJobPosts,
     getJobPostById, updateJobPostById, 
     updateJobPostStatus, deleteJobPostById, 
     getAllJobPostsPublic, getJobDetailsPublic, 
-    getTopCategories, getBasedOnSkillsJobs, getRecommendedJobs, toggleSavedJob, getSeekerSavedJobs } = require('../controllers/jobPostController');
+    getTopCategories, getBasedOnSkillsJobs, getRecommendedJobs, toggleSavedJob, getSeekerSavedJobs, getJobPostByCompany } = require('../controllers/jobPostController');
     
 const { verifyToken } = require('../middleware/authMiddleware');
 
@@ -34,6 +34,11 @@ router.get("/top-categories", getTopCategories);
 
 //get job list based on job seeker skills
 router.get("/jobPostsBasedOnSkills", verifyToken, getBasedOnSkillsJobs);
+
+
+
+//through company id in response i am getting job post list without token
+router.get("/jobListcompanyId/:companyId", getJobPostByCompany);
 
 
 
