@@ -1129,51 +1129,67 @@ exports.deleteIndustry = async (req, res) => {
   }
 };
 
-//get industries without token
+//get industries without token with job seeker count
 exports.getAllIndustriesPublic = async (req, res) => {
   try {
+    // pagination
     const page  = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
     const skip  = (page - 1) * limit;
 
-    const filter = { isDeleted: false }; // ✅ exclude soft-deleted
+    const filter = { isDeleted: false };
 
-    // 1) Count for pagination
+    // total for pagination (only non-deleted industries)
     const totalRecord = await IndustryType.countDocuments(filter);
-    const totalPage   = Math.ceil(totalRecord / limit);
+    const totalPage   = Math.max(1, Math.ceil(totalRecord / limit));
 
-    // 2) Fetch industries (sorted A→Z, only not deleted)
+    // current page of industries (A→Z)
     const industries = await IndustryType.find(filter)
+      .select("_id name isDeleted")
       .sort({ name: 1 })
       .skip(skip)
       .limit(limit)
       .lean();
 
-    // 3) Shape response
+    // compute jobSeekerCount for each industry on this page
+    const ids = industries.map(i => i._id);
+    const countMap = {};
+
+    await Promise.all(
+      ids.map(async (id) => {
+        const n = await JobSeekerProfile.countDocuments({
+          isDeleted: false,
+          industryType: id,        // exact ObjectId match
+        });
+        countMap[id.toString()] = n;
+      })
+    );
+
     const data = industries.map(ind => ({
       id: ind._id,
       name: ind.name,
-      isDeleted: ind.isDeleted  // optional → remove if you don’t want to expose
+      isDeleted: !!ind.isDeleted,
+      jobSeekerCount: countMap[ind._id.toString()] || 0,
     }));
 
-    // 4) Respond
     return res.status(200).json({
       status: true,
       message: "Industry types fetched successfully.",
       totalRecord,
       totalPage,
       currentPage: page,
-      data
+      data,
     });
   } catch (error) {
     console.error("Error fetching public industry types:", error);
     return res.status(500).json({
       status: false,
       message: "Failed to fetch industry types.",
-      error: error.message
+      error: error.message,
     });
   }
 };
+
 
 //Job profile
 exports.createProfile = async (req, res) => {
