@@ -3,7 +3,7 @@ const router = express.Router();
 
 const { saveProfile, getProfile, updateProfileImage, getProfileImage, 
   deleteProfile, getAllJobSeekers, getRecommendedProfiles, getTopProfiles, getProfileProgress, 
-  getSeekerDetails, getJobSeekerDashboard, getSeekerDashboardWeb, getEmployerApprovedApplicants, getTopIndustryTypes } = require('../controllers/jobSeekerController');
+  getSeekerDetails, getJobSeekerDashboard, getSeekerDashboardWeb, getTopIndustryTypes, getMyApprovedApplications } = require('../controllers/jobSeekerController');
 const { verifyToken } = require('../middleware/authMiddleware');
 const uploadImage = require('../middleware/uploadImage');
 
@@ -45,8 +45,8 @@ router.get('/job-seeker-dashboard',verifyToken, getJobSeekerDashboard);
 router.get('/seeker-dashboard',verifyToken, getSeekerDashboardWeb);
 
 
-//get employer approved job applications
-router.get('/employerApprovedApplicants',verifyToken, getEmployerApprovedApplicants);
+//get job seeker employerApprovalStatus=approved job applications
+router.get("/my-approved-applications", verifyToken, getMyApprovedApplications);
 
 
 //top 5 industry types and its job seeker list in array format without token

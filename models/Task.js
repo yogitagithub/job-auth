@@ -41,6 +41,11 @@ const taskSchema = new mongoose.Schema(
      
     },
 
+  //   isRemarksAdded: { 
+  //   type: Boolean, 
+  //   default: false 
+  // },
+
 
     isPaid: {
   type: Boolean,
