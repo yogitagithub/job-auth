@@ -2722,7 +2722,7 @@ exports.getTopCategories = async (req, res) => {
     const data = rows.map(row => ({
       categoryId: row.categoryId,
       categoryName: row.categoryName,
-      "job postarray": (row.jobs || []).map(j => ({
+      "jobPost": (row.jobs || []).map(j => ({
         ...j,
         jobPosted: daysAgo(j.createdAt)
       }))
