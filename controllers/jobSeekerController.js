@@ -1720,36 +1720,39 @@ function daysAgo(dt) {
   return `${d} days ago`;
 }
 
+
 exports.getTopIndustryTypes = async (req, res) => {
   try {
-    // Allow both your old query keys and new ones
     const industryLimit = Math.max(
       parseInt(req.query.industryLimit, 10) ||
       parseInt(req.query.categoryLimit, 10) || 5,
       1
     );
+
     const profilesPerIndustry = Math.max(
       parseInt(req.query.profilesPerIndustry, 10) ||
       parseInt(req.query.postsPerCategory, 10) || 6,
       1
     );
 
-    // Resolve collection names from models
+    // Resolve actual collection names (safer for aggregation)
     const COL = {
-      seekers:        JobSeekerProfile.collection.name,
-      industryTypes:  IndustryType.collection.name,
-      jobProfiles:    JobProfile.collection.name,
-      states:         StateCity.collection.name
+      seekers:         JobSeekerProfile.collection.name,
+      industryTypes:   IndustryType.collection.name,
+      jobProfiles:     JobProfile.collection.name,
+      states:          StateCity.collection.name,
+      jobSeekerSkills: JobSeekerSkill.collection.name,
+      skills:          Skill.collection.name,
     };
 
     const pipeline = [
-      // 1) Group JobSeekerProfile by industryType (exclude deleted)
+      // 1) top industries by number of seekers
       { $match: { isDeleted: false, industryType: { $type: "objectId" } } },
       { $group: { _id: "$industryType", seekerCount: { $sum: 1 } } },
       { $sort: { seekerCount: -1 } },
       { $limit: industryLimit },
 
-      // 2) Join IndustryType doc (ensure not deleted)
+      // 2) attach industry doc
       {
         $lookup: {
           from: COL.industryTypes,
@@ -1772,7 +1775,7 @@ exports.getTopIndustryTypes = async (req, res) => {
       },
       { $unwind: "$ind" },
 
-      // 3) Fetch up to M latest seekers for each industry
+      // 3) latest N seekers per industry
       {
         $lookup: {
           from: COL.seekers,
@@ -1791,33 +1794,64 @@ exports.getTopIndustryTypes = async (req, res) => {
             { $sort: { createdAt: -1 } },
             { $limit: profilesPerIndustry },
 
-            // Lookups for display names
-            {
-              $lookup: {
-                from: COL.jobProfiles,
-                localField: "jobProfile",
-                foreignField: "_id",
-                as: "jp"
-              }
-            },
-            {
-              $lookup: {
-                from: COL.states,
-                localField: "state",
-                foreignField: "_id",
-                as: "st"
-              }
-            },
+            // display name lookups
+            { $lookup: { from: COL.jobProfiles, localField: "jobProfile", foreignField: "_id", as: "jp" } },
+            { $lookup: { from: COL.states,      localField: "state",      foreignField: "_id", as: "st" } },
 
-            // Flatten fields
+            // skills: get jobSeekerSkills doc -> skillIds -> skills (names)
+            {
+              $lookup: {
+                from: COL.jobSeekerSkills,
+                let: { seekerId: "$_id" },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          { $eq: ["$jobSeekerId", "$$seekerId"] },
+                          { $eq: ["$isDeleted", false] }
+                        ]
+                      }
+                    }
+                  },
+                  { $project: { _id: 0, skillIds: 1 } }
+                ],
+                as: "jss"
+              }
+            },
             {
               $addFields: {
+                skillIds: { $ifNull: [{ $first: "$jss.skillIds" }, []] }
+              }
+            },
+            { $lookup: { from: COL.skills, localField: "skillIds", foreignField: "_id", as: "skillDocs" } },
+            {
+              $addFields: {
+                // Robustly pick the name from possible fields and drop nulls
+                skills: {
+                  $filter: {
+                    input: {
+                      $map: {
+                        input: "$skillDocs",
+                        as: "s",
+                        in: {
+                          $ifNull: [
+                            "$$s.name",
+                            { $ifNull: ["$$s.skillName", { $ifNull: ["$$s.skill", null] }] }
+                          ]
+                        }
+                      }
+                    },
+                    as: "n",
+                    cond: { $ne: ["$$n", null] }
+                  }
+                },
                 jobProfile: { $first: "$jp.name" },
-                state: { $first: "$st.state" }
+                state:      { $first: "$st.state" }
               }
             },
 
-            // Keep only needed public fields (omit phone/email by default)
+            // final seeker shape
             {
               $project: {
                 _id: 1,
@@ -1830,7 +1864,8 @@ exports.getTopIndustryTypes = async (req, res) => {
                 isExperienced: 1,
                 adminRecommendedSeeker: 1,
                 adminTopProfiles: 1,
-                createdAt: 1
+                createdAt: 1,
+                skills: 1
               }
             }
           ],
@@ -1838,7 +1873,7 @@ exports.getTopIndustryTypes = async (req, res) => {
         }
       },
 
-      // 4) Final per-industry shape
+      // 4) final per-industry
       {
         $project: {
           _id: 0,
@@ -1851,7 +1886,7 @@ exports.getTopIndustryTypes = async (req, res) => {
 
     const rows = await JobSeekerProfile.aggregate(pipeline);
 
-    // Add "x days ago" and rename array → jobSeekers (mirrors your jobs array)
+    // add "x days ago" + rename array to jobSeekers
     const data = rows.map(row => ({
       industryTypeId: row.industryTypeId,
       industryTypeName: row.industryTypeName,
@@ -1875,5 +1910,4 @@ exports.getTopIndustryTypes = async (req, res) => {
     });
   }
 };
-
 
