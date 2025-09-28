@@ -4,6 +4,7 @@ const IndustryType = require("../models/AdminIndustry");
 const Category = require("../models/AdminCategory");
 const StateCity = require("../models/StateCity");
 const SavedJob = require("../models/SavedJobSeeker");
+const JobApplication= require("../models/JobApplication");
 
 const SalaryType = require("../models/AdminSalaryType");
 const JobType = require("../models/AdminJobType");
@@ -674,18 +675,10 @@ const formatDDMMYYYY = (d) => {
 exports.getAllJobPosts = async (req, res) => {
   try {
     const { userId, role } = req.user || {};
-
     if (!userId) {
-      return res.status(401).json({
-        status: false,
-        message: "Unauthorized"
-      });
+      return res.status(401).json({ status: false, message: "Unauthorized" });
     }
-
-    // NEW: normalize role to avoid case issues
     const normRole = (role || "").toLowerCase();
-
-    // NEW: allow only employer + job_seeker; block admin explicitly
     if (normRole === "admin") {
       return res.status(403).json({
         status: false,
@@ -699,23 +692,22 @@ exports.getAllJobPosts = async (req, res) => {
       });
     }
 
-    // Pagination
+    // pagination
     const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
     const skip  = (page - 1) * limit;
 
-    // Base filter: only non-deleted jobs
+    // base filter
     const filter = { isDeleted: false };
 
-    
+    // EMPLOYER: only their own posts
     if (normRole === "employer") {
       filter.userId = mongoose.Types.ObjectId.isValid(userId)
         ? new mongoose.Types.ObjectId(userId)
         : userId;
     }
-    
 
-    // ---------- query params ----------
+    // ----- query params (unchanged) -----
     const qTitle       = (req.query.q || req.query.jobTitle || "").trim();
     const stateName    = (req.query.state || "").trim();
     const cityParam    = (req.query.city  || "").trim();
@@ -728,30 +720,20 @@ exports.getAllJobPosts = async (req, res) => {
     const experience   = (req.query.experience || "").trim();
     const jobType      = (req.query.jobType || "").trim();
     const workingShift = (req.query.workingShift || "").trim();
+
     const typeFlag     = (req.query.type || "").toLowerCase().trim(); // active|latest|saved
 
-
-
-      // [skills] — accept ?skills=React js,Node js OR ?skills[]=... OR mixture of names/ids
     let skillsQueryRaw = req.query.skills;
     let skillsQueryArr = [];
     if (Array.isArray(skillsQueryRaw)) {
-      // skills[]=A&skills[]=B
       skillsQueryArr = skillsQueryRaw.flatMap(v =>
         String(v).split(",").map(s => s.trim()).filter(Boolean)
       );
     } else if (typeof skillsQueryRaw === "string" && skillsQueryRaw.trim()) {
-      // skills=A,B or single name/id
       skillsQueryArr = skillsQueryRaw.split(",").map(s => s.trim()).filter(Boolean);
     }
 
-
-
-
-    // Title search
     if (qTitle) filter.jobTitle = { $regex: escapeRegex(qTitle), $options: "i" };
-
-    // Type flags
     if (typeFlag) {
       if (typeFlag === "active") filter.isActive = true;
       else if (typeFlag === "latest") filter.isLatest = true;
@@ -759,10 +741,7 @@ exports.getAllJobPosts = async (req, res) => {
       else return res.status(400).json({ status: false, message: "Invalid type. Allowed: active, latest, saved." });
     }
 
-    // ---------- lookups ----------
     const lookups = [];
-
-    // State
     let stateDoc = null;
     if (stateName) {
       lookups.push(
@@ -771,102 +750,75 @@ exports.getAllJobPosts = async (req, res) => {
       );
     }
 
-    // Industry
     let industryDoc = null;
     if (industryName) {
-      if (mongoose.Types.ObjectId.isValid(industryName)) {
-        industryDoc = { _id: industryName };
-      } else {
+      if (mongoose.Types.ObjectId.isValid(industryName)) industryDoc = { _id: industryName };
+      else {
         lookups.push(
-          IndustryType.findOne({
-            name: { $regex: `^${escapeRegex(industryName)}$`, $options: "i" },
-            isDeleted: false
-          }).then(doc => { industryDoc = doc; })
+          IndustryType.findOne({ name: { $regex: `^${escapeRegex(industryName)}$`, $options: "i" }, isDeleted: false })
+            .then(doc => { industryDoc = doc; })
         );
       }
     }
 
-    // Category
     let categoryDoc = null;
     if (categoryName) {
-      if (mongoose.Types.ObjectId.isValid(categoryName)) {
-        categoryDoc = { _id: categoryName };
-      } else {
+      if (mongoose.Types.ObjectId.isValid(categoryName)) categoryDoc = { _id: categoryName };
+      else {
         lookups.push(
-          Category.findOne({
-            name: { $regex: `^${escapeRegex(categoryName)}$`, $options: "i" },
-            isDeleted: false
-          }).then(doc => { categoryDoc = doc; })
+          Category.findOne({ name: { $regex: `^${escapeRegex(categoryName)}$`, $options: "i" }, isDeleted: false })
+            .then(doc => { categoryDoc = doc; })
         );
       }
     }
 
-    // Job Profile
     let jobProfileDoc = null;
     if (jobProfile) {
       lookups.push(
-        JobProfile.findOne({
-          name: { $regex: `^${escapeRegex(jobProfile)}$`, $options: "i" },
-          isDeleted: false
-        }).then(doc => { jobProfileDoc = doc; })
+        JobProfile.findOne({ name: { $regex: `^${escapeRegex(jobProfile)}$`, $options: "i" }, isDeleted: false })
+          .then(doc => { jobProfileDoc = doc; })
       );
     }
 
-    // Salary Type
     let salaryTypeDoc = null;
     if (salaryType) {
       lookups.push(
-        SalaryType.findOne({
-          name: { $regex: `^${escapeRegex(salaryType)}$`, $options: "i" },
-          isDeleted: false
-        }).then(doc => { salaryTypeDoc = doc; })
+        SalaryType.findOne({ name: { $regex: `^${escapeRegex(salaryType)}$`, $options: "i" }, isDeleted: false })
+          .then(doc => { salaryTypeDoc = doc; })
       );
     }
 
-    // Experience
     let experienceDoc = null;
     if (experience) {
       lookups.push(
-        Experience.findOne({
-          name: { $regex: `^${escapeRegex(experience)}$`, $options: "i" },
-          isDeleted: false
-        }).then(doc => { experienceDoc = doc; })
+        Experience.findOne({ name: { $regex: `^${escapeRegex(experience)}$`, $options: "i" }, isDeleted: false })
+          .then(doc => { experienceDoc = doc; })
       );
     }
 
-    // Job Type
     let jobTypeDoc = null;
     if (jobType) {
       lookups.push(
-        JobType.findOne({
-          name: { $regex: `^${escapeRegex(jobType)}$`, $options: "i" },
-          isDeleted: false
-        }).then(doc => { jobTypeDoc = doc; })
+        JobType.findOne({ name: { $regex: `^${escapeRegex(jobType)}$`, $options: "i" }, isDeleted: false })
+          .then(doc => { jobTypeDoc = doc; })
       );
     }
 
-   
-
-    //working shift
     let workingShiftDoc = null;
     if (workingShift) {
-            lookups.push(
-        WorkingShift.findOne({
-          name: { $regex: `^${escapeRegex(workingShift)}$`, $options: "i" },
-          isDeleted: false
-        }).then(doc => { workingShiftDoc = doc; })
+      lookups.push(
+        WorkingShift.findOne({ name: { $regex: `^${escapeRegex(workingShift)}$`, $options: "i" }, isDeleted: false })
+          .then(doc => { workingShiftDoc = doc; })
       );
     }
 
-
-
-     // [skills] resolve names/ids to Skill _ids (case-insensitive on field "skill")
+    // skills -> ids
     let skillIdsForFilter = [];
     if (skillsQueryArr.length) {
       const ids   = skillsQueryArr.filter(v => mongoose.isValidObjectId(v));
       const names = skillsQueryArr.filter(v => !mongoose.isValidObjectId(v));
-
       const nameRegexes = names.map(n => new RegExp(`^${escapeRegex(n)}$`, "i"));
+
       const [byId, byName] = await Promise.all([
         ids.length   ? Skill.find({ _id: { $in: ids }, isDeleted: false }) : [],
         names.length ? Skill.find({ skill: { $in: nameRegexes }, isDeleted: false }) : []
@@ -874,32 +826,24 @@ exports.getAllJobPosts = async (req, res) => {
       const all = [...byId, ...byName];
       skillIdsForFilter = all.map(d => d._id);
 
-      // If user asked for skills but none matched, short-circuit to empty result
       if (!skillIdsForFilter.length) {
         return res.status(200).json({
           status: true, message: "Job posts fetched successfully.",
           totalRecord: 0, totalPage: 0, currentPage: page, data: []
         });
       }
-      // Require posts that contain ALL provided skills:
-      filter.skills = { $all: skillIdsForFilter };
-      // If you want "any of" semantics instead, use: { $in: skillIdsForFilter }
+      filter.skills = { $all: skillIdsForFilter }; // require ALL skills
     }
 
-
     await Promise.all(lookups);
-
     if (industryName && industryDoc) filter.industryType = industryDoc._id;
     if (categoryName && categoryDoc) filter.category     = categoryDoc._id;
     if (jobProfile && jobProfileDoc) filter.jobProfile   = jobProfileDoc._id;
     if (salaryType && salaryTypeDoc) filter.salaryType   = salaryTypeDoc._id;
     if (experience && experienceDoc) filter.experience   = experienceDoc._id;
     if (jobType && jobTypeDoc)       filter.jobType      = jobTypeDoc._id;
-
     if (workingShift && workingShiftDoc) filter.workingShift = workingShiftDoc._id;
-    
 
-    // ----- State & City -----
     if (stateName) {
       if (!stateDoc) {
         return res.status(200).json({
@@ -908,7 +852,6 @@ exports.getAllJobPosts = async (req, res) => {
         });
       }
       filter.state = stateDoc._id;
-
       if (cityParam) {
         const ok = (stateDoc.cities || []).some(c => c.toLowerCase() === cityParam.toLowerCase());
         if (!ok) {
@@ -920,11 +863,10 @@ exports.getAllJobPosts = async (req, res) => {
         filter.city = { $regex: `^${escapeRegex(cityParam)}$`, $options: "i" };
       }
     } else if (cityParam) {
-      // city only across all states
       filter.city = { $regex: `^${escapeRegex(cityParam)}$`, $options: "i" };
     }
 
-    // ---------- query with pagination ----------
+    // ---------- Fetch posts ----------
     const totalRecord = await JobPost.countDocuments(filter);
     const totalPage   = Math.ceil(totalRecord / limit) || 0;
 
@@ -940,14 +882,39 @@ exports.getAllJobPosts = async (req, res) => {
       .populate({ path: "otherField",   select: "name" })
       .populate({ path: "workingShift", select: "name" })
       .populate({ path: "jobProfile",   select: "name" })
-      
       .populate({ path: "state",        select: "state" })
-       .populate({ path: "skills",       select: "skill" }) // [skills] populate names
+      .populate({ path: "skills",       select: "skill" })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean();
 
+    // -------- ROLE-BASED isApplied --------
+    // 1) JOB SEEKER: isApplied = user has an active application on that post
+    let seekerAppliedSet = new Set();
+    if (normRole === "job_seeker" && posts.length) {
+      const postIds = posts.map(p => p._id);
+      const activeApps = await JobApplication.find({
+        userId: new mongoose.Types.ObjectId(userId),
+        jobPostId: { $in: postIds },
+        status: "Applied"
+      }).select("jobPostId").lean();
+
+      seekerAppliedSet = new Set(activeApps.map(a => String(a.jobPostId)));
+    }
+
+    // 2) EMPLOYER: isApplied = there exists at least one active application for that post
+    let employerHasActiveAppSet = new Set();
+    if (normRole === "employer" && posts.length) {
+      const postIds = posts.map(p => p._id);
+      const activeByPost = await JobApplication.aggregate([
+        { $match: { jobPostId: { $in: postIds }, status: "Applied" } },
+        { $group: { _id: "$jobPostId", count: { $sum: 1 } } }
+      ]);
+      employerHasActiveAppSet = new Set(activeByPost.map(d => String(d._id)));
+    }
+
+    // ---------- Response mapping ----------
     const data = posts.map(p => ({
       _id: p._id,
       userId:       p.userId?._id ?? null,
@@ -964,34 +931,34 @@ exports.getAllJobPosts = async (req, res) => {
       otherField:   p.otherField?.name ?? null,
       workingShift: p.workingShift?.name ?? null,
       jobProfile:   p.jobProfile?.name ?? null,
-     
+
       state:        p.state?.state ?? null,
       city:         p.city ?? null,
 
-      jobTitle:           p.jobTitle ?? null,
-      jobDescription:     p.jobDescription ?? null,
+      jobTitle:       p.jobTitle ?? null,
+      jobDescription: p.jobDescription ?? null,
 
-
-       // [skills] return array of skill names (fallback to raw ids if not populated)
       skills: Array.isArray(p.skills)
         ? p.skills.map(s => (s && typeof s === "object" && "skill" in s) ? s.skill : s)
         : [],
-
 
       minSalary:          p.minSalary ?? null,
       maxSalary:          p.maxSalary ?? null,
       displayPhoneNumber: p.displayPhoneNumber ?? null,
       displayEmail:       p.displayEmail ?? null,
       hourlyRate:         p.hourlyRate ?? null,
-       appliedCandidates: p.appliedCandidates ?? null,
+      appliedCandidates:  p.appliedCandidates ?? null,
 
       status:          p.status,
       isAdminApproved: !!p.isAdminApproved,
-     
       isActive:        !!p.isActive,
       isLatest:        !!p.isLatest,
       isSaved:         !!p.isSaved,
-      isApplied:       !!p.isApplied,
+
+      // KEY: role-based `isApplied`
+      isApplied: normRole === "job_seeker"
+        ? seekerAppliedSet.has(String(p._id))                        // per-user
+        : employerHasActiveAppSet.has(String(p._id)),                // any active app on that post
 
       expiredDate: p.expiredDate ? new Date(p.expiredDate).toISOString().split("T")[0] : null,
       createdAt:  p.createdAt,
@@ -1015,8 +982,6 @@ exports.getAllJobPosts = async (req, res) => {
     });
   }
 };
-
-
 
 
 
