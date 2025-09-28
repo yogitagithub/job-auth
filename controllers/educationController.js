@@ -4,7 +4,6 @@ const mongoose = require("mongoose");
 
 
 
-
 exports.createEducation = async (req, res) => {
   const session = await mongoose.startSession();
   try {
@@ -24,24 +23,88 @@ exports.createEducation = async (req, res) => {
       return res.status(400).json({ status: false, message: "No education data provided." });
     }
 
-    const educationsToAdd = Array.isArray(body) ? body : [body];
-
-    const sanitizedEducations = educationsToAdd.map((edu) => ({
+    // Normalize payload
+    const rows = Array.isArray(body) ? body : [body];
+    const sanitizedEducations = rows.map((edu) => ({
       userId,
       jobSeekerId: jobSeekerProfile._id,
-      degree: (edu.degree?.trim?.() || null),
+      degree: (edu.degree?.trim?.() || ""),
       boardOfUniversity: (edu.boardOfUniversity?.trim?.() || null),
-      sessionFrom: (edu.sessionFrom?.trim?.() || null),
-      sessionTo: (edu.sessionTo?.trim?.() || null),
+      sessionFrom: edu.sessionFrom ? new Date(edu.sessionFrom) : null,
+      sessionTo: edu.sessionTo ? new Date(edu.sessionTo) : null,
       marks: (edu.marks?.toString?.().trim?.() || null),
       gradeOrPercentage: (edu.gradeOrPercentage?.toString?.().trim?.() || null),
     }));
 
-    await session.withTransaction(async () => {
-      // 1) Insert education rows
-      await JobSeekerEducation.insertMany(sanitizedEducations, { session });
+    // ---------- DATE RULES: sessionTo must be strictly after sessionFrom ----------
+    const isValidDate = (d) => d instanceof Date && !Number.isNaN(d.getTime());
+    const startOfDayUTC = (d) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    const invalidDateItems = [];
 
-      // 2) Flip the flag on profile
+    sanitizedEducations.forEach((r, idx) => {
+      if (!isValidDate(r.sessionFrom) || !isValidDate(r.sessionTo)) {
+        invalidDateItems.push({ index: idx, degree: r.degree || null, reason: "Invalid or missing date(s)" });
+        return;
+      }
+      // Compare dates ignoring time-of-day; "same calendar date" is not allowed.
+      const fromDay = startOfDayUTC(r.sessionFrom).getTime();
+      const toDay   = startOfDayUTC(r.sessionTo).getTime();
+
+      if (toDay <= fromDay) {
+        invalidDateItems.push({ index: idx, degree: r.degree || null, reason: "sessionTo must be after sessionFrom" });
+      }
+    });
+
+    if (invalidDateItems.length) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid education dates: sessionTo must be a future date relative to sessionFrom.",
+        errors: invalidDateItems
+      });
+    }
+    // ---------------------------------------------------------------------------
+
+    // 1) Block duplicates inside the SAME request (case-insensitive)
+    const toKey = (s) => (s || "").trim().toLowerCase();
+    const seen = new Set();
+    const dupInPayload = [];
+    for (const r of sanitizedEducations) {
+      const k = toKey(r.degree);
+      if (!k) continue;
+      if (seen.has(k)) dupInPayload.push(r.degree);
+      seen.add(k);
+    }
+    if (dupInPayload.length) {
+      return res.status(409).json({
+        status: false,
+        message: "Duplicate degree(s) in request are not allowed.",
+        duplicates: [...new Set(dupInPayload)],
+      });
+    }
+
+    // 2) Block duplicates against EXISTING DB rows for this jobSeeker (case-insensitive, not deleted)
+    const degreesWanted = [...seen];
+    if (degreesWanted.length) {
+      const wantedOriginals = sanitizedEducations.map((r) => r.degree).filter(Boolean);
+      const existing = await JobSeekerEducation.find({
+        jobSeekerId: jobSeekerProfile._id,
+        isDeleted: false,
+        degree: { $in: wantedOriginals },
+      })
+        .collation({ locale: "en", strength: 2 })
+        .select({ degree: 1, _id: 0 });
+
+      if (existing.length) {
+        return res.status(409).json({
+          status: false,
+          message: "Degree already exist for this job seeker."
+        });
+      }
+    }
+
+    // 3) Proceed with insert inside a transaction
+    await session.withTransaction(async () => {
+      await JobSeekerEducation.insertMany(sanitizedEducations, { session });
       await JobSeekerProfile.updateOne(
         { _id: jobSeekerProfile._id, isDeleted: false },
         { $set: { isEducationAdded: true } },
@@ -49,8 +112,17 @@ exports.createEducation = async (req, res) => {
       );
     });
 
-    return res.status(201).json({ status: true, message: "Education records saved successfully." });
+    return res.status(201).json({ 
+      status: true, 
+      message: "Education records saved successfully." 
+    });
   } catch (error) {
+    if (error?.code === 11000) {
+      return res.status(409).json({
+        status: false,
+        message: "Duplicate degree for this job seeker is not allowed.",
+      });
+    }
     console.error("Error saving education:", error);
     return res.status(500).json({ status: false, message: "Server error.", error: error.message });
   } finally {
@@ -58,66 +130,6 @@ exports.createEducation = async (req, res) => {
   }
 };
 
-
-
-// exports.createEducation = async (req, res) => {
-//   try {
-//     const { userId, role } = req.user;
-
-//     if (role !== "job_seeker") {
-//       return res.status(403).json({
-//         status: false,
-//         message: "Only job seekers can add education.",
-//       });
-//     }
-
-//     const jobSeekerProfile = await JobSeekerProfile.findOne({ userId });
-
-//     if (!jobSeekerProfile) {
-//       return res.status(400).json({
-//         status: false,
-//         message: "Please complete your job seeker profile first.",
-//       });
-//     }
-
-//     const body = req.body;
-
-//     if (!body || (Array.isArray(body) && body.length === 0)) {
-//       return res.status(400).json({
-//         status: false,
-//         message: "No education data provided.",
-//       });
-//     }
-
-//     const educationsToAdd = Array.isArray(body) ? body : [body];
-
-    
-//     const sanitizedEducations = educationsToAdd.map((edu) => ({
-//       userId,
-//       jobSeekerId: jobSeekerProfile._id,
-//       degree: edu.degree?.trim() === "" ? null : edu.degree ?? null,
-//       boardOfUniversity: edu.boardOfUniversity?.trim() === "" ? null : edu.boardOfUniversity ?? null,
-//       sessionFrom: edu.sessionFrom?.trim?.() === "" ? null : edu.sessionFrom ?? null,
-//       sessionTo: edu.sessionTo?.trim?.() === "" ? null : edu.sessionTo ?? null,
-//       marks: edu.marks?.trim() === "" ? null : edu.marks ?? null,
-//       gradeOrPercentage: edu.gradeOrPercentage?.trim() === "" ? null : edu.gradeOrPercentage ?? null,
-//     }));
-
-//     await JobSeekerEducation.insertMany(sanitizedEducations);
-
-//     res.status(201).json({
-//       status: true,
-//       message: "Education records saved successfully.",
-//     });
-//   } catch (error) {
-//     console.error("Error saving education:", error);
-//     res.status(500).json({
-//       status: false,
-//       message: "Server error.",
-//       error: error.message,
-//     });
-//   }
-// };
 
 exports.getMyEducation = async (req, res) => {
   try {
