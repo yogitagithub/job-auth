@@ -4,10 +4,9 @@ const JobSeekerSkill = require("../models/JobSeekerSkill");
 const mongoose = require("mongoose");
 
 
-const tidy = s => String(s || "").trim().replace(/\s+/g, " ");
 
 
-
+const tidy = (s) => (typeof s === "string" ? s.trim() : "");
 
 exports.addMySkills = async (req, res) => {
   const session = await mongoose.startSession();
@@ -19,10 +18,11 @@ exports.addMySkills = async (req, res) => {
       return res.status(403).json({ status: false, message: "Only job seekers can add skills." });
     }
 
+    // accept any skills (strings)
     let names = Array.isArray(req.body?.skills) ? req.body.skills : [];
     names = names.map(tidy).filter(Boolean);
 
-    // dedupe by lowercase
+    // de-dupe by lowercase
     const seen = new Set();
     names = names.filter(n => {
       const k = n.toLowerCase();
@@ -36,58 +36,63 @@ exports.addMySkills = async (req, res) => {
       return res.status(400).json({ status: false, message: "No skills provided." });
     }
 
-    const jsProfile = await JobSeekerProfile.findOne({ userId }).select("_id").session(session);
+    // ensure seeker profile exists
+    const jsProfile = await JobSeekerProfile
+      .findOne({ userId })
+      .select("_id")
+      .session(session);
+
     if (!jsProfile) {
       await session.abortTransaction(); session.endSession();
       return res.status(400).json({ status: false, message: "Please complete your profile before adding skills." });
     }
 
-    // resolve only admin-approved skills
-    const found = await Skill.find({
-      isDeleted: false,
-      skill: { $in: names }
-    })
-      .collation({ locale: "en", strength: 2 })
-      .session(session);
-
-    const byNorm = new Map(found.map(s => [tidy(s.skill).toLowerCase(), s]));
-    const acceptedDocs = [];
-    for (const name of names) {
-      const key = name.toLowerCase();
-      if (byNorm.has(key)) acceptedDocs.push(byNorm.get(key));
-    }
-
-    if (!acceptedDocs.length) {
-      await session.abortTransaction(); session.endSession();
-      return res.status(422).json({ status: false, message: "No valid skills found in admin list." });
-    }
-
+    // get or create the JobSeekerSkill row
     let jss = await JobSeekerSkill.findOne({ userId }).session(session);
     if (!jss) {
-      jss = await JobSeekerSkill.create(
+      const created = await JobSeekerSkill.create(
         [{ userId, jobSeekerId: jsProfile._id, skillIds: [] }],
         { session }
       );
-      jss = jss[0];
+      jss = created[0];
     }
 
+    // helper: find existing Skill by name (case-insensitive) OR create it
+    const upsertSkillByName = async (name) => {
+      let skillDoc = await Skill.findOne({ skill: name })
+        .collation({ locale: "en", strength: 2 }) // case-insensitive name match
+        .session(session);
+
+      if (!skillDoc) {
+        const created = await Skill.create([{ skill: name }], { session });
+        skillDoc = created[0];
+      }
+      return skillDoc;
+    };
+
+    // resolve skillIds for each provided name (creating Skill docs if needed)
+    const resolvedSkillDocs = [];
+    for (const name of names) {
+      const doc = await upsertSkillByName(name);
+      resolvedSkillDocs.push(doc);
+    }
+
+    // add only the new ones to this seeker
     const existingSet = new Set((jss.skillIds || []).map(id => String(id)));
     const toAddIds = [];
-    for (const s of acceptedDocs) {
-      if (!existingSet.has(String(s._id))) toAddIds.push(s._id);
+    const alreadyHad = [];
+    const addedNames = [];
+
+    for (const s of resolvedSkillDocs) {
+      const idStr = String(s._id);
+      if (existingSet.has(idStr)) {
+        alreadyHad.push(s.skill);
+      } else {
+        toAddIds.push(s._id);
+        addedNames.push(s.skill);
+      }
     }
 
-    // ---- MIN 3 SKILLS RULE (based on final total) ----
-    const finalTotal = existingSet.size + toAddIds.length;
-    if (finalTotal < 3) {
-      await session.abortTransaction(); session.endSession();
-      return res.status(422).json({
-        status: false,
-        message: `Please add at least 3 skills. You would have ${finalTotal}; add ${3 - finalTotal} more.`
-      });
-    }
-
-    // 1) Update JobSeekerSkill
     if (toAddIds.length) {
       await JobSeekerSkill.updateOne(
         { _id: jss._id },
@@ -95,19 +100,18 @@ exports.addMySkills = async (req, res) => {
         { session }
       );
 
-      // increment per-skill counters (optional)
-      if (toAddIds.length) {
-        const incOps = toAddIds.map(_id => ({
-          updateOne: { filter: { _id }, update: { $inc: { count: 1 } } }
-        }));
-        await Skill.bulkWrite(incOps, { session });
-      }
+      // optional: bump per-skill counters
+      const incOps = toAddIds.map(_id => ({
+        updateOne: { filter: { _id }, update: { $inc: { count: 1 } } }
+      }));
+      try { if (incOps.length) await Skill.bulkWrite(incOps, { session }); } catch (_) {}
     }
 
-    // 2) Flip the profile flag based on finalTotal (>= 3)
+    // flip the profile flag: true if they now have any skills at all
+    const finalCount = (jss.skillIds?.length || 0) + toAddIds.length;
     await JobSeekerProfile.updateOne(
       { _id: jsProfile._id, isDeleted: false },
-      { $set: { isSkillsAdded: finalTotal >= 3 } },
+      { $set: { isSkillsAdded: finalCount > 0 } },
       { session }
     );
 
@@ -115,11 +119,13 @@ exports.addMySkills = async (req, res) => {
 
     return res.status(200).json({
       status: true,
-      message: toAddIds.length
-        ? "Skills added successfully."
-        : "All provided skills were already added earlier.",
-      data: acceptedDocs.map(s => s.skill),
-     
+      message: addedNames.length
+        ? "Skills saved successfully."
+        : "All provided skills already exist on your profile.",
+      data: 
+        addedNames
+        
+      
     });
 
   } catch (err) {
@@ -127,7 +133,6 @@ exports.addMySkills = async (req, res) => {
     return res.status(500).json({ status: false, message: "Error adding skills", error: err.message });
   }
 };
-
 
 
 
