@@ -13,6 +13,7 @@ const StateCity = require("../models/StateCity");
 const mongoose = require("mongoose");
 
 
+
 exports.applyJobs = async (req, res) => {
   try {
     const { userId, role } = req.user;
@@ -25,11 +26,9 @@ exports.applyJobs = async (req, res) => {
       return res.status(400).json({ status: false, message: "Valid Job Post ID is required." });
     }
 
-    // 1) Load job post with minimal fields
+    // 1) Validate job post
     const jobPost = await JobPost.findById(jobPostId).select("status isDeleted");
-    if (!jobPost) {
-      return res.status(404).json({ status: false, message: "Job post not found." });
-    }
+    if (!jobPost) return res.status(404).json({ status: false, message: "Job post not found." });
     if (jobPost.isDeleted) {
       return res.status(410).json({ status: false, message: "This job post has been removed and cannot be applied to." });
     }
@@ -37,25 +36,17 @@ exports.applyJobs = async (req, res) => {
       return res.status(409).json({ status: false, message: `You cannot apply. Job post is ${jobPost.status}.` });
     }
 
-    // 2) Prevent duplicate (any non-withdrawn counts as already applied)
-    const existing = await JobApplication.findOne({ userId, jobPostId, status: { $ne: "Withdrawn" } });
-    if (existing) {
-      return res.status(400).json({ status: false, message: "You have already applied for this job." });
-    }
-
-    // 3) Profile prerequisites
+    // 2) Profile prerequisites (same as your code)
     const jobSeekerProfile = await JobSeekerProfile.findOne({ userId });
     if (!jobSeekerProfile) {
       return res.status(400).json({ status: false, message: "Please complete your profile before applying." });
     }
-
     const [education, experience, skills, resume] = await Promise.all([
       JobSeekerEducation.findOne({ userId }),
       WorkExperience.findOne({ userId }),
       JobSeekerSkill.findOne({ userId }),
       Resume.findOne({ userId }),
     ]);
-
     const missing = [];
     if (!education)  missing.push("Education");
     if (!experience) missing.push("Experience");
@@ -65,27 +56,60 @@ exports.applyJobs = async (req, res) => {
       arr.length <= 1 ? arr.join("") :
       arr.length === 2 ? `${arr[0]} and ${arr[1]}` :
       `${arr.slice(0,-1).join(", ")}, and ${arr[arr.length-1]}`;
-    if (missing.length > 0) {
+    if (missing.length) {
       return res.status(400).json({
         status: false,
         message: `Please complete ${humanJoin(missing)} section${missing.length > 1 ? "s" : ""} before applying.`,
       });
     }
 
-    // 4) Create application
+    // 3) If there is an ACTIVE app → block. If there is a WITHDRAWN app → revive it.
+    const existingAny = await JobApplication.findOne({ userId, jobPostId }).select("_id status");
+    if (existingAny && existingAny.status === "Applied") {
+      return res.status(409).json({ status: false, message: "You have already applied for this job." });
+    }
+
+    // 3a) Try to revive a withdrawn application (atomic update)
+    if (existingAny && existingAny.status === "Withdrawn") {
+      const revived = await JobApplication.findOneAndUpdate(
+        { _id: existingAny._id, status: "Withdrawn" },
+        {
+          $set: {
+            status: "Applied",
+            employerApprovalStatus: "Pending",
+            appliedAt: new Date(),
+            jobSeekerId: jobSeekerProfile._id,
+            skillsId: skills._id,
+            resumeId: resume._id,
+          }
+        },
+        { new: true }
+      );
+
+      // Increment post counters only on transition Withdrawn -> Applied
+      await JobPost.updateOne(
+        { _id: jobPostId, isDeleted: false, status: "active" },
+        { $inc: { appliedCandidates: 1 }, $set: { isApplied: true } }
+      );
+
+      return res.status(200).json({
+        status: true,
+        message: "Application re-activated successfully.",
+        data: revived
+      });
+    }
+
+    // 3b) No prior app → create new
     const application = await JobApplication.create({
       userId,
       jobSeekerId: jobSeekerProfile._id,
       jobPostId,
-      // educationId: education._id,
-      // experienceId: experience._id,
       skillsId: skills._id,
       resumeId: resume._id,
       status: "Applied",
     });
 
-    // 5) Increment counter (guard against race and state changes)
-  await JobPost.updateOne(
+    await JobPost.updateOne(
       { _id: jobPostId, isDeleted: false, status: "active" },
       { $inc: { appliedCandidates: 1 }, $set: { isApplied: true } }
     );
@@ -95,11 +119,20 @@ exports.applyJobs = async (req, res) => {
       message: "Job applied successfully.",
       data: application,
     });
+
   } catch (error) {
+    // If a race causes E11000, report clearly instead of 500
+    if (error?.code === 11000) {
+      return res.status(409).json({
+        status: false,
+        message: "You have already applied for this job.",
+      });
+    }
     console.error("Error applying job:", error);
     return res.status(500).json({ status: false, message: "Server error.", error: error.message });
   }
 };
+
 
 
 
