@@ -391,7 +391,8 @@ exports.getProfile = async (req, res) => {
     const profile = await JobSeekerProfile.findOne({ userId })
       .populate("industryType", "name")
       .populate("jobProfile", "name")
-      .populate("state", "state");
+      .populate("state", "state")
+       .populate("salaryType", "name");
 
     if (!profile) {
       return res.status(404).json({
@@ -445,6 +446,7 @@ exports.getProfile = async (req, res) => {
         email: p.email,
         industryType: p.industryType?.name || null,
         jobProfile: p.jobProfile?.name || null,
+         salaryType:   p.salaryType?.name   || null,  
         address: p.address,
         state: p.state?.state || null,
         city: p.city,
