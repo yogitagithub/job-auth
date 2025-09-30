@@ -274,6 +274,15 @@ if (nextIsExperienced === false) {
       .populate("state", "state")
       .populate("jobProfile", "name");
 
+
+      // ---------- normalize optional empties (address, panCardNumber) ----------
+["panCardNumber", "address"].forEach((k) => {
+  if (Object.prototype.hasOwnProperty.call(req.body, k)) {
+    if (req.body[k] === "" || req.body[k] == null) req.body[k] = null;
+  }
+});
+
+
     return res.status(200).json({
       status: true,
       message: `Job seeker profile ${isCreate ? "created" : "updated"} successfully.`,
@@ -286,6 +295,9 @@ if (nextIsExperienced === false) {
         dateOfBirth: populated.dateOfBirth
           ? populated.dateOfBirth.toISOString().split("T")[0]
           : null,
+
+             panCardNumber: populated.panCardNumber || null,
+    address: populated.address || null,
 
            isResumeAdded:     !!populated.isResumeAdded,
         isEducationAdded:  !!populated.isEducationAdded,
