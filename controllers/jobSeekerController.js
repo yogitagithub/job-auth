@@ -26,6 +26,24 @@ const path = require("path");
 
 const mongoose = require("mongoose");
 
+const escapeRegex = (s = "") => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const findStateByCity = async (city) => {
+  if (!city) return null;
+  // Case-insensitive exact match on a city inside the cities array
+  const doc = await StateCity.findOne({
+    cities: { $elemMatch: { $regex: `^${escapeRegex(city)}$`, $options: "i" } }
+  });
+  return doc;
+};
+
+// Return the canonical city string from the doc (preserve stored casing)
+const pickCanonicalCity = (stateDoc, city) => {
+  if (!stateDoc?.cities?.length || !city) return city;
+  const lc = city.toLowerCase();
+  const hit = stateDoc.cities.find(c => String(c).toLowerCase() === lc);
+  return hit || city;
+};
 
 
 exports.saveProfile = async (req, res) => {
@@ -114,16 +132,45 @@ exports.saveProfile = async (req, res) => {
       req.body.dateOfBirth = parsed;
     }
 
-    // ---------- state & city (optional, flexible) ----------
-    const hasState = Object.prototype.hasOwnProperty.call(req.body, "state");
-    const hasCity  = Object.prototype.hasOwnProperty.call(req.body, "city");
+ // ---------- state & city (optional, flexible) ----------
+    // treat "" / null as not provided so "state": "" won't trigger invalid-state branch
+    if (req.body.state === "" || req.body.state == null) delete req.body.state;
+    if (req.body.city === "" || req.body.city == null) delete req.body.city;
+
+    let hasState = Object.prototype.hasOwnProperty.call(req.body, "state");
+    let hasCity = Object.prototype.hasOwnProperty.call(req.body, "city");
 
     const resolveState = async (input) => {
       if (mongoose.Types.ObjectId.isValid(input)) return StateCity.findById(input);
-      return StateCity.findOne({ state: input });
+      if (typeof input === "string") {
+        // case-insensitive lookup by state name
+        return StateCity.findOne({ state: new RegExp(`^${escapeRegex(input)}$`, "i") });
+      }
+      return null;
     };
 
-    // Case A: state provided (with or without city)
+    // If ONLY city provided, infer state from city
+    if (!hasState && hasCity) {
+      const inputCity = String(req.body.city || "").trim();
+      if (!inputCity) {
+        return res.status(400).json({ status: false, message: "City is empty." });
+      }
+
+      const stateDoc = await findStateByCity(inputCity);
+      if (!stateDoc) {
+        return res.status(400).json({
+          status: false,
+          message: "Invalid city. No matching state found."
+        });
+      }
+
+      // canonicalize city & inject state id
+      req.body.city = pickCanonicalCity(stateDoc, inputCity);
+      req.body.state = stateDoc._id;
+      hasState = true;
+    }
+
+    // If state provided (with/without city), validate & standardize
     if (hasState) {
       const stateDoc = await resolveState(req.body.state);
       if (!stateDoc) {
@@ -131,52 +178,42 @@ exports.saveProfile = async (req, res) => {
       }
 
       if (hasCity) {
-        if (!req.body.city || !stateDoc.cities.includes(req.body.city)) {
+        const cityStr = String(req.body.city).trim();
+        const ok = stateDoc.cities.some(
+          (c) => String(c).toLowerCase() === cityStr.toLowerCase()
+        );
+        if (!ok) {
           return res.status(400).json({
             status: false,
             message: "Invalid city for the selected state."
           });
         }
+        // use canonical city from DB
+        req.body.city = pickCanonicalCity(stateDoc, cityStr);
       } else {
-        // state-only update: clear existing city if no longer valid
+        // state-only update: drop existing city if it doesn't belong anymore
         const existingCity = profile?.city;
-        if (existingCity && !stateDoc.cities.includes(existingCity)) {
+        const stillValid =
+          existingCity &&
+          stateDoc.cities.some((c) => String(c).toLowerCase() === String(existingCity).toLowerCase());
+        if (!stillValid) {
           req.body.city = null;
         }
       }
 
-      req.body.state = stateDoc._id; // store ObjectId
+      // Store state as ObjectId
+      req.body.state = stateDoc._id;
     }
 
-    // Case B: only city provided (no state in body)
-    if (!hasState && hasCity) {
-      if (!profile) {
-        return res.status(400).json({
-          status: false,
-          message: "Cannot set only city on create. Provide state as well."
-        });
-      }
-      if (!profile.state) {
-        return res.status(400).json({
-          status: false,
-          message: "Cannot update city because state is missing in profile."
-        });
-      }
 
-      const stateDoc = await StateCity.findById(profile.state);
-      if (!stateDoc) {
-        return res.status(400).json({
-          status: false,
-          message: "Stored state not found."
-        });
+        // ---------- normalize optional empties (address, panCardNumber) ----------
+    ["panCardNumber", "address"].forEach((k) => {
+      if (Object.prototype.hasOwnProperty.call(req.body, k)) {
+        if (req.body[k] === "" || req.body[k] == null) req.body[k] = null;
       }
-      if (!req.body.city || !stateDoc.cities.includes(req.body.city)) {
-        return res.status(400).json({
-          status: false,
-          message: "Invalid city for the stored state."
-        });
-      }
-    }
+    });
+
+
 
 
 
@@ -275,12 +312,6 @@ if (nextIsExperienced === false) {
       .populate("jobProfile", "name");
 
 
-      // ---------- normalize optional empties (address, panCardNumber) ----------
-["panCardNumber", "address"].forEach((k) => {
-  if (Object.prototype.hasOwnProperty.call(req.body, k)) {
-    if (req.body[k] === "" || req.body[k] == null) req.body[k] = null;
-  }
-});
 
 
     return res.status(200).json({
