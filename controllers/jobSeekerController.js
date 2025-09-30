@@ -520,7 +520,7 @@ exports.updateProfileImage = async (req, res) => {
 
      return res.status(200).json({
       status: true,
-      message: "Job seeker profile image updated successfully. Old image deleted if it existed.",
+      message: "Job seeker profile image updated successfully.",
       data: {
         image: newImagePath
       }
