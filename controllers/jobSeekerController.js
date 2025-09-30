@@ -109,6 +109,26 @@ exports.saveProfile = async (req, res) => {
       req.body.jobProfile = doc._id;
     }
 
+
+      // ---------- salaryType (REQUIRED on create; accept name or ObjectId) ----------
+    // allow alias "SalaryType"
+    if (!req.body.salaryType && req.body.SalaryType) {
+      req.body.salaryType = req.body.SalaryType;
+      delete req.body.SalaryType;
+    }
+    // treat ""/null as not provided
+    if (req.body.salaryType === "" || req.body.salaryType == null) delete req.body.salaryType;
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "salaryType")) {
+      const raw = String(req.body.salaryType).trim();
+      let doc = null;
+      if (mongoose.Types.ObjectId.isValid(raw)) doc = await SalaryType.findById(raw);
+      if (!doc) doc = await SalaryType.findOne({ name: new RegExp(`^${escapeRegex(raw)}$`, "i") });
+      if (!doc) return res.status(400).json({ status: false, message: "Invalid salary type (use valid name or id)." });
+      req.body.salaryType = doc._id; // store ObjectId
+    }
+
+
     // ---------- dateOfBirth (optional; accept DD-MM-YYYY, YYYY-MM-DD, ISO) ----------
     if (Object.prototype.hasOwnProperty.call(req.body, "dateOfBirth")) {
       const raw = String(req.body.dateOfBirth).trim();
@@ -279,6 +299,13 @@ if (nextIsExperienced === false) {
     const restrictedFields = ["_id", "userId", "phoneNumber", "__v", "image", "isDeleted", "deletedAt", "isResumeAdded", "isEducationAdded", "isSkillsAdded", "isExperienceAdded"];
     const isCreate = !profile;
 
+    // Enforce salaryType presence on CREATE (schema requires it)
+    if (isCreate && !Object.prototype.hasOwnProperty.call(req.body, "salaryType")) {
+      return res.status(400).json({ status: false, message: "salaryType is required." });
+    }
+
+
+
     if (isCreate) {
       profile = new JobSeekerProfile({
         userId,
@@ -309,7 +336,8 @@ if (nextIsExperienced === false) {
     const populated = await JobSeekerProfile.findById(profile._id)
       .populate("industryType", "name")
       .populate("state", "state")
-      .populate("jobProfile", "name");
+      .populate("jobProfile", "name")
+       .populate("salaryType", "name");
 
 
 
@@ -322,6 +350,7 @@ if (nextIsExperienced === false) {
         industryType: populated.industryType?.name || null,
         state: populated.state?.state || null,
         jobProfile: populated.jobProfile?.name || null,
+         salaryType:   populated.salaryType?.name   || null,
         city: populated.city ?? null,
         dateOfBirth: populated.dateOfBirth
           ? populated.dateOfBirth.toISOString().split("T")[0]

@@ -127,6 +127,12 @@ const profileSchema = new mongoose.Schema(
     required: function () { return this.isExperienced === true; }
   },
 
+   salaryType: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "SalaryType",
+        required: true
+      },
+
 
   
   
