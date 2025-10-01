@@ -137,7 +137,7 @@ exports.getMySkills = async (req, res) => {
   }
 };
 
-
+// checking needed
 exports.updateSkill = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
