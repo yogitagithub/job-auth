@@ -1370,12 +1370,12 @@ const hasEdu = await JobSeekerEducation.exists({ userId, isDeleted: { $ne: true 
 const education = !!hasEdu;
 
  // in getProfileProgress
-const hasSkills = await JobSeekerSkill.exists({
-  userId,
-  isDeleted: { $ne: true },
-  skillIds: { $exists: true, $ne: [] },
-});
-const skills = !!hasSkills;
+  const hasSkills = await JobSeekerSkill.exists({
+      userId,
+      isDeleted: { $ne: true },
+      "skills.0": { $exists: true }, // ← ensures at least one skill in array
+    });
+    const skills = !!hasSkills;
 
     // in getProfileProgress
   const hasResume = await Resume.exists({ userId, isDeleted: { $ne: true } });
