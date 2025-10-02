@@ -56,6 +56,11 @@ const jobApplicationSchema = new mongoose.Schema(
       default: Date.now,
     },
 
+     // NEW: default zeros (we’ll still compute live in the API)
+    totalTask:         { type: Number, default: 0 },
+    totalTaskApproved: { type: Number, default: 0 },
+    taskHours:         { type: Number, default: 0 },
+
     
   },
   { timestamps: true }

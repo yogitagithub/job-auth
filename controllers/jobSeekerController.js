@@ -20,6 +20,7 @@ const ExperienceRange  = require("../models/AdminExperienceRange");
 const WorkingShift     = require("../models/AdminWorkingShift");
 
 
+
 const fs = require("fs");
 const fsp = fs.promises;
 const path = require("path");
@@ -1459,6 +1460,49 @@ exports.getMyApprovedApplications = async (req, res) => {
       })
       .lean();
 
+
+       // ---------- TASK STATS (no aggregation) ----------
+    const appIds = apps.map(a => a._id);
+
+    // pre-seed with zeros so every app has stats
+    const statsByAppId = new Map(
+      apps.map(a => [String(a._id), { totalTask: 0, totalTaskApproved: 0, taskHours: 0 }])
+    );
+
+    if (appIds.length) {
+      const tasks = await Task.find({ jobApplicationId: { $in: appIds } })
+        .select("jobApplicationId workedHours hoursWorked employerApprovedTask")
+        .lean();
+
+      for (const t of tasks) {
+        const key = String(t.jobApplicationId);
+        const stats = statsByAppId.get(key);
+        if (!stats) continue;
+
+        // every task counts toward total
+        stats.totalTask += 1;
+
+        // only approved tasks affect approved count + hours
+        if (t.employerApprovedTask === "Approved") {
+          stats.totalTaskApproved += 1;
+
+          // prefer workedHours if > 0, else hoursWorked
+          const hours =
+            (typeof t.workedHours === "number" && t.workedHours > 0)
+              ? t.workedHours
+              : (typeof t.hoursWorked === "number" ? t.hoursWorked : 0);
+
+          stats.taskHours += Number(hours) || 0;
+        }
+      }
+
+      // round hours to 2 decimals
+      for (const s of statsByAppId.values()) {
+        s.taskHours = Math.round(s.taskHours * 100) / 100;
+      }
+    }
+    // -------------------------------------------------
+
     const data = apps.map(a => {
       const jp = a.jobPostId || {};
       const co = jp.companyId || {};
@@ -1469,6 +1513,11 @@ exports.getMyApprovedApplications = async (req, res) => {
       const workingShift = jp.workingShift?.name || null;
       const jobProfile =
         jp.jobProfile?.jobProfile || jp.jobProfile?.name || null;
+
+
+          const k = String(a._id);
+      const stats = statsByAppId.get(k) || { totalTask: 0, totalTaskApproved: 0, taskHours: 0 };
+
 
       return {
         applicationId: String(a._id),
@@ -1486,6 +1535,12 @@ exports.getMyApprovedApplications = async (req, res) => {
         experience,
         workingShift,
         jobProfile,
+
+//task stats
+  totalTask:         stats.totalTask,
+        totalTaskApproved: stats.totalTaskApproved,
+        taskHours:         stats.taskHours,
+        
 
         status: a.status,                                  // e.g., "Applied"
         employerApprovalStatus: a.employerApprovalStatus,  // "Approved"
