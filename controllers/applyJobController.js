@@ -1172,6 +1172,11 @@ exports.getSeekerApplicantDetails = async (req, res) => {
 
 
 
+const formatDateUTC = (date) => {
+  if (!date) return null;
+  const d = new Date(date);
+  return `${String(d.getUTCDate()).padStart(2,"0")}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${d.getUTCFullYear()}`;
+};
 
 
 
@@ -1230,12 +1235,32 @@ exports.getMyApplications = async (req, res) => {
       .select("userId jobPostId status employerApprovalStatus appliedAt createdAt updatedAt")
       .populate({
         path: "jobPostId",
-        select: "jobTitle state companyId createdAt",
+           select: [
+         "jobTitle","state","city","category","industryType","jobDescription","salaryType",
+          "displayPhoneNumber","displayEmail","jobType","minSalary","maxSalary","companyId",
+          "experience","otherField","workingShift","jobProfile", "hourlyRate","expiredDate",
+          "createdAt"
+        ].join(" "),
+        // select: "jobTitle state companyId createdAt",
         populate: [
           { path: "state", select: "state" },
-          { path: "companyId", select: "companyName image" }
+          { path: "companyId", select: "companyName image" },
+            { path: "state",        select: "state" },                      // StateCity { state }
+          { path: "category",     select: "categoryName name" },          // Category { categoryName } or { name }
+          { path: "industryType", select: "industryType name" },          // IndustryType { industryType } or { name }
+          { path: "salaryType",   select: "salaryType name" },            // SalaryType { salaryType } or { name }
+          { path: "jobType",      select: "jobType type name" },          // JobType { jobType } or { type/name }
+          { path: "companyId",    select: "companyName image" },
+
+
+            { path: "experience",   select: "range label name" },
+          { path: "otherField",   select: "name label otherField" },
+          { path: "workingShift", select: "name shift workingShift" },
+          { path: "jobProfile",   select: "name jobProfile" },
+          
         ]
       })
+
       .sort({ createdAt: -1 })     // newest application first
       .skip((currentPage - 1) * limit)
       .limit(limit)
@@ -1243,6 +1268,21 @@ exports.getMyApplications = async (req, res) => {
 
     const data = applications.map((app) => {
       const jp = app.jobPostId;
+
+
+       // resolve names with safe fallbacks to support different schema naming
+      const categoryName     = jp?.category?.categoryName ?? jp?.category?.name ?? null;
+      const industryTypeName = jp?.industryType?.industryType ?? jp?.industryType?.name ?? null;
+      const salaryTypeName   = jp?.salaryType?.salaryType ?? jp?.salaryType?.name ?? null;
+      const jobTypeName      = jp?.jobType?.jobType ?? jp?.jobType?.type ?? jp?.jobType?.name ?? null;
+
+    
+      const experienceName   = jp?.experience?.range ?? jp?.experience?.label ?? jp?.experience?.name ?? null;
+      const otherFieldName   = jp?.otherField?.name ?? jp?.otherField?.label ?? jp?.otherField?.otherField ?? null;
+      const workingShiftName = jp?.workingShift?.name ?? jp?.workingShift?.shift ?? jp?.workingShift?.workingShift ?? null;
+      const jobProfileName   = jp?.jobProfile?.name ?? jp?.jobProfile?.jobProfile ?? null;
+
+
       return {
         _id: app._id,
         userId: (app.userId?._id || app.userId).toString(),
@@ -1256,7 +1296,31 @@ exports.getMyApplications = async (req, res) => {
         employerApprovalStatus: app.employerApprovalStatus,
         appliedAt: formatDate(app.appliedAt),
         createdAt: app.createdAt,
-        updatedAt: app.updatedAt
+        updatedAt: app.updatedAt,
+
+        
+        city: jp?.city ?? null,
+        category: categoryName,
+        industryType: industryTypeName,
+        jobDescription: jp?.jobDescription ?? null,
+        salaryType: salaryTypeName,
+        displayPhoneNumber: jp?.displayPhoneNumber ?? null,
+        displayEmail: jp?.displayEmail ?? null,
+        jobType: jobTypeName,
+
+          minSalary: jp?.minSalary ?? null,   // ← NEW
+        maxSalary: jp?.maxSalary ?? null,   // ← NEW
+
+
+          experience:   experienceName,
+        otherField:   otherFieldName,
+        workingShift: workingShiftName,
+        jobProfile:   jobProfileName,
+        hourlyRate:   jp?.hourlyRate ?? null,
+       expiredDate:  formatDateUTC(jp?.expiredDate),
+        
+       
+       
       };
     });
 
