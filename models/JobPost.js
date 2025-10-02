@@ -66,14 +66,13 @@ const jobPostSchema = new mongoose.Schema(
       required: true
     },
 
-  
 
-skills: [
-  { 
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Skill" 
-  }
-],
+
+
+skills: {
+      type: [String],
+      default: [],
+    },
 
 
     minSalary: {

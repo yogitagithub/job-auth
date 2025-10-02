@@ -12,13 +12,27 @@ const taskSchema = new mongoose.Schema(
       index: true,
     },
 
-    title: { type: String, required: true },
-    description: { type: String, required: true },
+    title: { type: String, 
+      required: true 
+    },
+    
+    description: { type: String, 
+      required: true 
+    },
+
      fileUrl: { type: String },
 
     // ---- Time tracking ----
     startTime: { type: Date },           // set when user starts
     endTime: { type: Date },             // set when user ends
+
+
+    //this will be provided by user
+    hoursWorked: { type: Number, 
+      required: true 
+    },
+
+
     workedHours: { type: Number, default: 0 }, // auto-computed (hours, decimals allowed)
 
     // ---- Progress & status ----
