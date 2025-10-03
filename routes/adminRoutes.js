@@ -16,7 +16,8 @@ updateFeaturedCompanies, deleteFeaturedCompanies, createCurrentSalary,
 getCurrentSalary, deleteCurrentSalary, updateCurrentSalary, createWorkingShift,
 updateWorkingShift, deleteWorkingShift, getWorkingShift, getJobSeekerProfilesbyId, 
 createSkill, getSkill, updateSkill, deleteSkill, getJobPostsByCategoryPublic,
-createAccountType, updateAccountType, deleteAccountType, getAccountTypes } = require('../controllers/adminController');
+createAccountType, updateAccountType, deleteAccountType, getAccountTypes
+, adminApprovalGiven } = require('../controllers/adminController');
 
 const { verifyToken, verifyAdmin, verifyEmployerOnly, verifyJobSeekerOnly } = require('../middleware/authMiddleware');
 const { adminApproveJobPost, getJobList, updateJobListById, adminRecommendJobPost } = require('../controllers/jobPostController');
@@ -134,6 +135,10 @@ router.put('/job-seeker-recommended', verifyToken, verifyAdmin, adminRecommendJo
 
 //admin top job seeker profiles
 router.put('/job-seeker-top', verifyToken, verifyAdmin, adminTopJobSeeker);
+
+//admin will give approval to job post which are approved or not
+router.put('/approvalGiven', verifyToken, verifyAdmin, adminApprovalGiven);
+
 
 
 

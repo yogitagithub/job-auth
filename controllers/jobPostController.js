@@ -121,9 +121,22 @@ jobProfile,
 
 
 
-     // skills must be a non-empty array
+   // skills must be a non-empty array of strings
     if (!Array.isArray(skills) || skills.length === 0) {
       return res.status(400).json({ status: false, message: "skills must be a non-empty array." });
+    }
+    // normalize, trim, drop empties, uniq (case-insensitive)
+    const dedup = new Map();
+    for (const s of skills) {
+      if (typeof s !== "string") continue;
+      const trimmed = s.trim();
+      if (!trimmed) continue;
+      const key = trimmed.toLowerCase();
+      if (!dedup.has(key)) dedup.set(key, trimmed);
+    }
+    const skillsToSave = Array.from(dedup.values());
+    if (skillsToSave.length === 0) {
+      return res.status(400).json({ status: false, message: "skills must contain at least one valid string." });
     }
 
 
@@ -173,7 +186,6 @@ jobProfile,
     if (!jobTypeDoc)      return res.status(400).json({ status: false, message: "Invalid or deleted job type name." });
    
 
-    // if (!stateDoc)        return res.status(400).json({ status: false, message: "Invalid state name." });
     if (!experienceDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted experience name." });
     if (!otherFieldDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted other field name." });
     if (!workingShiftDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted working shift name." });
@@ -241,51 +253,6 @@ jobProfile,
    
 
 
-    // ---------- skills: accept names and/or ObjectIds ----------
-const input = Array.from(new Set(
-  (Array.isArray(skills) ? skills : [])
-    .map(s => (typeof s === 'string' ? s.trim() : s))
-)).filter(Boolean);
-
-const idInputs   = input.filter(v => mongoose.isValidObjectId(v));
-const nameInputs = input.filter(v => !mongoose.isValidObjectId(v)).map(String);
-
-// Build case-insensitive regexes for names
-const nameRegexes = nameInputs.map(n => new RegExp(`^${escapeRegex(n)}$`, 'i'));
-
-const [skillDocsById, skillDocsByName] = await Promise.all([
-  idInputs.length
-    ? Skill.find({ _id: { $in: idInputs }, isDeleted: false })
-    : [],
-  nameInputs.length
-    ? Skill.find({ skill: { $in: nameRegexes }, isDeleted: false })
-    : []
-]);
-
-const allSkillDocs = [...skillDocsById, ...skillDocsByName];
-
-// For “missing” list, check both ids and names (case-insensitive compare to doc.skill)
-const foundIds = new Set(allSkillDocs.map(d => String(d._id)));
-const missing = [];
-for (const v of input) {
-  if (mongoose.isValidObjectId(v)) {
-    if (!foundIds.has(String(v))) missing.push(v);
-  } else {
-    const matched = allSkillDocs.find(d => String(d.skill).toLowerCase() === String(v).toLowerCase());
-    if (!matched) missing.push(v);
-  }
-}
-if (missing.length) {
-  return res.status(400).json({
-    status: false,
-    message: "Some skills were not found or are deleted.",
-    missing
-  });
-}
-
-const skillsIds   = allSkillDocs.map(d => d._id);
-const skillsNames = allSkillDocs.map(d => d.skill);
-
 
 // expiry (+30 days default)
     let expiry = expiredDate ? new Date(expiredDate) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
@@ -309,8 +276,7 @@ const skillsNames = allSkillDocs.map(d => d.skill);
       industryType: industryTypeDoc._id,
       salaryType: salaryTypeDoc._id,
       jobType: jobTypeDoc._id,
-       skills: skillsIds,   
-
+      
 
         state: stateDoc._id,              // <- resolved from state or inferred from city
       city: cityToSave,   
@@ -325,7 +291,8 @@ const skillsNames = allSkillDocs.map(d => d.skill);
 
       jobTitle,
       jobDescription,
-     
+      skills: skillsToSave, 
+
       minSalary,
       maxSalary,
       displayPhoneNumber,
@@ -335,6 +302,8 @@ const skillsNames = allSkillDocs.map(d => d.skill);
 
       expiredDate: expiry,
       status: "active",
+        adminAprrovalJobs: "Pending",
+
 
         isAdminApproved: false,
       isActive: false,
@@ -352,7 +321,7 @@ const skillsNames = allSkillDocs.map(d => d.skill);
         userId: jobPost.userId,
         companyId: jobPost.companyId,
 
-        // return friendly names (you sent names; ids saved internally)
+       
         category: categoryDoc.name,
         industryType: industryTypeDoc.name,
 
@@ -363,7 +332,7 @@ const skillsNames = allSkillDocs.map(d => d.skill);
         salaryType: salaryTypeDoc.name,
         jobType: jobTypeDoc.name,
 
-        skills: skillsNames, // array of names
+        skills: jobPost.skills,  
 
         experience: experienceDoc.name,
         otherField: otherFieldDoc.name,
@@ -385,7 +354,7 @@ const skillsNames = allSkillDocs.map(d => d.skill);
 
       
 
-
+ adminAprrovalJobs: jobPost.adminAprrovalJobs, 
         status: jobPost.status,
         expiredDate: formattedExpiredDate,
         jobPosted: daysAgo(jobPost.createdAt)
@@ -1129,32 +1098,64 @@ exports.getAllJobPostsPublic = async (req, res) => {
     const limit = parseInt(req.query.limit, 10) || 5;
     const skip  = (page - 1) * limit;
 
-    const { jobTitle, state } = req.query;
+     const { jobTitle, city, jobType, industryType, skills } = req.query;
 
     // 1) Build filter (only non-deleted; you can also enforce status:'active' if you want)
-    const filter = { isDeleted: false };
+    const filter = { isDeleted: false, adminAprrovalJobs: "Approved" };
 
     // jobTitle: case-insensitive contains
     if (jobTitle && jobTitle.trim()) {
       filter.jobTitle = { $regex: escapeRegex(jobTitle.trim()), $options: "i" };
     }
 
-    // state by human name (StateCity.state)
-    if (state && state.trim()) {
-      const stateRegex = { $regex: escapeRegex(state.trim()), $options: "i" };
-      const states = await StateCity.find({ state: stateRegex }).select("_id");
-      const stateIds = states.map(s => s._id);
-      if (stateIds.length === 0) {
-        return res.status(200).json({
-          status: true,
-          message: "Job posts fetched successfully.",
-          totalRecord: 0,
-          totalPage: 0,
-          currentPage: page,
-          data: []
-        });
+    
+    // city: case-insensitive exact
+    if (city && city.trim()) {
+      filter.city = { $regex: new RegExp(`^${escapeRegex(city.trim())}$`, "i") };
+    }
+
+     // jobType: comma-separated names -> ids
+    if (jobType && jobType.trim()) {
+      const names = jobType.split(",").map(s => s.trim()).filter(Boolean);
+      if (names.length) {
+        const regexes = names.map(n => new RegExp(`^${escapeRegex(n)}$`, "i"));
+        const docs = await JobType.find({ name: { $in: regexes }, isDeleted: false }).select("_id");
+        const ids = docs.map(d => d._id);
+        if (!ids.length) {
+          return res.status(200).json({
+            status: true, message: "Job posts fetched successfully.",
+            totalRecord: 0, totalPage: 0, currentPage: page, data: []
+          });
+        }
+        filter.jobType = { $in: ids };
       }
-      filter.state = { $in: stateIds };
+    }
+
+    // industryType: comma-separated names -> ids
+    if (industryType && industryType.trim()) {
+      const names = industryType.split(",").map(s => s.trim()).filter(Boolean);
+      if (names.length) {
+        const regexes = names.map(n => new RegExp(`^${escapeRegex(n)}$`, "i"));
+        const docs = await IndustryType.find({ name: { $in: regexes } }).select("_id");
+        const ids = docs.map(d => d._id);
+        if (!ids.length) {
+          return res.status(200).json({
+            status: true, message: "Job posts fetched successfully.",
+            totalRecord: 0, totalPage: 0, currentPage: page, data: []
+          });
+        }
+        filter.industryType = { $in: ids };
+      }
+    }
+
+    // skills (array of strings in JobPost):
+   
+    if (skills && skills.trim()) {
+      const list = skills.split(",").map(s => s.trim()).filter(Boolean);
+      if (list.length) {
+        const regexes = list.map(n => new RegExp(`^${escapeRegex(n)}$`, "i"));
+        filter.skills = { $all: regexes };   // change to {$in: regexes} for "any"
+      }
     }
 
     // 2) Count for pagination
@@ -1174,7 +1175,7 @@ exports.getAllJobPostsPublic = async (req, res) => {
         .populate({ path: "workingShift",   select: "name" })
          .populate({ path: "jobProfile",   select: "name" })
       .populate({ path: "state",        select: "state" })
-       .populate({ path: "skills", select: "skill" })
+       
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -1201,9 +1202,7 @@ exports.getAllJobPostsPublic = async (req, res) => {
       jobTitle:           j.jobTitle ?? null,
       jobDescription:     j.jobDescription ?? null,
      
-        skills: Array.isArray(j.skills)
-  ? j.skills.map(s => s?.skill).filter(Boolean)
-  : [],
+       skills: Array.isArray(j.skills) ? j.skills.filter(Boolean) : [],
 
   
       minSalary:          j.minSalary ?? null,
@@ -1214,7 +1213,8 @@ exports.getAllJobPostsPublic = async (req, res) => {
 
       status: j.status,
       expiredDate: j.expiredDate ? new Date(j.expiredDate).toISOString().split("T")[0] : null,
-      jobPosted: daysAgo(j.createdAt)
+      jobPosted: daysAgo(j.createdAt),
+       adminAprrovalJobs: j.adminAprrovalJobs ?? "Pending",
     }));
 
     // 5) Respond

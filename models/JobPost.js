@@ -149,6 +149,12 @@ skills: {
      required: true
    },
 
+    adminAprrovalJobs: {
+      type: String,
+      enum: ['Pending', 'Approved', 'Rejected'],
+      default: 'Pending'
+    },
+
     isApplied: {
       type: Boolean,
       default: false

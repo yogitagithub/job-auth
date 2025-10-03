@@ -4154,6 +4154,76 @@ exports.getAccountTypeBasedOnRole = async (req, res) => {
 };
 
 
+//admin will give approval to job post which are approved or not
+exports.adminApprovalGiven = async (req, res) => {
+  try {
+    // 1) Only admins
+    const { role, userId } = req.user || {};
+    if (role !== "admin") {
+      return res.status(403).json({ status: false, message: "Only admin can approve/reject job posts." });
+    }
+
+    // 2) Validate input
+    const { jobPostId, adminAprrovalJobs } = req.body || {};
+    if (!mongoose.isValidObjectId(jobPostId)) {
+      return res.status(400).json({ status: false, message: "Invalid jobPostId." });
+    }
+
+    const allowed = ["Approved", "Rejected"]; // matches your enum spelling
+    if (!allowed.includes(adminAprrovalJobs)) {
+      return res.status(400).json({
+        status: false,
+        message: `adminAprrovalJobs must be one of: ${allowed.join(", ")}`
+      });
+    }
+
+    // 3) Compute booleans/side-effects
+    const isAdminApproved = adminAprrovalJobs === "Approved";
+
+    // 4) Update
+    const updated = await JobPost.findOneAndUpdate(
+      { _id: jobPostId, isDeleted: false },
+      {
+        $set: {
+          adminAprrovalJobs,           // <-- value from body
+          isAdminApproved,             // keep in sync
+          // Optionally couple status with approval:
+          // status: isAdminApproved ? "active" : "inactive",
+          // approvedBy: userId,
+          // approvedAt: new Date(),
+        }
+      },
+      { new: true, projection: "-__v -updatedAt" }
+    )
+      .populate({ path: "companyId",    select: "companyName" })
+      .populate({ path: "state",        select: "state" })
+      .lean();
+
+    if (!updated) {
+      return res.status(404).json({ status: false, message: "Job post not found." });
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: `Job post ${adminAprrovalJobs.toLowerCase()} successfully.`,
+      data: {
+        _id: updated._id,
+        jobTitle: updated.jobTitle,
+        company: updated.companyId?.companyName ?? null,
+        state: updated.state?.state ?? null,
+        city: updated.city ?? null,
+        adminAprrovalJobs: updated.adminAprrovalJobs,
+        isAdminApproved: updated.isAdminApproved,
+        status: updated.status
+      }
+    });
+  } catch (err) {
+    console.error("Admin approval error:", err);
+    return res.status(500).json({ status: false, message: "Failed to update approval.", error: err.message });
+  }
+};
+
+
 
 
 
