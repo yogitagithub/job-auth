@@ -2074,10 +2074,6 @@ exports.getJobList = async (req, res) => {
       .populate({ path: "jobProfile",   select: "name" })
       .populate({ path: "state",        select: "state" })
       
-     .populate({ path: "skills",       select: "skill -_id" })
-
-
-
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -2087,12 +2083,16 @@ exports.getJobList = async (req, res) => {
 
 
        const data = posts.map(p => {
-      // normalize skills → always array of strings
-      const skills = Array.isArray(p.skills)
-        ? (p.skills || []).map(s => s?.skill).filter(Boolean)
-        : (p.skills && typeof p.skills === "object" && p.skills.skill)
-          ? [p.skills.skill]
-          : [];
+        
+       const skills = Array.isArray(p.skills)
+    ? p.skills
+        .map(s => {
+          if (typeof s === "string") return s.trim();     // <- String[]
+          if (s && typeof s === "object") return (s.skill || s.name || "").trim(); // safety for legacy
+          return "";
+        })
+        .filter(Boolean)
+    : [];
 
       return {
         _id: p._id,
@@ -2110,8 +2110,9 @@ exports.getJobList = async (req, res) => {
         workingShift: p.workingShift?.name ?? null,
         jobProfile:   p.jobProfile?.name ?? null,
 
-        // 👇 exactly like your getMySkills style (strings only)
+        //  exactly like your getMySkills style (strings only)
         skills,
+          adminAprrovalJobs: p.adminAprrovalJobs,
 
         state:        p.state?.state ?? null,
         city:         p.city ?? null,

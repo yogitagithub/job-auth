@@ -4338,6 +4338,370 @@ exports.adminApprovalGiven = async (req, res) => {
 
 
 
+// list of approved job post by admin
+function daysAgo(d) {
+  const diff = Math.floor((Date.now() - new Date(d)) / (24 * 60 * 60 * 1000));
+  if (diff <= 0) return "0 days ago";
+  if (diff === 1) return "1 day ago";
+  return `${diff} days ago`;
+}
+
+exports.approvedJobList = async (req, res) => {
+  try {
+    // pagination
+    const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+    const skip  = (page - 1) * limit;
+
+    // only admin-approved
+    const filter = {
+      isDeleted: false,
+      adminAprrovalJobs: "Approved",
+    };
+
+
+    
+    // ---- filters ----
+    const jobTitle = (req.query.jobTitle || "").trim();
+    const city     = (req.query.city || "").trim();
+
+    if (jobTitle) {
+      filter.jobTitle = { $regex: new RegExp(jobTitle, "i") }; // case-insensitive
+    }
+    if (city) {
+      filter.city = { $regex: new RegExp(`^${city}$`, "i") };  // exact match, case-insensitive
+    }
+
+   
+
+    const totalRecord = await JobPost.countDocuments(filter);
+    const totalPage   = Math.ceil(totalRecord / limit) || 0;
+
+    const posts = await JobPost.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .select("-updatedAt -__v")       // keeps adminAprrovalJobs & skills
+      .populate({ path: "companyId",    select: "companyName image" })
+      .populate({ path: "userId",       select: "phoneNumber role" })
+      .populate({ path: "category",     select: "name" })
+      .populate({ path: "industryType", select: "name" })
+      .populate({ path: "salaryType",   select: "name" })
+      .populate({ path: "jobType",      select: "name" })
+      .populate({ path: "experience",   select: "name" })
+      .populate({ path: "otherField",   select: "name" })
+      .populate({ path: "workingShift", select: "name" })
+      .populate({ path: "jobProfile",   select: "name" })
+      .populate({ path: "state",        select: "state" })
+      .lean();
+
+    const data = posts.map(p => {
+      // skills is String[] in your schema—return as names directly
+      const skills = Array.isArray(p.skills)
+        ? p.skills.map(s => (typeof s === "string" ? s.trim() : "")).filter(Boolean)
+        : [];
+
+      return {
+        _id: p._id,
+        userId:       p.userId?._id ?? null,
+        userPhone:    p.userId?.phoneNumber ?? null,
+
+        companyId:    p.companyId?._id ?? null,
+        company:      p.companyId?.companyName ?? null,
+        companyImage: p.companyId?.image ?? null,
+
+        category:     p.category?.name ?? null,
+        industryType: p.industryType?.name ?? null,
+        salaryType:   p.salaryType?.name ?? null,
+        jobType:      p.jobType?.name ?? null,
+        experience:   p.experience?.name ?? null,
+        otherField:   p.otherField?.name ?? null,
+        workingShift: p.workingShift?.name ?? null,
+        jobProfile:   p.jobProfile?.name ?? null,
+
+        skills,                                       // <<— names
+        adminAprrovalJobs: p.adminAprrovalJobs,       // <<— required field
+
+        state:        p.state?.state ?? null,
+        city:         p.city ?? null,
+        jobTitle:     p.jobTitle ?? null,
+        jobDescription: p.jobDescription ?? null,
+        minSalary:    p.minSalary ?? null,
+        maxSalary:    p.maxSalary ?? null,
+        displayPhoneNumber: p.displayPhoneNumber ?? null,
+        displayEmail: p.displayEmail ?? null,
+        hourlyRate:   p.hourlyRate ?? null,
+        appliedCandidates: p.appliedCandidates ?? 0,
+        status:       p.status,
+        isAdminApproved: !!p.isAdminApproved,
+        isActive:     !!p.isActive,
+        isLatest:     !!p.isLatest,
+        isSaved:      !!p.isSaved,
+        isApplied:    !!p.isApplied,
+        expiredDate:  p.expiredDate ? new Date(p.expiredDate).toISOString().slice(0,10) : null,
+        createdAt:    p.createdAt,
+        jobPosted:    daysAgo(p.createdAt),
+      };
+    });
+
+    return res.status(200).json({
+      status: true,
+      message: "Approved job posts fetched successfully.",
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data
+    });
+  } catch (err) {
+    console.error("approvedJobList error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to fetch approved job posts.",
+      error: err?.message || String(err),
+    });
+  }
+};
+
+
+// list of pending job post by admin
+exports.pendingJobList = async (req, res) => {
+  try {
+    // pagination
+    const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+    const skip  = (page - 1) * limit;
+
+    // only admin-approved
+    const filter = {
+      isDeleted: false,
+      adminAprrovalJobs: "Pending",
+    };
+
+
+    
+    // ---- filters ----
+    const jobTitle = (req.query.jobTitle || "").trim();
+    const city     = (req.query.city || "").trim();
+
+    if (jobTitle) {
+      filter.jobTitle = { $regex: new RegExp(jobTitle, "i") }; // case-insensitive
+    }
+    if (city) {
+      filter.city = { $regex: new RegExp(`^${city}$`, "i") };  // exact match, case-insensitive
+    }
+
+   
+
+    const totalRecord = await JobPost.countDocuments(filter);
+    const totalPage   = Math.ceil(totalRecord / limit) || 0;
+
+    const posts = await JobPost.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .select("-updatedAt -__v")       // keeps adminAprrovalJobs & skills
+      .populate({ path: "companyId",    select: "companyName image" })
+      .populate({ path: "userId",       select: "phoneNumber role" })
+      .populate({ path: "category",     select: "name" })
+      .populate({ path: "industryType", select: "name" })
+      .populate({ path: "salaryType",   select: "name" })
+      .populate({ path: "jobType",      select: "name" })
+      .populate({ path: "experience",   select: "name" })
+      .populate({ path: "otherField",   select: "name" })
+      .populate({ path: "workingShift", select: "name" })
+      .populate({ path: "jobProfile",   select: "name" })
+      .populate({ path: "state",        select: "state" })
+      .lean();
+
+    const data = posts.map(p => {
+      // skills is String[] in your schema—return as names directly
+      const skills = Array.isArray(p.skills)
+        ? p.skills.map(s => (typeof s === "string" ? s.trim() : "")).filter(Boolean)
+        : [];
+
+      return {
+        _id: p._id,
+        userId:       p.userId?._id ?? null,
+        userPhone:    p.userId?.phoneNumber ?? null,
+
+        companyId:    p.companyId?._id ?? null,
+        company:      p.companyId?.companyName ?? null,
+        companyImage: p.companyId?.image ?? null,
+
+        category:     p.category?.name ?? null,
+        industryType: p.industryType?.name ?? null,
+        salaryType:   p.salaryType?.name ?? null,
+        jobType:      p.jobType?.name ?? null,
+        experience:   p.experience?.name ?? null,
+        otherField:   p.otherField?.name ?? null,
+        workingShift: p.workingShift?.name ?? null,
+        jobProfile:   p.jobProfile?.name ?? null,
+
+        skills,                                       // <<— names
+        adminAprrovalJobs: p.adminAprrovalJobs,       // <<— required field
+
+        state:        p.state?.state ?? null,
+        city:         p.city ?? null,
+        jobTitle:     p.jobTitle ?? null,
+        jobDescription: p.jobDescription ?? null,
+        minSalary:    p.minSalary ?? null,
+        maxSalary:    p.maxSalary ?? null,
+        displayPhoneNumber: p.displayPhoneNumber ?? null,
+        displayEmail: p.displayEmail ?? null,
+        hourlyRate:   p.hourlyRate ?? null,
+        appliedCandidates: p.appliedCandidates ?? 0,
+        status:       p.status,
+        isAdminApproved: !!p.isAdminApproved,
+        isActive:     !!p.isActive,
+        isLatest:     !!p.isLatest,
+        isSaved:      !!p.isSaved,
+        isApplied:    !!p.isApplied,
+        expiredDate:  p.expiredDate ? new Date(p.expiredDate).toISOString().slice(0,10) : null,
+        createdAt:    p.createdAt,
+        jobPosted:    daysAgo(p.createdAt),
+      };
+    });
+
+    return res.status(200).json({
+      status: true,
+      message: "Approved job posts fetched successfully.",
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data
+    });
+  } catch (err) {
+    console.error("approvedJobList error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to fetch approved job posts.",
+      error: err?.message || String(err),
+    });
+  }
+};
+
+
+
+// list of rejected job post by admin
+exports.rejectedJobList = async (req, res) => {
+  try {
+    // pagination
+    const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+    const skip  = (page - 1) * limit;
+
+    // only admin-approved
+    const filter = {
+      isDeleted: false,
+      adminAprrovalJobs: "Rejected",
+    };
+
+
+    
+    // ---- filters ----
+    const jobTitle = (req.query.jobTitle || "").trim();
+    const city     = (req.query.city || "").trim();
+
+    if (jobTitle) {
+      filter.jobTitle = { $regex: new RegExp(jobTitle, "i") }; // case-insensitive
+    }
+    if (city) {
+      filter.city = { $regex: new RegExp(`^${city}$`, "i") };  // exact match, case-insensitive
+    }
+
+   
+
+    const totalRecord = await JobPost.countDocuments(filter);
+    const totalPage   = Math.ceil(totalRecord / limit) || 0;
+
+    const posts = await JobPost.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .select("-updatedAt -__v")       // keeps adminAprrovalJobs & skills
+      .populate({ path: "companyId",    select: "companyName image" })
+      .populate({ path: "userId",       select: "phoneNumber role" })
+      .populate({ path: "category",     select: "name" })
+      .populate({ path: "industryType", select: "name" })
+      .populate({ path: "salaryType",   select: "name" })
+      .populate({ path: "jobType",      select: "name" })
+      .populate({ path: "experience",   select: "name" })
+      .populate({ path: "otherField",   select: "name" })
+      .populate({ path: "workingShift", select: "name" })
+      .populate({ path: "jobProfile",   select: "name" })
+      .populate({ path: "state",        select: "state" })
+      .lean();
+
+    const data = posts.map(p => {
+      // skills is String[] in your schema—return as names directly
+      const skills = Array.isArray(p.skills)
+        ? p.skills.map(s => (typeof s === "string" ? s.trim() : "")).filter(Boolean)
+        : [];
+
+      return {
+        _id: p._id,
+        userId:       p.userId?._id ?? null,
+        userPhone:    p.userId?.phoneNumber ?? null,
+
+        companyId:    p.companyId?._id ?? null,
+        company:      p.companyId?.companyName ?? null,
+        companyImage: p.companyId?.image ?? null,
+
+        category:     p.category?.name ?? null,
+        industryType: p.industryType?.name ?? null,
+        salaryType:   p.salaryType?.name ?? null,
+        jobType:      p.jobType?.name ?? null,
+        experience:   p.experience?.name ?? null,
+        otherField:   p.otherField?.name ?? null,
+        workingShift: p.workingShift?.name ?? null,
+        jobProfile:   p.jobProfile?.name ?? null,
+
+        skills,                                       // <<— names
+        adminAprrovalJobs: p.adminAprrovalJobs,       // <<— required field
+
+        state:        p.state?.state ?? null,
+        city:         p.city ?? null,
+        jobTitle:     p.jobTitle ?? null,
+        jobDescription: p.jobDescription ?? null,
+        minSalary:    p.minSalary ?? null,
+        maxSalary:    p.maxSalary ?? null,
+        displayPhoneNumber: p.displayPhoneNumber ?? null,
+        displayEmail: p.displayEmail ?? null,
+        hourlyRate:   p.hourlyRate ?? null,
+        appliedCandidates: p.appliedCandidates ?? 0,
+        status:       p.status,
+        isAdminApproved: !!p.isAdminApproved,
+        isActive:     !!p.isActive,
+        isLatest:     !!p.isLatest,
+        isSaved:      !!p.isSaved,
+        isApplied:    !!p.isApplied,
+        expiredDate:  p.expiredDate ? new Date(p.expiredDate).toISOString().slice(0,10) : null,
+        createdAt:    p.createdAt,
+        jobPosted:    daysAgo(p.createdAt),
+      };
+    });
+
+    return res.status(200).json({
+      status: true,
+      message: "Approved job posts fetched successfully.",
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data
+    });
+  } catch (err) {
+    console.error("approvedJobList error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to fetch approved job posts.",
+      error: err?.message || String(err),
+    });
+  }
+};
+
+
+
+
 
 
 
