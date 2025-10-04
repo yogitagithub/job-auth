@@ -3183,4 +3183,142 @@ exports.getJobPostByCompany = async (req, res) => {
 };
 
 
+//get job list in ascending order when passing in params jobTitle and skills
+exports.getJobPostsAscending = async (req, res) => {
+  try {
+    const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+
+    const filter = { isDeleted: false, 
+      status: "active",
+     adminAprrovalJobs: "Approved"
+     };
+
+    const skillPrefix   = (req.query.skills   || req.query.skill   || "").trim();
+    const titlePrefix   = (req.query.jobTitle || "").trim();             // NEW
+
+    // Prefix filter for jobTitle (case-insensitive)  // NEW
+    if (titlePrefix) {
+      filter.jobTitle = { $regex: "^" + escapeRegex(titlePrefix), $options: "i" };
+    }
+
+    // Prefix filter for any skill (case-insensitive)
+    if (skillPrefix) {
+      filter.skills = { $elemMatch: { $regex: "^" + escapeRegex(skillPrefix), $options: "i" } };
+    }
+
+    const posts = await JobPost.find(filter)
+      .select([
+        "_id","userId","companyId","category","industryType","salaryType","jobType",
+        "experience","otherField","workingShift","jobProfile","state","city",
+        "jobTitle","jobDescription","skills","minSalary","maxSalary",
+        "displayPhoneNumber","displayEmail","hourlyRate","appliedCandidates",
+        "status","adminAprrovalJobs","expiredDate","createdAt"
+      ].join(" "))
+      .populate({ path: "companyId",    select: "companyName image" })
+      .populate({ path: "category",     select: "name" })
+      .populate({ path: "industryType", select: "name" })
+      .populate({ path: "salaryType",   select: "name" })
+      .populate({ path: "jobType",      select: "name" })
+      .populate({ path: "experience",   select: "name" })
+      .populate({ path: "otherField",   select: "name" })
+      .populate({ path: "workingShift", select: "name" })
+      .populate({ path: "jobProfile",   select: "name" })
+      .populate({ path: "state",        select: "state" })
+      .lean();
+
+    const lpSkill = skillPrefix.toLowerCase();
+    const lpTitle = titlePrefix.toLowerCase();                               // NEW
+
+    const shaped = posts.map(p => {
+      const skills = Array.isArray(p.skills)
+        ? p.skills.map(s => (typeof s === "string" ? s.trim() : "")).filter(Boolean)
+        : [];
+
+      // first matching skill for sort
+      const firstSkill = lpSkill
+        ? skills
+            .filter(s => s.toLowerCase().startsWith(lpSkill))
+            .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))[0] || ""
+        : "";
+
+      // normalized title key for sort (only when prefix provided)            // NEW
+      const titleKey = lpTitle && p.jobTitle
+        ? (p.jobTitle.toLowerCase().startsWith(lpTitle) ? p.jobTitle.toLowerCase() : "")
+        : (p.jobTitle || "").toLowerCase();
+
+      return {
+        _id: p._id,
+        companyId:    p.companyId?._id ?? null,
+        company:      p.companyId?.companyName ?? null,
+        companyImage: p.companyId?.image ?? null,
+        category:     p.category?.name ?? null,
+        industryType: p.industryType?.name ?? null,
+        salaryType:   p.salaryType?.name ?? null,
+        jobType:      p.jobType?.name ?? null,
+        experience:   p.experience?.name ?? null,
+        otherField:   p.otherField?.name ?? null,
+        workingShift: p.workingShift?.name ?? null,
+        jobProfile:   p.jobProfile?.name ?? null,
+        skills,
+        adminAprrovalJobs: p.adminAprrovalJobs,
+        state: p.state?.state ?? null,
+        city:  p.city ?? null,
+        jobTitle: p.jobTitle ?? null,
+        jobDescription: p.jobDescription ?? null,
+        minSalary: p.minSalary ?? null,
+        maxSalary: p.maxSalary ?? null,
+        displayPhoneNumber: p.displayPhoneNumber ?? null,
+        displayEmail: p.displayEmail ?? null,
+        hourlyRate: p.hourlyRate ?? null,
+        appliedCandidates: p.appliedCandidates ?? 0,
+        status: p.status,
+        expiredDate: p.expiredDate ? new Date(p.expiredDate).toISOString().slice(0,10) : null,
+        createdAt: p.createdAt,
+
+        // sort keys (internal)
+        _skillKey: firstSkill.toLowerCase(),
+        _titleKey: titleKey                                             // NEW
+      };
+    });
+
+    // Sort priority:
+    // 1) if jobTitle prefix provided -> by title prefix (ascending)
+    // 2) if skills prefix provided   -> by first matching skill (ascending)
+    // 3) fallback: by jobTitle (ascending, case-insensitive)
+    shaped.sort((a, b) => {
+      if (titlePrefix) {
+        const t = a._titleKey.localeCompare(b._titleKey, undefined, { sensitivity: "base" });
+        if (t !== 0) return t;
+      }
+      if (skillPrefix) {
+        const s = a._skillKey.localeCompare(b._skillKey, undefined, { sensitivity: "base" });
+        if (s !== 0) return s;
+      }
+      return (a.jobTitle || "").localeCompare(b.jobTitle || "", undefined, { sensitivity: "base" });
+    });
+
+    const totalRecord = shaped.length;
+    const totalPage   = Math.max(Math.ceil(totalRecord / limit), 1);
+    const start = (page - 1) * limit;
+    const data = shaped.slice(start, start + limit).map(({ _skillKey, _titleKey, ...rest }) => rest);
+
+    return res.status(200).json({
+      status: true,
+      message: "Job posts fetched successfully (ascending by prefix).",
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data
+    });
+  } catch (err) {
+    console.error("getJobPostsAscending error:", err);
+    return res.status(500).json({ status: false, message: "Failed to fetch job posts.", error: err?.message || String(err) });
+  }
+};
+
+
+
+
+
 
