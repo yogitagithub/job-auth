@@ -3305,7 +3305,7 @@ exports.getJobPostsAscending = async (req, res) => {
 
     return res.status(200).json({
       status: true,
-      message: "Job posts fetched successfully (ascending by prefix).",
+      message: "Job posts fetched successfully.",
       totalRecord,
       totalPage,
       currentPage: page,
