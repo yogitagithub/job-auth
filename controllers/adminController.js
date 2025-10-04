@@ -894,11 +894,64 @@ exports.getJobPostsByCompanyPublic = async (req, res) => {
     // FIX 2: keep soft-delete exclusion here
     const filter = { 
       companyId: new Types.ObjectId(companyId),   // <-- was `company`; must be `companyId`
-      isDeleted: false                            // <-- ensures soft-deleted posts are excluded
-      // Optionally only show public/active:
-      // , isAdminApproved: true
-      // , isActive: true
+      isDeleted: false,
+       adminAprrovalJobs: "Approved"                          // <-- ensures soft-deleted posts are excluded
+     
     };
+
+ const {
+      industryType,
+      jobType,
+      jobTitle,
+      city,
+      skills
+    } = req.query;
+
+
+      // industryType / jobType (ObjectId)
+    if (industryType && Types.ObjectId.isValid(industryType)) {
+      filter.industryType = industryType;
+    }
+    if (jobType && Types.ObjectId.isValid(jobType)) {
+      filter.jobType = jobType;
+    }
+
+    // jobTitle: case-insensitive contains
+    if (jobTitle && jobTitle.trim()) {
+      filter.jobTitle = { $regex: escapeRegex(jobTitle.trim()), $options: "i" };
+    }
+
+    // city: case-insensitive exact (anchors)
+    if (city && city.trim()) {
+      filter.city = { $regex: `^${escapeRegex(city.trim())}$`, $options: "i" };
+    }
+
+    // skills: accept csv / array / repeated params; case-insensitive exact for each; require ALL
+    const parseSkills = (raw) => {
+      if (!raw) return [];
+      if (Array.isArray(raw)) return raw;
+      if (typeof raw === "string") return raw.split(",");
+      return [];
+    };
+    let skillList = parseSkills(skills)
+      .map(s => String(s).trim())
+      .filter(Boolean);
+
+    // dedupe (case-insensitive)
+    if (skillList.length) {
+      const seen = new Set();
+      skillList = skillList.filter(s => {
+        const k = s.toLowerCase();
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+
+      // skills are stored as strings -> use regex for case-insensitive exact match
+      filter.skills = { $all: skillList.map(s => new RegExp(`^${escapeRegex(s)}$`, "i")) };
+    }
+
+
 
     // Count & fetch (use the SAME filter in both)
     const totalRecord = await JobPost.countDocuments(filter);
@@ -936,7 +989,16 @@ exports.getJobPostsByCompanyPublic = async (req, res) => {
       displayPhoneNumber: j.displayPhoneNumber,
       displayEmail: j.displayEmail,
       jobType: pickDisplay(j.jobType),
-      skills: j.skills,
+     
+
+         skills: Array.isArray(j.skills)
+        ? j.skills
+            .map(s => (typeof s === "string" ? s : (s?.skill ?? s?.name ?? null)))
+            .filter(Boolean)
+        : [],
+
+
+      
       minSalary: j.minSalary,
       maxSalary: j.maxSalary,
       city: j.city,
