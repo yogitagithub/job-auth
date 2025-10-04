@@ -78,52 +78,57 @@ exports.saveProfile = async (req, res) => {
     }
 
     // ---------- state & city (optional) ----------
-    const hasState = Object.prototype.hasOwnProperty.call(req.body, "state");
-    const hasCity  = Object.prototype.hasOwnProperty.call(req.body, "city");
+const hasStateKey = Object.prototype.hasOwnProperty.call(req.body, "state");
+const hasCityKey  = Object.prototype.hasOwnProperty.call(req.body, "city");
 
-    const resolveState = async (input) => {
-      if (mongoose.Types.ObjectId.isValid(input)) return StateCity.findById(input);
-      return StateCity.findOne({ state: input });
-    };
+const stateInput = hasStateKey ? String(req.body.state || "").trim() : "";
+const cityInput  = hasCityKey  ? String(req.body.city  || "").trim()  : "";
 
-    if (hasState) {
-      const stateDoc = await resolveState(req.body.state);
-      if (!stateDoc) return res.status(400).json({ status: false, message: "Invalid state." });
+const resolveState = async (input) => {
+  if (mongoose.Types.ObjectId.isValid(input)) return StateCity.findById(input);
+  if (!input) return null;
+  // exact, case-insensitive name match
+  return StateCity.findOne({ state: { $regex: `^${input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" } });
+};
 
-      if (hasCity) {
-        if (!req.body.city || !stateDoc.cities.includes(req.body.city)) {
-          return res.status(400).json({ status: false, message: "Invalid city for the selected state." });
-        }
-      } else {
-        const existingCity = profile?.city;
-        if (existingCity && !stateDoc.cities.includes(existingCity)) {
-          req.body.city = null; // clear invalid city
-        }
-      }
-      req.body.state = stateDoc._id; // store ObjectId
+let stateDoc = null;
+
+// Case 1: non-empty state provided
+if (stateInput) {
+  stateDoc = await resolveState(stateInput);
+  if (!stateDoc) {
+    return res.status(400).json({ status: false, message: "Invalid state." });
+  }
+
+  // validate city (if provided) against this state (case-insensitive)
+  if (cityInput) {
+    const ok = (stateDoc.cities || []).some(c => c.toLowerCase() === cityInput.toLowerCase());
+    if (!ok) {
+      return res.status(400).json({ status: false, message: "Invalid city for the selected state." });
     }
+  }
 
-    if (!hasState && hasCity) {
-      if (!profile) {
-        return res.status(400).json({
-          status: false,
-          message: "Cannot set only city on create. Provide state as well."
-        });
-      }
-      if (!profile.state) {
-        return res.status(400).json({
-          status: false,
-          message: "Cannot set city because state is missing in profile."
-        });
-      }
-      const stateDoc = await StateCity.findById(profile.state);
-      if (!stateDoc || !stateDoc.cities.includes(req.body.city)) {
-        return res.status(400).json({
-          status: false,
-          message: "Invalid city for the stored state."
-        });
-      }
-    }
+  // store state ObjectId
+  req.body.state = stateDoc._id;
+}
+// Case 2: no state but city provided — auto-detect the state
+else if (!stateInput && cityInput) {
+  stateDoc = await StateCity.findOne({
+    cities: { $elemMatch: { $regex: `^${cityInput.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" } }
+  });
+
+  if (!stateDoc) {
+    return res.status(400).json({
+      status: false,
+      message: "Invalid city, no matching state found."
+    });
+  }
+
+  // set detected state id
+  req.body.state = stateDoc._id;
+}
+
+
 
     // ---------- ENFORCE GST rules ----------
     const oldGst = profile?.gstNumber || null;
