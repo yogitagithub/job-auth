@@ -508,6 +508,32 @@ exports.verifyOtpWebsite = async (req, res) => {
 };
 
 
+// logout api
+exports.logout = async (req, res) => {
+  try {
+    const { userId } = req.user;
+    const token = req.token; // <-- get it from req.token
+
+    const result = await User.updateOne(
+      { _id: userId, token },        // match only this active session
+      { $set: { token: null } }
+    );
+
+    if (result.modifiedCount === 1) {
+      return res.status(200).json({ status: true, message: 'Logged out successfully.' });
+    }
+
+    // Either already logged out or token mismatch
+    return res.status(200).json({ status: true, message: 'Already logged out or session not found.' });
+  } catch (error) {
+    console.error('logout error:', error);
+    return res.status(500).json({ status: false, message: 'Internal server error.' });
+  }
+};
+
+
+
+
 
 
 

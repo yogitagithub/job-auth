@@ -1,5 +1,5 @@
 const express = require('express');
-const { sendOtp, selectRole, verifyOtp, sendOtpWebsite, verifyOtpWebsite } = require('../controllers/userController');
+const { sendOtp, selectRole, verifyOtp, sendOtpWebsite, verifyOtpWebsite, logout } = require('../controllers/userController');
 
 const { getIndustryBasedOnRole, getCategoryBasedOnRole, 
     getJobProfileBasedOnRole, getSalaryTypeBasedOnRole, 
@@ -69,6 +69,9 @@ router.get("/working-shift", verifyToken, getWorkingShiftBasedOnRole);
 
 //get account type list for employer and job_seeker
 router.get("/account-type", verifyToken, getAccountTypeBasedOnRole);
+
+//logout api
+router.post('/jobSeeker-logout', verifyToken, logout);
 
 
 
