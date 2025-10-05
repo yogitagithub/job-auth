@@ -70,11 +70,9 @@ router.get("/working-shift", verifyToken, getWorkingShiftBasedOnRole);
 //get account type list for employer and job_seeker
 router.get("/account-type", verifyToken, getAccountTypeBasedOnRole);
 
-//logout api for job seeker
-router.post('/jobSeeker-logout', verifyToken, logout);
+//logout api for job seeker and employer
+router.post('/logout', verifyToken, logout);
 
-//logout api for employer
-router.post('/employer-logout', verifyToken, logout);
 
 
 
