@@ -25,7 +25,7 @@ const companyProfileSchema = new mongoose.Schema({
   },
 
   contactPersonName: { type: String, trim: true },
-  panCardNumber: { type: String, trim: true },
+  // panCardNumber: { type: String, trim: true },
   gstNumber: { type: String, trim: true },
 
 
@@ -42,7 +42,7 @@ const companyProfileSchema = new mongoose.Schema({
  
 
 
-  alternatePhoneNumber: { type: String },
+  // alternatePhoneNumber: { type: String },
 
   email: {
     type: String,
@@ -82,11 +82,11 @@ const companyProfileSchema = new mongoose.Schema({
     trim: true
   },
 
-  aboutCompany: {
-     type: String,
-      default: null,
-    trim: true
-  },
+  // aboutCompany: {
+  //    type: String,
+  //     default: null,
+  //   trim: true
+  // },
 
    isDeleted: { 
     type: Boolean, 

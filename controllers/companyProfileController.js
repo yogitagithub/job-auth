@@ -614,18 +614,18 @@ exports.getEmployerProfileProgress = async (req, res) => {
       "companyName",
       "industryType",
       "contactPersonName",
-      "panCardNumber",
+      
       "gstNumber",
       // nested gstCertificate: count if fileUrl present
       "gstCertificate.fileUrl",
-      "alternatePhoneNumber",
+    
       "email",
       "companyAddress",
       "state",
       "city",
       "pincode",
       "image",
-      "aboutCompany",
+     
     ];
 
     // Helper: get nested value by path
