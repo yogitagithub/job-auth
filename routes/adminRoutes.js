@@ -17,7 +17,7 @@ getCurrentSalary, deleteCurrentSalary, updateCurrentSalary, createWorkingShift,
 updateWorkingShift, deleteWorkingShift, getWorkingShift, getJobSeekerProfilesbyId, 
 createSkill, getSkill, updateSkill, deleteSkill, getJobPostsByCategoryPublic,
 createAccountType, updateAccountType, deleteAccountType, getAccountTypes
-, adminApprovalGiven, approvedJobList, pendingJobList, rejectedJobList } = require('../controllers/adminController');
+, adminApprovalGiven, jobList } = require('../controllers/adminController');
 
 const { verifyToken, verifyAdmin, verifyEmployerOnly, verifyJobSeekerOnly } = require('../middleware/authMiddleware');
 const { adminApproveJobPost, getJobList, updateJobListById, adminRecommendJobPost } = require('../controllers/jobPostController');
@@ -106,9 +106,7 @@ router.put('/job-post-approve', verifyToken, verifyAdmin, adminApproveJobPost);
 router.get('/job-list', verifyToken, verifyAdmin, getJobList);
 router.put('/update-job-post', verifyToken, verifyAdmin, updateJobListById);
 router.put('/job-post-recommended', verifyToken, verifyAdmin, adminRecommendJobPost);
-router.get('/approve-job-list', verifyToken, verifyAdmin, approvedJobList);
-router.get('/pending-job-list', verifyToken, verifyAdmin, pendingJobList);
-router.get('/rejected-job-list', verifyToken, verifyAdmin, rejectedJobList);
+router.get("/joblist", verifyToken, verifyAdmin, jobList);
 
 
 //skill set

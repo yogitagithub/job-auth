@@ -4346,42 +4346,87 @@ function daysAgo(d) {
   return `${diff} days ago`;
 }
 
-exports.approvedJobList = async (req, res) => {
+
+
+
+
+const VALID_STATUSES = ["Approved", "Pending", "Rejected"];
+
+
+
+exports.jobList = async (req, res) => {
   try {
-    // pagination
+    // -------- pagination --------
     const page  = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
     const skip  = (page - 1) * limit;
 
-    // only admin-approved
-    const filter = {
-      isDeleted: false,
-      adminAprrovalJobs: "Approved",
-    };
+    // -------- base filter --------
+    const filter = { isDeleted: false };
 
+    // -------- query filters --------
+    const rawStatus = (req.query.status || "").trim();   // may be single or CSV
+    const jobTitle  = (req.query.jobTitle || "").trim(); // case-insensitive contains
+    const city      = (req.query.city || "").trim();     // exact (case-insensitive)
 
-    
-    // ---- filters ----
-    const jobTitle = (req.query.jobTitle || "").trim();
-    const city     = (req.query.city || "").trim();
+    // status can be: "Approved", "Pending", "Rejected" or CSV "Approved,Pending"
+    if (rawStatus) {
+      let list = rawStatus
+        .split(",")
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      // normalize case-insensitively and keep only valid enums
+      list = list
+        .map(s => {
+          const hit = VALID_STATUSES.find(v => v.toLowerCase() === s.toLowerCase());
+          return hit || null;
+        })
+        .filter(Boolean);
+
+      if (list.length) {
+        // allow multiple via $in
+        filter.adminAprrovalJobs = list.length === 1 ? list[0] : { $in: list };
+      } else {
+        // if user passed only invalid values, return empty result deterministically
+        filter.adminAprrovalJobs = "__NO_MATCH__";
+      }
+    }
 
     if (jobTitle) {
-      filter.jobTitle = { $regex: new RegExp(jobTitle, "i") }; // case-insensitive
+      filter.jobTitle = { $regex: new RegExp(escapeRegex(jobTitle), "i") };
     }
+
     if (city) {
-      filter.city = { $regex: new RegExp(`^${city}$`, "i") };  // exact match, case-insensitive
+      // exact (case-insensitive); if you prefer prefix: ^city
+      filter.city = { $regex: new RegExp(`^${escapeRegex(city)}$`, "i") };
     }
 
-   
+    // -------- meta counts (per-status) using same base filters but without status narrowing --------
+    const baseWithoutStatus = { ...filter };
+    delete baseWithoutStatus.adminAprrovalJobs;
 
-    const totalRecord = await JobPost.countDocuments(filter);
-    const totalPage   = Math.ceil(totalRecord / limit) || 0;
+    const [totalsByApprovalArr, totalRecord] = await Promise.all([
+      JobPost.aggregate([
+        { $match: baseWithoutStatus },
+        { $group: { _id: "$adminAprrovalJobs", count: { $sum: 1 } } }
+      ]),
+      JobPost.countDocuments(filter)
+    ]);
 
+    const totalsByApproval = VALID_STATUSES.reduce((acc, s) => {
+      acc[s] = totalsByApprovalArr.find(x => x._id === s)?.count || 0;
+      return acc;
+    }, {});
+
+    const totalPage = Math.ceil(totalRecord / limit) || 0;
+
+    // -------- fetch list --------
     const posts = await JobPost.find(filter)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .select("-updatedAt -__v")       // keeps adminAprrovalJobs & skills
+      .select("-updatedAt -__v")
       .populate({ path: "companyId",    select: "companyName image" })
       .populate({ path: "userId",       select: "phoneNumber role" })
       .populate({ path: "category",     select: "name" })
@@ -4396,7 +4441,6 @@ exports.approvedJobList = async (req, res) => {
       .lean();
 
     const data = posts.map(p => {
-      // skills is String[] in your schema—return as names directly
       const skills = Array.isArray(p.skills)
         ? p.skills.map(s => (typeof s === "string" ? s.trim() : "")).filter(Boolean)
         : [];
@@ -4419,8 +4463,8 @@ exports.approvedJobList = async (req, res) => {
         workingShift: p.workingShift?.name ?? null,
         jobProfile:   p.jobProfile?.name ?? null,
 
-        skills,                                       // <<— names
-        adminAprrovalJobs: p.adminAprrovalJobs,       // <<— required field
+        skills,
+        adminAprrovalJobs: p.adminAprrovalJobs,
 
         state:        p.state?.state ?? null,
         city:         p.city ?? null,
@@ -4446,21 +4490,23 @@ exports.approvedJobList = async (req, res) => {
 
     return res.status(200).json({
       status: true,
-      message: "Approved job posts fetched successfully.",
-      totalRecord,
+      message: "Job posts fetched successfully.",
+            totalRecord,
       totalPage,
       currentPage: page,
       data
     });
   } catch (err) {
-    console.error("approvedJobList error:", err);
+    console.error("jobList error:", err);
     return res.status(500).json({
       status: false,
-      message: "Failed to fetch approved job posts.",
+      message: "Failed to fetch job posts.",
       error: err?.message || String(err),
     });
   }
 };
+
+
 
 
 // list of pending job post by admin
