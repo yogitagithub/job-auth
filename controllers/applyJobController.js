@@ -27,13 +27,23 @@ exports.applyJobs = async (req, res) => {
     }
 
     // 1) Validate job post
-    const jobPost = await JobPost.findById(jobPostId).select("status isDeleted");
+    const jobPost = await JobPost.findById(jobPostId).select("status isDeleted adminAprrovalJobs");
     if (!jobPost) return res.status(404).json({ status: false, message: "Job post not found." });
     if (jobPost.isDeleted) {
       return res.status(410).json({ status: false, message: "This job post has been removed and cannot be applied to." });
     }
     if (jobPost.status !== "active") {
       return res.status(409).json({ status: false, message: `You cannot apply. Job post is ${jobPost.status}.` });
+    }
+
+    // ✅ allow only admin-approved jobs
+    const isApproved =
+      String(jobPost.adminAprrovalJobs || "").trim().toUpperCase() === "APPROVED";
+    if (!isApproved) {
+      return res.status(409).json({
+        status: false,
+        message: "You cannot apply. This job post is not approved by admin yet."
+      });
     }
 
     // 2) Profile prerequisites (same as your code)

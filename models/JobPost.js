@@ -184,6 +184,13 @@ skills: {
       default: 0
     },
 
+
+     
+    applicationsPending: {
+      type: Number,
+      default: 0
+    },
+
    
     
       isAdminApproved: {
