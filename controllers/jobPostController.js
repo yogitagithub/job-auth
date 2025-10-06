@@ -1255,7 +1255,7 @@ exports.updateJobPostById = async (req, res) => {
       workingShift,
       jobProfile,
 
-     
+      // keep skills from body; we'll handle below as strings
       skills,
 
       isActive,
@@ -1330,7 +1330,7 @@ exports.updateJobPostById = async (req, res) => {
     });
 
     // ---------- Resolve ref names (case-insensitive) ----------
-    const findByName = (Model, key, value, extra = {}) =>
+    const findByName = (Model, _key, value, extra = {}) =>
       value
         ? Model.findOne({ ...extra, name: { $regex: `^${escapeRegex(value)}$`, $options: "i" } })
         : null;
@@ -1383,131 +1383,128 @@ exports.updateJobPostById = async (req, res) => {
       jobPost.jobProfile = doc._id;
     }
 
-
-
     // ---------- State/City update logic ----------
-const hasState = Object.prototype.hasOwnProperty.call(req.body, "state");
-const hasCity  = Object.prototype.hasOwnProperty.call(req.body, "city");
+    const hasState = Object.prototype.hasOwnProperty.call(req.body, "state");
+    const hasCity  = Object.prototype.hasOwnProperty.call(req.body, "city");
 
-const resolveState = async (input) => {
-  if (!input) return null;
-  if (mongoose.Types.ObjectId.isValid(input)) return StateCity.findById(input);
-  return StateCity.findOne({
-    state: { $regex: `^${escapeRegex(String(input))}$`, $options: "i" }
-  });
-};
-
-// Helper: find the canonical city string in a state's cities list (case-insensitive)
-const findCanonicalCity = (stateDoc, cityVal) => {
-  if (!stateDoc || !Array.isArray(stateDoc.cities)) return null;
-  const norm = String(cityVal).trim().toLowerCase();
-  return stateDoc.cities.find(c => String(c).toLowerCase() === norm) || null;
-};
-
-if (hasState) {
-  // State explicitly provided — validate, then (optionally) validate city against it
-  const stateDoc = await resolveState(state);
-  if (!stateDoc) {
-    return res.status(400).json({ status: false, message: "Invalid state." });
-  }
-
-  if (hasCity) {
-    const cityVal = String(city || "").trim();
-    const canonical = cityVal ? findCanonicalCity(stateDoc, cityVal) : null;
-    if (cityVal && !canonical) {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid city for the selected state.",
-        allowedCities: stateDoc.cities || []
+    const resolveState = async (input) => {
+      if (!input) return null;
+      if (mongoose.Types.ObjectId.isValid(input)) return StateCity.findById(input);
+      return StateCity.findOne({
+        state: { $regex: `^${escapeRegex(String(input))}$`, $options: "i" }
       });
+    };
+
+    // Helper: find the canonical city string in a state's cities list (case-insensitive)
+    const findCanonicalCity = (stateDoc, cityVal) => {
+      if (!stateDoc || !Array.isArray(stateDoc.cities)) return null;
+      const norm = String(cityVal).trim().toLowerCase();
+      return stateDoc.cities.find(c => String(c).toLowerCase() === norm) || null;
+    };
+
+    if (hasState) {
+      // State explicitly provided — validate, then (optionally) validate city against it
+      const stateDoc = await resolveState(state);
+      if (!stateDoc) {
+        return res.status(400).json({ status: false, message: "Invalid state." });
+      }
+
+      if (hasCity) {
+        const cityVal = String(city || "").trim();
+        const canonical = cityVal ? findCanonicalCity(stateDoc, cityVal) : null;
+        if (cityVal && !canonical) {
+          return res.status(400).json({
+            status: false,
+            message: "Invalid city for the selected state.",
+            allowedCities: stateDoc.cities || []
+          });
+        }
+        jobPost.city = canonical ?? null; // null if blank city sent
+      } else {
+        // No city sent with state: keep existing city only if it belongs to the new state
+        const canonical = jobPost.city ? findCanonicalCity(stateDoc, jobPost.city) : null;
+        jobPost.city = canonical ?? null;
+      }
+      jobPost.state = stateDoc._id;
     }
-    jobPost.city = canonical ?? null; // null if blank city sent
-  } else {
-    // No city sent with state: keep existing city only if it belongs to the new state
-    const canonical = jobPost.city ? findCanonicalCity(stateDoc, jobPost.city) : null;
-    jobPost.city = canonical ?? null;
-  }
-  jobPost.state = stateDoc._id;
-}
 
-if (!hasState && hasCity) {
-  // Only city was sent. Try within existing stored state first; else infer state by city.
-  const cityVal = String(city || "").trim();
-  if (!cityVal) {
-    // Explicit empty city -> clear city, keep state as-is
-    jobPost.city = null;
-  } else {
-    let stateDoc = null;
-    let canonical = null;
+    if (!hasState && hasCity) {
+      // Only city was sent. Try within existing stored state first; else infer state by city.
+      const cityVal = String(city || "").trim();
+      if (!cityVal) {
+        // Explicit empty city -> clear city, keep state as-is
+        jobPost.city = null;
+      } else {
+        let stateDoc = null;
+        let canonical = null;
 
-    // 1) Try current state first (if present)
-    if (jobPost.state) {
-      const currentStateDoc = await StateCity.findById(jobPost.state);
-      canonical = currentStateDoc ? findCanonicalCity(currentStateDoc, cityVal) : null;
-      if (canonical) {
-        stateDoc = currentStateDoc;
+        // 1) Try current state first (if present)
+        if (jobPost.state) {
+          const currentStateDoc = await StateCity.findById(jobPost.state);
+          canonical = currentStateDoc ? findCanonicalCity(currentStateDoc, cityVal) : null;
+          if (canonical) {
+            stateDoc = currentStateDoc;
+          }
+        }
+
+        // 2) If not found in current state, infer by searching all states
+        if (!canonical) {
+          const matches = await StateCity.find({
+            cities: { $elemMatch: { $regex: new RegExp(`^${escapeRegex(cityVal)}$`, "i") } }
+          });
+
+          if (!matches || matches.length === 0) {
+            return res.status(400).json({
+              status: false,
+              message: "City not found in any state."
+            });
+          }
+
+          // pick the first match for smoother UX
+          stateDoc = matches[0];
+          canonical = findCanonicalCity(stateDoc, cityVal);
+        }
+
+        // Update both state and city canonically
+        jobPost.state = stateDoc._id;
+        jobPost.city  = canonical;
       }
     }
 
-    // 2) If not found in current state, infer by searching all states
-    if (!canonical) {
-      const matches = await StateCity.find({
-        cities: { $elemMatch: { $regex: new RegExp(`^${escapeRegex(cityVal)}$`, "i") } }
-      });
+    // ---------- Skills update (array or CSV; store as strings) ----------
+    const hasSkills = Object.prototype.hasOwnProperty.call(req.body, "skills");
+    if (hasSkills) {
+      let list = [];
 
-      if (!matches || matches.length === 0) {
+      if (Array.isArray(skills)) {
+        // accept ["Python", " ML , NLP ", "python"]
+        list = skills.flatMap(v => String(v).split(","));
+      } else if (typeof skills === "string") {
+        // accept "Python, ML , NLP"
+        list = skills.split(",");
+      } else if (skills == null) {
+        // explicit null → clear skills
+        list = [];
+      } else {
         return res.status(400).json({
           status: false,
-          message: "City not found in any state."
+          message: "Invalid 'skills' format. Provide an array or a comma-separated string."
         });
       }
 
-      // If the same city name exists in multiple states, you can either:
-      // - pick the first (current behavior), or
-      // - reject as ambiguous and ask for a state.
-      // Here we pick the first match for a smoother UX; change if you prefer strictness.
-      stateDoc = matches[0];
-      canonical = findCanonicalCity(stateDoc, cityVal);
-    }
-
-    // Update both state and city canonically
-    jobPost.state = stateDoc._id;
-    jobPost.city  = canonical;
-  }
-}
-
-
-   
-    // ---------- Skills update (array or CSV; ids or names) ----------
-    const hasSkills = Object.prototype.hasOwnProperty.call(req.body, "skills");
-    if (hasSkills) {
-      let skillsList = [];
-      if (Array.isArray(skills)) {
-        skillsList = skills.flatMap(v => String(v).split(",")).map(s => s.trim()).filter(Boolean);
-      } else if (typeof skills === "string") {
-        skillsList = skills.split(",").map(s => s.trim()).filter(Boolean);
-      } else if (skills == null) {
-        skillsList = [];
-      } else {
-        return res.status(400).json({ status: false, message: "Invalid 'skills' format. Provide an array or a comma-separated string." });
-      }
-
-      if (!skillsList.length) {
-        jobPost.skills = [];
-      } else {
-        const ids   = skillsList.filter(v => mongoose.isValidObjectId(v));
-        const names = skillsList.filter(v => !mongoose.isValidObjectId(v));
-        const nameRegexes = names.map(n => new RegExp(`^${escapeRegex(n)}$`, "i"));
-        const [byId, byName] = await Promise.all([
-          ids.length   ? Skill.find({ _id: { $in: ids }, isDeleted: false }) : [],
-          names.length ? Skill.find({ skill: { $in: nameRegexes }, isDeleted: false }) : []
-        ]);
-        const all = [...byId, ...byName];
-        if (!all.length) {
-          return res.status(400).json({ status: false, message: "No valid skills found to update." });
+      // normalize: trim, drop empties, dedupe case-insensitively (preserve first casing)
+      list = list.map(s => s.trim()).filter(Boolean);
+      const seen = new Set();
+      const normalized = [];
+      for (const s of list) {
+        const k = s.toLowerCase();
+        if (!seen.has(k)) {
+          seen.add(k);
+          normalized.push(s);
         }
-        jobPost.skills = all.map(d => d._id);
       }
+
+      jobPost.skills = normalized; // store as plain strings
     }
 
     // ---------- Expired Date update (active only; >= today; ignore if invalid) ----------
@@ -1515,8 +1512,6 @@ if (!hasState && hasCity) {
     const hasExpiredDate = Object.prototype.hasOwnProperty.call(req.body, "expiredDate");
     if (hasExpiredDate) {
       if (jobPost.status !== "active") {
-        // With your global "active-only edits" check above this shouldn't be hit,
-        // but keep it defensive.
         warningMsg = "Ignored expiredDate: can be updated only when job status is 'active'.";
       } else {
         const newExp = parseDateOnlyToUTC(req.body.expiredDate);
@@ -1527,7 +1522,6 @@ if (!hasState && hasCity) {
           if (newExp.getTime() < todayUTC.getTime()) {
             warningMsg = `Ignored expiredDate: cannot be earlier than today (${formatDateOnlyUTC(todayUTC)}).`;
           } else {
-            // Business rule: allow shortening or extending as long as >= today
             jobPost.expiredDate = newExp;
           }
         }
@@ -1546,7 +1540,6 @@ if (!hasState && hasCity) {
         const msg = !jobPost.isAdminApproved
           ? "Flags can be changed only after admin approval."
           : "Flags can be changed only when job status is 'active'.";
-        // merge with previous warning (non-fatal)
         warningMsg = warningMsg ? `${warningMsg} ${msg}` : msg;
       } else {
         const toBool = (v) => v === true || v === "true" || v === 1 || v === "1";
@@ -1555,7 +1548,6 @@ if (!hasState && hasCity) {
         if (typeof isLatest !== "undefined" && jobPost.isLatest === toBool(isLatest)) dup.push(`isLatest is already ${jobPost.isLatest}`);
         if (typeof isSaved  !== "undefined" && jobPost.isSaved  === toBool(isSaved))  dup.push(`isSaved is already ${jobPost.isSaved}`);
         if (dup.length) {
-          // non-fatal: just warn and continue with other fields
           const msg = `No change: ${dup.join(", ")}.`;
           warningMsg = warningMsg ? `${warningMsg} ${msg}` : msg;
         } else {
@@ -1583,8 +1575,7 @@ if (!hasState && hasCity) {
       .populate("otherField", "name")
       .populate("workingShift", "name")
       .populate("jobProfile", "name")
-     
-      .populate("skills", "skill")
+      // .populate("skills", "skill")   // ⛔️ NOT a ref; keep skills as strings
       .lean();
 
     const out = {
@@ -1599,10 +1590,10 @@ if (!hasState && hasCity) {
       otherField:    populated.otherField?.name ?? null,
       workingShift:  populated.workingShift?.name ?? null,
       jobProfile:    populated.jobProfile?.name ?? null,
-    
-      skills: Array.isArray(populated.skills)
-        ? populated.skills.map(s => (s && typeof s === "object" && "skill" in s) ? s.skill : s)
-        : [],
+
+      // skills are stored as strings
+      skills: Array.isArray(populated.skills) ? populated.skills : [],
+
       isAdminApproved: !!populated.isAdminApproved,
       isActive:        !!populated.isActive,
       isLatest:        !!populated.isLatest,
@@ -1628,6 +1619,7 @@ if (!hasState && hasCity) {
     });
   }
 };
+
 
 
 
