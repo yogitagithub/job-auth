@@ -2908,8 +2908,10 @@ exports.toggleSavedJob = async (req, res) => {
       return res.status(400).json({ status: false, message: "Valid jobPostId is required in params." });
     }
 
+   
+
     // Validate job
-    const post = await JobPost.findById(jobPostId).select("status isDeleted").lean();
+    const post = await JobPost.findById(jobPostId).select("status isDeleted adminAprrovalJobs").lean();
     if (!post) {
       return res.status(404).json({ status: false, message: "Job post not found." });
     }
@@ -2918,6 +2920,9 @@ exports.toggleSavedJob = async (req, res) => {
     }
     if (post.status !== "active") {
       return res.status(400).json({ status: false, message: `Cannot save job post while status is '${post.status}'.` });
+    }
+     if (post.adminAprrovalJobs !== "Approved") {
+      return res.status(400).json({ status: false, message: "Cannot save a job post that is not approved by admin." });
     }
 
     // Upsert → idempotent
