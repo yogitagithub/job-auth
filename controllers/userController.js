@@ -508,14 +508,14 @@ exports.verifyOtpWebsite = async (req, res) => {
 };
 
 
-// logout api
+// logout api for job seeker and employer
 exports.logout = async (req, res) => {
   try {
     const { userId } = req.user;
-    const token = req.token; // <-- get it from req.token
+    const token = req.token; 
 
     const result = await User.updateOne(
-      { _id: userId, token },        // match only this active session
+      { _id: userId, token },       
       { $set: { token: null } }
     );
 

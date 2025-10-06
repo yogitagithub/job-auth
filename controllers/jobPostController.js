@@ -2556,8 +2556,12 @@ exports.getTopCategories = async (req, res) => {
       skills:        Skill.collection.name,           // ⬅️ add skills collection
     };
 
+    const notDeleted = { isDeleted: { $ne: true } };  // matches false or missing
+
+
     const pipeline = [
-      { $match: { isDeleted: false } },              // only non-deleted posts
+      { $match: { ...notDeleted, adminAprrovalJobs: "Approved" } },
+                
       { $group: { _id: "$category", jobCount: { $sum: 1 } } },
       { $sort: { jobCount: -1 } },
       { $limit: categoryLimit },
@@ -2570,7 +2574,8 @@ exports.getTopCategories = async (req, res) => {
           pipeline: [
             { $match: { $expr: { $and: [
               { $eq: ["$_id", "$$catId"] },
-              { $eq: ["$isDeleted", false] }
+              { $ne: ["$isDeleted", true] } 
+              
             ] } } },
             { $project: { _id: 1, name: 1 } }
           ],
@@ -2587,7 +2592,8 @@ exports.getTopCategories = async (req, res) => {
           pipeline: [
             { $match: { $expr: { $and: [
               { $eq: ["$category", "$$catId"] },
-              { $eq: ["$isDeleted", false] }
+               { $ne: ["$isDeleted", true] },        // ✅ not deleted or missing
+                { $eq: ["$adminAprrovalJobs", "Approved"] }
             ] } } },
             { $sort: { createdAt: -1 } },
             { $limit: postsPerCategory },
