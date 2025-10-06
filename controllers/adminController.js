@@ -4346,13 +4346,7 @@ function daysAgo(d) {
   return `${diff} days ago`;
 }
 
-
-
-
-
 const VALID_STATUSES = ["Approved", "Pending", "Rejected"];
-
-
 
 exports.jobList = async (req, res) => {
   try {
@@ -4440,7 +4434,7 @@ exports.jobList = async (req, res) => {
       .populate({ path: "state",        select: "state" })
       .lean();
 
-    const data = posts.map(p => {
+    const jobPosts = posts.map(p => {
       const skills = Array.isArray(p.skills)
         ? p.skills.map(s => (typeof s === "string" ? s.trim() : "")).filter(Boolean)
         : [];
@@ -4491,10 +4485,16 @@ exports.jobList = async (req, res) => {
     return res.status(200).json({
       status: true,
       message: "Job posts fetched successfully.",
-            totalRecord,
-      totalPage,
-      currentPage: page,
-      data
+       data: {
+        totalRecord,
+        totalPage,
+        currentPage: page,
+        jobPosts
+      }
+      //       totalRecord,
+      // totalPage,
+      // currentPage: page,
+      // data
     });
   } catch (err) {
     console.error("jobList error:", err);
