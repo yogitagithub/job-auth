@@ -499,19 +499,13 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
 
     // Validate categoryId
     if (!Types.ObjectId.isValid(categoryId)) {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid categoryId.",
-      });
+      return res.status(400).json({ status: false, message: "Invalid categoryId." });
     }
 
     // Ensure category exists
     const catExists = await Category.exists({ _id: categoryId });
     if (!catExists) {
-      return res.status(404).json({
-        status: false,
-        message: "Category not found.",
-      });
+      return res.status(404).json({ status: false, message: "Category not found." });
     }
 
     // Pagination
@@ -519,23 +513,16 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
     const limit = parseInt(req.query.limit, 10) || 10;
     const skip  = (page - 1) * limit;
 
-      // NEW: exclude soft-deleted posts from public results
-    const filter = { category: categoryId, 
+    // Base public filter
+    const filter = {
+      category: categoryId,
       isDeleted: false,
-    adminAprrovalJobs: "Approved"
-   };
+      adminAprrovalJobs: "Approved",
+    };
 
+    const { industryType, jobType, jobTitle, city } = req.query;
 
-    const {
-      industryType,
-      jobType,
-      jobTitle,
-      city,
-      skills
-    } = req.query;
-
-
-      // industryType / jobType (ObjectId)
+    // industryType / jobType (ObjectId)
     if (industryType && Types.ObjectId.isValid(industryType)) {
       filter.industryType = industryType;
     }
@@ -543,42 +530,19 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
       filter.jobType = jobType;
     }
 
-    // jobTitle: case-insensitive contains
-    if (jobTitle && jobTitle.trim()) {
-      filter.jobTitle = { $regex: escapeRegex(jobTitle.trim()), $options: "i" };
-    }
-
-    // city: case-insensitive exact (anchors)
+    // city: exact, case-insensitive
     if (city && city.trim()) {
       filter.city = { $regex: `^${escapeRegex(city.trim())}$`, $options: "i" };
     }
 
-    // skills: accept csv / array / repeated params; case-insensitive exact for each; require ALL
-    const parseSkills = (raw) => {
-      if (!raw) return [];
-      if (Array.isArray(raw)) return raw;
-      if (typeof raw === "string") return raw.split(",");
-      return [];
-    };
-    let skillList = parseSkills(skills)
-      .map(s => String(s).trim())
-      .filter(Boolean);
-
-    // dedupe (case-insensitive)
-    if (skillList.length) {
-      const seen = new Set();
-      skillList = skillList.filter(s => {
-        const k = s.toLowerCase();
-        if (seen.has(k)) return false;
-        seen.add(k);
-        return true;
-      });
-
-      // skills are stored as strings -> use regex for case-insensitive exact match
-      filter.skills = { $all: skillList.map(s => new RegExp(`^${escapeRegex(s)}$`, "i")) };
+    // Unified search: one param "jobTitle" that can be a job title OR a skill
+    if (jobTitle && jobTitle.trim()) {
+      const q = escapeRegex(jobTitle.trim());
+      filter.$or = [
+        { jobTitle: { $regex: q, $options: "i" } },                   // title contains
+        { skills:   { $elemMatch: { $regex: q, $options: "i" } } },   // any skill contains
+      ];
     }
-
-
 
     // Count & fetch
     const totalRecord = await JobPost.countDocuments(filter);
@@ -590,35 +554,23 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
       .populate({ path: "category",     select: "name" })
       .populate({ path: "industryType", select: "name" })
       .populate({ path: "state",        select: "state" })
-      .populate({ path: "salaryType",   select: "name label title value" }) // added
-      .populate({ path: "jobType",      select: "name label title value" }) // added
-      .populate({ path: "experience",   select: "name range label" })       // added
-      .populate({ path: "otherField",   select: "name label title" }) 
-      .populate({ path: "workingShift",   select: "name label title" })       // added
-       .populate({ path: "jobProfile",   select: "name label title" })
-
-        
-      
+      .populate({ path: "salaryType",   select: "name label title value" })
+      .populate({ path: "jobType",      select: "name label title value" })
+      .populate({ path: "experience",   select: "name range label" })
+      .populate({ path: "otherField",   select: "name label title" })
+      .populate({ path: "workingShift", select: "name label title" })
+      .populate({ path: "jobProfile",   select: "name label title" })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean();
 
-    // Generic display-name picker for referenced docs
     const pickDisplay = (doc) => {
       if (!doc) return null;
-      return (
-        doc.name ??
-        doc.label ??
-        doc.title ??
-        doc.range ??
-        doc.value ??
-        null
-      );
+      return doc.name ?? doc.label ?? doc.title ?? doc.range ?? doc.value ?? null;
     };
 
-
-     const formatDateDDMMYYYY = (d) => {
+    const formatDateDDMMYYYY = (d) => {
       if (!d) return null;
       const dt = new Date(d);
       const dd = String(dt.getUTCDate()).padStart(2, "0");
@@ -626,7 +578,6 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
       const yyyy = dt.getUTCFullYear();
       return `${dd}-${mm}-${yyyy}`;
     };
-    
 
     const data = jobPosts.map((j) => ({
       _id: j._id,
@@ -636,40 +587,32 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
       industryType: j.industryType?.name ?? null,
       jobTitle: j.jobTitle,
       jobDescription: j.jobDescription,
-      salaryType: pickDisplay(j.salaryType), // now human-readable
+      salaryType: pickDisplay(j.salaryType),
       displayPhoneNumber: j.displayPhoneNumber,
       displayEmail: j.displayEmail,
-      jobType: pickDisplay(j.jobType),       // now human-readable
-     
-
-          skills: Array.isArray(j.skills)
+      jobType: pickDisplay(j.jobType),
+      skills: Array.isArray(j.skills)
         ? j.skills
             .map(s => (typeof s === "string" ? s : (s?.skill ?? s?.name ?? null)))
             .filter(Boolean)
         : [],
-
-        
       minSalary: j.minSalary,
       maxSalary: j.maxSalary,
-        city: j.city,
+      city: j.city,
       state: j.state?.state ?? null,
-      experience: pickDisplay(j.experience), // now human-readable
-      otherField: pickDisplay(j.otherField), // now human-readable
+      experience: pickDisplay(j.experience),
+      otherField: pickDisplay(j.otherField),
       workingShift: pickDisplay(j.workingShift),
-       jobProfile: pickDisplay(j.jobProfile),
+      jobProfile: pickDisplay(j.jobProfile),
       status: j.status,
-
-       hourlyRate:        j.hourlyRate ?? null,
-      isAdminApproved:   !!j.isAdminApproved,
+      hourlyRate: j.hourlyRate ?? null,
+      isAdminApproved: !!j.isAdminApproved,
       appliedCandidates: j.appliedCandidates ?? 0,
-      isActive:          !!j.isActive,
-      isSaved:           !!j.isSaved,
-      isLatest:          !!j.isLatest,
-      isApplied:         !!j.isApplied,
-
-
-       expiredDate: formatDateDDMMYYYY(j.expiredDate),
-     
+      isActive: !!j.isActive,
+      isSaved: !!j.isSaved,
+      isLatest: !!j.isLatest,
+      isApplied: !!j.isApplied,
+      expiredDate: formatDateDDMMYYYY(j.expiredDate),
     }));
 
     return res.status(200).json({
