@@ -493,27 +493,39 @@ exports.getAllCategoriesPublic = async (req, res) => {
 
 
 // without token by category id and for admin access also this controller will work
+async function findIdsByDisplay(Model, raw) {
+  const q = escapeRegex(raw.trim());
+  const docs = await Model.find({
+    $or: [
+      { name:  { $regex: `^${q}$`, $options: "i" } },
+      { label: { $regex: `^${q}$`, $options: "i" } },
+      { title: { $regex: `^${q}$`, $options: "i" } },
+      { value: { $regex: `^${q}$`, $options: "i" } }
+    ]
+  }).select("_id").lean();
+  return docs.map(d => d._id);
+}
+
+
+
+
 exports.getJobPostsByCategoryPublic = async (req, res) => {
   try {
     const { categoryId } = req.params;
 
-    // Validate categoryId
     if (!Types.ObjectId.isValid(categoryId)) {
       return res.status(400).json({ status: false, message: "Invalid categoryId." });
     }
 
-    // Ensure category exists
     const catExists = await Category.exists({ _id: categoryId });
     if (!catExists) {
       return res.status(404).json({ status: false, message: "Category not found." });
     }
 
-    // Pagination
     const page  = parseInt(req.query.page, 10)  || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
     const skip  = (page - 1) * limit;
 
-    // Base public filter
     const filter = {
       category: categoryId,
       isDeleted: false,
@@ -522,12 +534,24 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
 
     const { industryType, jobType, jobTitle, city } = req.query;
 
-    // industryType / jobType (ObjectId)
-    if (industryType && Types.ObjectId.isValid(industryType)) {
-      filter.industryType = industryType;
+    // --- industryType: accept id OR human label (optional; keep your previous behavior if you prefer)
+    if (industryType && industryType.trim()) {
+      if (Types.ObjectId.isValid(industryType)) {
+        filter.industryType = industryType;
+      } /* else {
+        const ids = await findIdsByDisplay(IndustryType, industryType);
+        filter.industryType = ids.length ? { $in: ids } : { $in: [] }; // ensures 0 results if no match
+      } */
     }
-    if (jobType && Types.ObjectId.isValid(jobType)) {
-      filter.jobType = jobType;
+
+    // --- jobType: accept id OR human label (this fixes your issue)
+    if (jobType && jobType.trim()) {
+      if (Types.ObjectId.isValid(jobType)) {
+        filter.jobType = jobType;
+      } else {
+        const ids = await findIdsByDisplay(JobType, jobType);
+        filter.jobType = ids.length ? { $in: ids } : { $in: [] }; // no match → no results
+      }
     }
 
     // city: exact, case-insensitive
@@ -535,16 +559,15 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
       filter.city = { $regex: `^${escapeRegex(city.trim())}$`, $options: "i" };
     }
 
-    // Unified search: one param "jobTitle" that can be a job title OR a skill
+    // Unified search: jobTitle param matches jobTitle OR any skill (contains, case-insensitive)
     if (jobTitle && jobTitle.trim()) {
       const q = escapeRegex(jobTitle.trim());
       filter.$or = [
-        { jobTitle: { $regex: q, $options: "i" } },                   // title contains
-        { skills:   { $elemMatch: { $regex: q, $options: "i" } } },   // any skill contains
+        { jobTitle: { $regex: q, $options: "i" } },
+        { skills:   { $elemMatch: { $regex: q, $options: "i" } } },
       ];
     }
 
-    // Count & fetch
     const totalRecord = await JobPost.countDocuments(filter);
     const totalPage   = Math.ceil(totalRecord / limit);
 
@@ -565,10 +588,7 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
       .limit(limit)
       .lean();
 
-    const pickDisplay = (doc) => {
-      if (!doc) return null;
-      return doc.name ?? doc.label ?? doc.title ?? doc.range ?? doc.value ?? null;
-    };
+    const pickDisplay = (doc) => (doc ? (doc.name ?? doc.label ?? doc.title ?? doc.range ?? doc.value ?? null) : null);
 
     const formatDateDDMMYYYY = (d) => {
       if (!d) return null;
@@ -592,9 +612,7 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
       displayEmail: j.displayEmail,
       jobType: pickDisplay(j.jobType),
       skills: Array.isArray(j.skills)
-        ? j.skills
-            .map(s => (typeof s === "string" ? s : (s?.skill ?? s?.name ?? null)))
-            .filter(Boolean)
+        ? j.skills.map(s => (typeof s === "string" ? s : (s?.skill ?? s?.name ?? null))).filter(Boolean)
         : [],
       minSalary: j.minSalary,
       maxSalary: j.maxSalary,
@@ -632,6 +650,8 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
     });
   }
 };
+
+
 
 
 
