@@ -1108,77 +1108,94 @@ city:         jobPost.city ?? null,
 
 
 
+
 exports.getAllJobPostsPublic = async (req, res) => {
   try {
+    // -------- pagination --------
     const page  = parseInt(req.query.page, 10)  || 1;
     const limit = parseInt(req.query.limit, 10) || 5;
     const skip  = (page - 1) * limit;
 
-     const { jobTitle, city, jobType, industryType, skills } = req.query;
+    // -------- params (NO `skills` param anymore) --------
+    const { jobTitle, city, jobType, industryType } = req.query;
 
-    // 1) Build filter (only non-deleted; you can also enforce status:'active' if you want)
+    // -------- base filter --------
     const filter = { isDeleted: false, adminAprrovalJobs: "Approved" };
 
-    // jobTitle: case-insensitive contains
+    // -------- unified search: jobTitle param searches BOTH title and skills --------
+    // supports comma-separated terms in `jobTitle`
     if (jobTitle && jobTitle.trim()) {
-      filter.jobTitle = { $regex: escapeRegex(jobTitle.trim()), $options: "i" };
+      const terms = jobTitle
+        .split(",")
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      const ors = [];
+      for (const t of terms) {
+        const rx = new RegExp(escapeRegex(t), "i");      // contains match, case-insensitive
+        // Match in title OR in any element of the skills array (array of strings)
+        ors.push({ jobTitle: rx });
+        ors.push({ skills: rx }); // regex on an array field matches any element
+      }
+      if (ors.length) filter.$or = ors;
     }
 
-    
-    // city: case-insensitive exact
+    // -------- city: case-insensitive exact --------
     if (city && city.trim()) {
       filter.city = { $regex: new RegExp(`^${escapeRegex(city.trim())}$`, "i") };
     }
 
-     // jobType: comma-separated names -> ids
+    // -------- jobType: comma-separated names -> ids --------
     if (jobType && jobType.trim()) {
       const names = jobType.split(",").map(s => s.trim()).filter(Boolean);
       if (names.length) {
         const regexes = names.map(n => new RegExp(`^${escapeRegex(n)}$`, "i"));
-        const docs = await JobType.find({ name: { $in: regexes }, isDeleted: false }).select("_id");
+        const docs = await JobType
+          .find({ name: { $in: regexes }, isDeleted: false })
+          .select("_id");
         const ids = docs.map(d => d._id);
         if (!ids.length) {
           return res.status(200).json({
-            status: true, message: "Job posts fetched successfully.",
-            totalRecord: 0, totalPage: 0, currentPage: page, data: []
+            status: true,
+            message: "Job posts fetched successfully.",
+            totalRecord: 0,
+            totalPage: 0,
+            currentPage: page,
+            data: []
           });
         }
         filter.jobType = { $in: ids };
       }
     }
 
-    // industryType: comma-separated names -> ids
+    // -------- industryType: comma-separated names -> ids --------
     if (industryType && industryType.trim()) {
       const names = industryType.split(",").map(s => s.trim()).filter(Boolean);
       if (names.length) {
         const regexes = names.map(n => new RegExp(`^${escapeRegex(n)}$`, "i"));
-        const docs = await IndustryType.find({ name: { $in: regexes } }).select("_id");
+        const docs = await IndustryType
+          .find({ name: { $in: regexes } })
+          .select("_id");
         const ids = docs.map(d => d._id);
         if (!ids.length) {
           return res.status(200).json({
-            status: true, message: "Job posts fetched successfully.",
-            totalRecord: 0, totalPage: 0, currentPage: page, data: []
+            status: true,
+            message: "Job posts fetched successfully.",
+            totalRecord: 0,
+            totalPage: 0,
+            currentPage: page,
+            data: []
           });
         }
         filter.industryType = { $in: ids };
       }
     }
 
-    // skills (array of strings in JobPost):
-   
-    if (skills && skills.trim()) {
-      const list = skills.split(",").map(s => s.trim()).filter(Boolean);
-      if (list.length) {
-        const regexes = list.map(n => new RegExp(`^${escapeRegex(n)}$`, "i"));
-        filter.skills = { $all: regexes };   // change to {$in: regexes} for "any"
-      }
-    }
-
-    // 2) Count for pagination
+    // -------- counts for pagination --------
     const totalRecord = await JobPost.countDocuments(filter);
     const totalPage   = Math.ceil(totalRecord / limit);
 
-    // 3) Query (keep createdAt; exclude updatedAt/__v)
+    // -------- query --------
     const jobPosts = await JobPost.find(filter)
       .select("-updatedAt -__v")
       .populate({ path: "companyId",    select: "companyName image" })
@@ -1188,16 +1205,15 @@ exports.getAllJobPostsPublic = async (req, res) => {
       .populate({ path: "jobType",      select: "name" })
       .populate({ path: "experience",   select: "name" })
       .populate({ path: "otherField",   select: "name" })
-        .populate({ path: "workingShift",   select: "name" })
-         .populate({ path: "jobProfile",   select: "name" })
+      .populate({ path: "workingShift", select: "name" })
+      .populate({ path: "jobProfile",   select: "name" })
       .populate({ path: "state",        select: "state" })
-       
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean();
 
-    // 4) Shape response
+    // -------- shape response --------
     const data = jobPosts.map(j => ({
       _id: j._id,
 
@@ -1210,17 +1226,15 @@ exports.getAllJobPostsPublic = async (req, res) => {
       jobType:      j.jobType?.name ?? null,
       experience:   j.experience?.name ?? null,
       otherField:   j.otherField?.name ?? null,
-       workingShift:   j.workingShift?.name ?? null,
-       jobProfile:   j.jobProfile?.name ?? null,
+      workingShift: j.workingShift?.name ?? null,
+      jobProfile:   j.jobProfile?.name ?? null,
       state:        j.state?.state ?? null,
       city:         j.city ?? null,
 
-      jobTitle:           j.jobTitle ?? null,
-      jobDescription:     j.jobDescription ?? null,
-     
-       skills: Array.isArray(j.skills) ? j.skills.filter(Boolean) : [],
+      jobTitle:         j.jobTitle ?? null,
+      jobDescription:   j.jobDescription ?? null,
+      skills: Array.isArray(j.skills) ? j.skills.filter(Boolean) : [],
 
-  
       minSalary:          j.minSalary ?? null,
       maxSalary:          j.maxSalary ?? null,
       displayPhoneNumber: j.displayPhoneNumber ?? null,
@@ -1230,10 +1244,10 @@ exports.getAllJobPostsPublic = async (req, res) => {
       status: j.status,
       expiredDate: j.expiredDate ? new Date(j.expiredDate).toISOString().split("T")[0] : null,
       jobPosted: daysAgo(j.createdAt),
-       adminAprrovalJobs: j.adminAprrovalJobs ?? "Pending",
+      adminAprrovalJobs: j.adminAprrovalJobs ?? "Pending",
     }));
 
-    // 5) Respond
+    // -------- respond --------
     return res.status(200).json({
       status: true,
       message: "Job posts fetched successfully.",
