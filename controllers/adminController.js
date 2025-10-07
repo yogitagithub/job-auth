@@ -417,6 +417,8 @@ exports.getCategoryBasedOnRole = async (req, res) => {
   }
 };
 
+
+
 //get all categories without token with job count
 exports.getAllCategoriesPublic = async (req, res) => {
   try {

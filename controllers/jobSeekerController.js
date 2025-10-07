@@ -1604,11 +1604,78 @@ exports.getJobSeekersByIndustry = async (req, res) => {
           })();
     const skip = limit ? (page - 1) * limit : 0;
 
+    
+    // ---- query params ----
+    const { city = "", jobProfile = "" } = req.query;
+
     // base filter
     const filter = {
       industryType: industry._id,
       isDeleted: false,
     };
+
+
+      // ---- city filter: case-insensitive exact ----
+    if (city && city.trim()) {
+      filter.city = { $regex: new RegExp(`^${escapeRegex(city.trim())}$`, "i") };
+    }
+
+    // ---- unified jobProfile filter: job profile name(s) OR skill name(s) ----
+    if (jobProfile && jobProfile.trim()) {
+      const terms = jobProfile
+        .split(",")
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      if (terms.length) {
+        const nameRegexes = terms.map(t => new RegExp(`^${escapeRegex(t)}$`, "i"));
+        const orClauses = [];
+
+        // (A) JobProfile name(s) -> IDs
+        const matchedProfiles = await JobProfile
+          .find({ name: { $in: nameRegexes } })
+          .select("_id")
+          .lean();
+        const jobProfileIds = matchedProfiles.map(d => d._id);
+        if (jobProfileIds.length) {
+          orClauses.push({ jobProfile: { $in: jobProfileIds } });
+        }
+
+        // (B) Skill name(s) -> Skill IDs -> JobSeeker IDs
+        const matchedSkills = await Skill
+          .find({ skill: { $in: nameRegexes } })
+          .select("_id")
+          .lean();
+        const skillIds = matchedSkills.map(s => s._id);
+
+        if (skillIds.length) {
+          const jssDocs = await JobSeekerSkill
+            .find({ isDeleted: false, skillIds: { $in: skillIds } })
+            .select("jobSeekerId")
+            .lean();
+
+          const seekerIdSet = new Set(jssDocs.map(d => String(d.jobSeekerId)));
+          if (seekerIdSet.size) {
+            orClauses.push({ _id: { $in: Array.from(seekerIdSet) } });
+          }
+        }
+
+        // if nothing matched, return empty payload fast
+        if (!orClauses.length) {
+          return res.status(200).json({
+            status: true,
+            message: "Job seekers fetched successfully.",
+            totalRecord: 0,
+            totalPage: 0,
+            currentPage: 1,
+            data: []
+          });
+        }
+
+        // apply OR (profile name OR has any skill)
+        filter.$or = orClauses;
+      }
+    }
 
     const totalRecord = await JobSeekerProfile.countDocuments(filter);
 
