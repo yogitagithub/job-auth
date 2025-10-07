@@ -1576,12 +1576,12 @@ exports.getJobSeekersByIndustry = async (req, res) => {
   try {
     const { industryId } = req.params;
 
-    // validate industry id
+    // ---- validate industry id ----
     if (!mongoose.isValidObjectId(industryId)) {
       return res.status(400).json({ status: false, message: "Invalid industryId." });
     }
 
-    // ensure industry exists & not deleted
+    // ---- ensure industry exists & not deleted ----
     const industry = await IndustryType.findOne({ _id: industryId, isDeleted: false })
       .select("_id name")
       .lean();
@@ -1589,7 +1589,7 @@ exports.getJobSeekersByIndustry = async (req, res) => {
       return res.status(404).json({ status: false, message: "Industry not found." });
     }
 
-    // pagination
+    // ---- pagination ----
     const pageParam = parseInt(req.query.page, 10);
     const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
 
@@ -1604,18 +1604,16 @@ exports.getJobSeekersByIndustry = async (req, res) => {
           })();
     const skip = limit ? (page - 1) * limit : 0;
 
-    
     // ---- query params ----
     const { city = "", jobProfile = "" } = req.query;
 
-    // base filter
+    // ---- base filter ----
     const filter = {
       industryType: industry._id,
       isDeleted: false,
     };
 
-
-      // ---- city filter: case-insensitive exact ----
+    // ---- city filter: case-insensitive exact ----
     if (city && city.trim()) {
       filter.city = { $regex: new RegExp(`^${escapeRegex(city.trim())}$`, "i") };
     }
@@ -1628,12 +1626,12 @@ exports.getJobSeekersByIndustry = async (req, res) => {
         .filter(Boolean);
 
       if (terms.length) {
-        const nameRegexes = terms.map(t => new RegExp(`^${escapeRegex(t)}$`, "i"));
+        const regexes = terms.map(t => new RegExp(`^${escapeRegex(t)}$`, "i"));
         const orClauses = [];
 
         // (A) JobProfile name(s) -> IDs
         const matchedProfiles = await JobProfile
-          .find({ name: { $in: nameRegexes } })
+          .find({ name: { $in: regexes } })
           .select("_id")
           .lean();
         const jobProfileIds = matchedProfiles.map(d => d._id);
@@ -1641,26 +1639,24 @@ exports.getJobSeekersByIndustry = async (req, res) => {
           orClauses.push({ jobProfile: { $in: jobProfileIds } });
         }
 
-        // (B) Skill name(s) -> Skill IDs -> JobSeeker IDs
-        const matchedSkills = await Skill
-          .find({ skill: { $in: nameRegexes } })
-          .select("_id")
+        // (B) Skill name(s) -> JobSeekerSkill.userId -> JobSeekerProfile._id
+        const skillDocs = await JobSeekerSkill
+          .find({ isDeleted: false, skills: { $in: regexes } })
+          .select("userId")
           .lean();
-        const skillIds = matchedSkills.map(s => s._id);
+        const userIdSet = new Set(skillDocs.map(d => String(d.userId)));
 
-        if (skillIds.length) {
-          const jssDocs = await JobSeekerSkill
-            .find({ isDeleted: false, skillIds: { $in: skillIds } })
-            .select("jobSeekerId")
+        if (userIdSet.size) {
+          const profiles = await JobSeekerProfile
+            .find({ isDeleted: false, userId: { $in: Array.from(userIdSet) } })
+            .select("_id")
             .lean();
-
-          const seekerIdSet = new Set(jssDocs.map(d => String(d.jobSeekerId)));
-          if (seekerIdSet.size) {
-            orClauses.push({ _id: { $in: Array.from(seekerIdSet) } });
+          const profileIds = profiles.map(p => p._id);
+          if (profileIds.length) {
+            orClauses.push({ _id: { $in: profileIds } });
           }
         }
 
-        // if nothing matched, return empty payload fast
         if (!orClauses.length) {
           return res.status(200).json({
             status: true,
@@ -1672,22 +1668,35 @@ exports.getJobSeekersByIndustry = async (req, res) => {
           });
         }
 
-        // apply OR (profile name OR has any skill)
-        filter.$or = orClauses;
+        filter.$or = orClauses; // apply unified profile/skills OR filter
       }
     }
 
+    // ---- count & fetch USING THE SAME FILTER ----
     const totalRecord = await JobSeekerProfile.countDocuments(filter);
 
     const seekers = await JobSeekerProfile.find(filter)
-      .select("name image phoneNumber email state city jobProfile isExperienced")
+      .select("userId name image phoneNumber email state city jobProfile isExperienced") // include userId ✅
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limit || 0) // 0 => no limit
+      .limit(limit || 0)
       .populate({ path: "jobProfile", model: JobProfile, select: "name jobProfile" })
       .populate({ path: "state", model: StateCity, select: "state" })
       .lean();
 
+    // ---- fetch skills for these seekers by userId (ONE query) ----
+    const userIds = seekers.map(s => s.userId).filter(Boolean);
+    const skillRows = userIds.length
+      ? await JobSeekerSkill.find({ isDeleted: false, userId: { $in: userIds } })
+          .select("userId skills")
+          .lean()
+      : [];
+
+    const skillsByUserId = new Map(
+      skillRows.map(r => [String(r.userId), Array.isArray(r.skills) ? r.skills.filter(Boolean) : []])
+    );
+
+    // ---- shape response (include skills) ----
     const data = seekers.map((p) => ({
       jobSeekerId: String(p._id),
       name: p.name || null,
@@ -1700,6 +1709,7 @@ exports.getJobSeekersByIndustry = async (req, res) => {
       industryTypeId: String(industry._id),
       industryTypeName: industry.name || null,
       isExperienced: !!p.isExperienced,
+      skills: skillsByUserId.get(String(p.userId)) || []  // ✅ skills from JobSeekerSkill
     }));
 
     const totalPage = limit && totalRecord > 0 ? Math.ceil(totalRecord / limit) : 1;
@@ -1722,6 +1732,7 @@ exports.getJobSeekersByIndustry = async (req, res) => {
     });
   }
 };
+
 
 
 
