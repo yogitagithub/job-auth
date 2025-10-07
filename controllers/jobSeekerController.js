@@ -682,11 +682,70 @@ exports.getAllJobSeekers = async (req, res) => {
     const limit = parseInt(req.query.limit, 10) || 10;
     const skip  = (page - 1) * limit;
 
-    // Count only non-deleted profiles
-    const totalSeekers = await JobSeekerProfile.countDocuments({ isDeleted: false });
+    const { city = "", jobProfile = "" } = req.query;
 
-    // Fetch page of seekers
-    const seekers = await JobSeekerProfile.find({ isDeleted: false })
+    // -------- base filter --------
+    const filter = { isDeleted: false };
+
+    // -------- city: case-insensitive exact --------
+    if (city && city.trim()) {
+      filter.city = { $regex: new RegExp(`^${escapeRegex(city.trim())}$`, "i") };
+    }
+
+    // -------- unified jobProfile filter (job profile name OR skills) --------
+    if (jobProfile && jobProfile.trim()) {
+      const terms = jobProfile
+        .split(",")
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      if (terms.length) {
+        const regexes = terms.map(t => new RegExp(`^${escapeRegex(t)}$`, "i"));
+        const orClauses = [];
+
+        // (A) JobProfile names -> JobProfile IDs -> filter by jobProfile
+        const matchedProfiles = await JobProfile
+          .find({ name: { $in: regexes } })
+          .select("_id")
+          .lean();
+        if (matchedProfiles.length) {
+          orClauses.push({ jobProfile: { $in: matchedProfiles.map(d => d._id) } });
+        }
+
+        // (B) Skill names -> JobSeekerSkill.userId -> filter by userId
+        // JobSeekerSkill schema: { userId, skills: [String], isDeleted }
+        const skillRows = await JobSeekerSkill
+          .find({ isDeleted: false, skills: { $in: regexes } })
+          .select("userId")
+          .lean();
+
+        const skillUserIds = [...new Set(skillRows.map(r => r.userId))];
+        if (skillUserIds.length) {
+          orClauses.push({ userId: { $in: skillUserIds } });
+        }
+
+        // If nothing matched any term, return empty page quickly
+        if (!orClauses.length) {
+          return res.json({
+            status: true,
+            message: "Job seekers profiles fetched successfully.",
+            totalSeekers: 0,
+            currentPage: page,
+            totalPages: 0,
+            data: []
+          });
+        }
+
+        // Apply (jobProfile name OR has any skill)
+        filter.$or = orClauses;
+      }
+    }
+
+    // -------- count & fetch USING THE SAME FILTER --------
+    const totalSeekers = await JobSeekerProfile.countDocuments(filter);
+
+    const seekers = await JobSeekerProfile.find(filter)
+      .select("userId phoneNumber name industryType jobProfile panCardNumber alternatePhoneNumber dateOfBirth email gender address state city pincode image CurrentSalary")
       .populate("industryType", "name")
       .populate("jobProfile",   "name")
       .populate("state",        "state")
@@ -695,76 +754,50 @@ exports.getAllJobSeekers = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
+    // Return empty page (200) if none
     if (!seekers.length) {
-      return res.status(404).json({
-        status: false,
-        message: "No job seekers profiles found."
+      return res.json({
+        status: true,
+        message: "Job seekers profiles fetched successfully.",
+        totalSeekers,
+        currentPage: page,
+        totalPages: Math.ceil(totalSeekers / limit),
+        data: []
       });
     }
 
-    // ---- Fetch skills for all seekers on this page in ONE query ----
-    const seekerIds = seekers.map(s => s._id);
+    // -------- fetch skills for these seekers by userId (ONE query) --------
+    const userIds = seekers.map(s => s.userId).filter(Boolean);
+    const skillDocs = userIds.length
+      ? await JobSeekerSkill.find({ isDeleted: false, userId: { $in: userIds } })
+          .select("userId skills")
+          .lean()
+      : [];
 
-    const skillsDocs = await JobSeekerSkill.find({
-        jobSeekerId: { $in: seekerIds },
-        isDeleted: false
-      })
-      // Your Skill schema uses field "skill", so select it:
-      .populate({ path: "skillIds", select: "skill", model: "Skill", options: { lean: true } })
-      .select("jobSeekerId skillIds")
-      .lean();
+    const skillsByUserId = new Map(
+      skillDocs.map(d => [String(d.userId), Array.isArray(d.skills) ? d.skills.filter(Boolean) : []])
+    );
 
-    // Build jobSeekerId -> ["React JS", "Node JS", ...]
-    const skillsMap = new Map();
-
-    const getSkillText = (obj) => (obj && typeof obj === "object" && obj.skill) ? obj.skill : null;
-
-    for (const doc of skillsDocs) {
-      let names = [];
-
-      // If populate worked, entries are objects with { _id, skill }
-      const populated = Array.isArray(doc.skillIds) &&
-                        doc.skillIds.length > 0 &&
-                        typeof doc.skillIds[0] === "object" &&
-                        doc.skillIds[0] !== null;
-
-      if (populated) {
-        names = doc.skillIds.map(getSkillText).filter(Boolean);
-      } else if (doc.skillIds?.length) {
-        // Fallback: populate didn’t run (ref/model mismatch) -> look up by IDs
-        const raw = await Skill.find({ _id: { $in: doc.skillIds } })
-          .select("skill")
-          .lean();
-        names = raw.map(s => s?.skill).filter(Boolean);
-      }
-
-      if (names.length) {
-        skillsMap.set(String(doc.jobSeekerId), names);
-      }
-    }
-
-    // ---- Build response ----
+    // -------- shape response (skills as [] if none) --------
     const data = seekers.map(seeker => ({
       id: seeker._id,
       userId: seeker.userId,
       phoneNumber: seeker.phoneNumber,
-      jobSeekerName: seeker.name || null,
-      industryType: seeker.industryType?.name || null,
-      jobProfile:   seeker.jobProfile?.name   || null,
-      panCardNumber: seeker.panCardNumber || null,
-      alternatePhoneNumber: seeker.alternatePhoneNumber || null,
+      jobSeekerName: seeker.name ?? null,
+      industryType: seeker.industryType?.name ?? null,
+      jobProfile:   seeker.jobProfile?.name   ?? null,
+      panCardNumber: seeker.panCardNumber ?? null,
+      alternatePhoneNumber: seeker.alternatePhoneNumber ?? null,
       dateOfBirth: seeker.dateOfBirth ? new Date(seeker.dateOfBirth).toISOString().split("T")[0] : null,
-      email: seeker.email || null,
-      gender: seeker.gender || null,
-      address: seeker.address || null,
-      state: seeker.state?.state || null,
-      city: seeker.city || null,
-      pincode: seeker.pincode || null,
-      image: seeker.image || null,
-      // support either CurrentSalary or camelCase
+      email: seeker.email ?? null,
+      gender: seeker.gender ?? null,
+      address: seeker.address ?? null,
+      state: seeker.state?.state ?? null,
+      city: seeker.city ?? null,
+      pincode: seeker.pincode ?? null,
+      image: seeker.image ?? null,
       currentSalary: seeker.CurrentSalary ?? seeker.currentSalary ?? null,
-      // If no skills found -> null, else array of strings
-      skills: skillsMap.get(String(seeker._id)) || null
+      skills: skillsByUserId.get(String(seeker.userId)) ?? []   // ✅ always array
     }));
 
     return res.json({
@@ -784,6 +817,7 @@ exports.getAllJobSeekers = async (req, res) => {
     });
   }
 };
+
 
 
 //without token get job seeker details
