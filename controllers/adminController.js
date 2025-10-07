@@ -4745,6 +4745,32 @@ exports.rejectedJobList = async (req, res) => {
   }
 };
 
+//get all public job types list without token 
+exports.getAllJobTypesPublic = async (req, res) => {
+  try {
+    const jobTypes = await JobType.find({ isDeleted: false })
+      .select("name -_id")   // only return `name`, exclude `_id`
+      .sort({ name: 1 })
+      .lean();
+
+    return res.status(200).json({
+      status: true,
+      message: "Job types fetched successfully.",
+      data: {
+        jobTypesList: jobTypes
+      }
+    });
+  } catch (err) {
+    console.error("getAllJobTypesPublic error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Unable to fetch job types right now.",
+    });
+  }
+};
+
+
+
 
 
 

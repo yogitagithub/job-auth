@@ -7,7 +7,7 @@ const { getIndustryBasedOnRole, getCategoryBasedOnRole,
     getOtherFieldBasedOnRole, 
     getJobPostsByCategoryPublic, getAllCategoriesPublic,
 getAllIndustriesPublic, getFeaturedCompaniesPublic, getJobPostsByCompanyPublic, 
-getWorkingShiftBasedOnRole, getAccountTypeBasedOnRole, getJobPostsByCategoryId } = require('../controllers/adminController');
+getWorkingShiftBasedOnRole, getAccountTypeBasedOnRole, getJobPostsByCategoryId, getAllJobTypesPublic } = require('../controllers/adminController');
     
 const { verifyToken, verifyJobSeekerOnly, verifyEmployerOnly } = require('../middleware/authMiddleware');
 
@@ -72,6 +72,9 @@ router.get("/account-type", verifyToken, getAccountTypeBasedOnRole);
 
 //logout api for job seeker and employer
 router.post('/logout', verifyToken, logout);
+
+//get all public job types list without token 
+router.get("/publicJobtypes", getAllJobTypesPublic);
 
 
 
