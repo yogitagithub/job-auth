@@ -417,59 +417,7 @@ exports.getCategoryBasedOnRole = async (req, res) => {
   }
 };
 
-//get all categories without token
-//without job count
-// exports.getAllCategoriesPublic = async (req, res) => {
-//   try {
-//     // Pagination
-//     const page  = Number.parseInt(req.query.page, 10) || 1;
-//     const limit = Number.parseInt(req.query.limit, 10) || 10;
-//     const skip  = (page - 1) * limit;
-
-//     // Only non-deleted categories
-//     const filter = { isDeleted: false };
-
-//     // Count (only non-deleted)
-//     const totalRecord = await Category.countDocuments(filter);
-//     const totalPage   = Math.max(1, Math.ceil(totalRecord / limit));
-
-//     // Fetch page
-//     const categories = await Category.find(filter)
-//       .select("_id name image isDeleted")
-//       .sort({ name: 1 })
-//       .skip(skip)
-//       .limit(limit)
-//       .lean();
-
-//     // Shape response
-//     const data = categories.map(c => ({
-//       id: c._id,
-//       name: c.name,
-//       image: c.image || null,
-//       isDeleted: !!c.isDeleted
-//     }));
-
-//     // Respond
-//     return res.status(200).json({
-//       status: true,
-//       message: "Categories fetched successfully.",
-//       totalRecord,
-//       totalPage,
-//       currentPage: page,
-//       data
-//     });
-//   } catch (error) {
-//     console.error("Error fetching public categories:", error);
-//     return res.status(500).json({
-//       status: false,
-//       message: "Failed to fetch categories.",
-//       error: error.message
-//     });
-//   }
-// };
-
-
-//with job count
+//get all categories without token with job count
 exports.getAllCategoriesPublic = async (req, res) => {
   try {
     // pagination
@@ -500,7 +448,8 @@ exports.getAllCategoriesPublic = async (req, res) => {
       categoryIds.map(async (id) => {
         const n = await JobPost.countDocuments({
           isDeleted: false,
-          status: "active",          // only active jobs
+          status: "active", 
+          adminAprrovalJobs: "Approved",         // only active jobs
           category: id
           // If your system doesn't flip status to "expired" automatically,
           // also enforce: expiredDate: { $gt: new Date() }
