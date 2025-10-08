@@ -534,15 +534,15 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
 
     const { industryType, jobType, jobTitle, city } = req.query;
 
-    // --- industryType: accept id OR human label (optional; keep your previous behavior if you prefer)
-    if (industryType && industryType.trim()) {
-      if (Types.ObjectId.isValid(industryType)) {
-        filter.industryType = industryType;
-      } /* else {
-        const ids = await findIdsByDisplay(IndustryType, industryType);
-        filter.industryType = ids.length ? { $in: ids } : { $in: [] }; // ensures 0 results if no match
-      } */
-    }
+  if (industryType && industryType.trim()) {
+  if (Types.ObjectId.isValid(industryType)) {
+    filter.industryType = industryType;
+  } else {
+    const ids = await findIdsByDisplay(IndustryType, industryType);
+    // If the label doesn't match any IndustryType, return 0 results
+    filter.industryType = ids.length ? { $in: ids } : { $in: [] };
+  }
+}
 
     // --- jobType: accept id OR human label (this fixes your issue)
     if (jobType && jobType.trim()) {
