@@ -117,16 +117,18 @@ exports.getMySkills = async (req, res) => {
       return res.status(200).json({
         status: true,
         message: "No skills added yet.",
-        data: []
+        data: { skillsList: [] }
       });
     }
 
     const skills = Array.isArray(doc.skills) ? doc.skills : [];
 
+    const skillsList = skills.map(skill => ({ name: skill }));
+
     return res.status(200).json({
       status: true,
       message: "Skills fetched successfully.",
-      data: skills
+      data: { skillsList }
     });
   } catch (err) {
     return res.status(500).json({
