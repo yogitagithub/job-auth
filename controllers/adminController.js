@@ -773,7 +773,18 @@ exports.getJobPostsByCategoryId = async (req, res) => {
   }
 };
 
-
+async function findIdsByDisplay(Model, raw) {
+  const q = escapeRegex(raw.trim());
+  const docs = await Model.find({
+    $or: [
+      { name:  { $regex: `^${q}$`, $options: "i" } },
+      { label: { $regex: `^${q}$`, $options: "i" } },
+      { title: { $regex: `^${q}$`, $options: "i" } },
+      { value: { $regex: `^${q}$`, $options: "i" } }
+    ]
+  }).select("_id").lean();
+  return docs.map(d => d._id);
+}
 
 
 
@@ -822,10 +833,18 @@ exports.getJobPostsByCompanyPublic = async (req, res) => {
     } = req.query;
 
 
-      // industryType / jobType (ObjectId)
-    if (industryType && Types.ObjectId.isValid(industryType)) {
-      filter.industryType = industryType;
-    }
+    if (industryType && industryType.trim()) {
+  if (Types.ObjectId.isValid(industryType)) {
+    filter.industryType = industryType;
+  } else {
+    const ids = await findIdsByDisplay(IndustryType, industryType);
+    // If the label doesn't match any IndustryType, return 0 results
+    filter.industryType = ids.length ? { $in: ids } : { $in: [] };
+  }
+}
+
+
+
     if (jobType && Types.ObjectId.isValid(jobType)) {
       filter.jobType = jobType;
     }
