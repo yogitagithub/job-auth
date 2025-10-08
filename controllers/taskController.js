@@ -78,7 +78,8 @@ exports.uploadTask = async (req, res) => {
       description,
       startTime: startTimeStr,
       endTime: endTimeStr,
-      progressPercent
+      progressPercent,
+       hoursWorked: hoursWorkedRaw,
     } = req.body || {};
 
     if (!jobApplicationId || !title || !description) {
@@ -90,6 +91,18 @@ exports.uploadTask = async (req, res) => {
     if (!req.file) {
       await session.abortTransaction(); session.endSession();
       return res.status(400).json({ status: false, message: "No file uploaded." });
+    }
+
+
+      // validate required hoursWorked from user
+    if (hoursWorkedRaw === undefined || hoursWorkedRaw === null || String(hoursWorkedRaw).trim() === "") {
+      await session.abortTransaction(); session.endSession();
+      return res.status(400).json({ status: false, message: "hoursWorked is required." });
+    }
+    const hoursWorked = Number(hoursWorkedRaw);
+    if (!Number.isFinite(hoursWorked) || hoursWorked < 0 || hoursWorked > 24) { // adjust upper bound as you like
+      await session.abortTransaction(); session.endSession();
+      return res.status(400).json({ status: false, message: "hoursWorked must be a number between 0 and 24." });
     }
 
     // profile must exist
@@ -111,6 +124,16 @@ exports.uploadTask = async (req, res) => {
       await session.abortTransaction(); session.endSession();
       return res.status(403).json({ status: false, message: "You can only create tasks for your own job applications." });
     }
+
+    
+// ✅ NEW: only allow if employer has approved the application
+if (jobApp.employerApprovalStatus !== "Approved") {
+  await session.abortTransaction(); session.endSession();
+  return res.status(403).json({
+    status: false,
+    message: "Your job application is not approved by the employer yet. You can upload tasks only after approval."
+  });
+}
 
     // build public file URL
     const BASE = process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
@@ -138,6 +161,7 @@ exports.uploadTask = async (req, res) => {
       title,
       description,
       fileUrl,
+       hoursWorked,
       ...(startTime ? { startTime } : {}),
       ...(endTime ? { endTime } : {}),
     };
@@ -165,6 +189,7 @@ exports.uploadTask = async (req, res) => {
         fileUrl: created.fileUrl,
         startTime: created.startTime,
         endTime: created.endTime,
+        hoursWorked: created.hoursWorked, 
         workedHours: created.workedHours,          // computed by pre('save')
         progressPercent: created.progressPercent,  // echoes input
         status: created.status,                    // derived from progress
