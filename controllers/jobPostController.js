@@ -3144,14 +3144,32 @@ exports.getJobPostByCompany = async (req, res) => {
           })();
     const skip = limit ? (page - 1) * limit : 0;
 
+     // ---- filters
+    const { city, jobTitle } = req.query;
+
     // filter: all non-deleted posts for this company
-    const filter = { companyId, isDeleted: false };
+    const filter = { companyId, isDeleted: false, adminAprrovalJobs: "Approved" };
+
+     // City: exact, case-insensitive
+    if (city && city.trim()) {
+      filter.city = { $regex: `^${escapeRegex(city.trim())}$`, $options: "i" };
+    }
+
+
+     // Unified search: jobTitle param matches jobTitle OR any skill (contains, case-insensitive)
+    if (jobTitle && jobTitle.trim()) {
+      const q = escapeRegex(jobTitle.trim());
+      filter.$or = [
+        { jobTitle: { $regex: q, $options: "i" } },
+        { skills:   { $elemMatch: { $regex: q, $options: "i" } } },
+      ];
+    }
 
     const totalRecord = await JobPost.countDocuments(filter);
 
     const posts = await JobPost.find(filter)
       .select(
-        "jobTitle jobDescription minSalary maxSalary hourlyRate salaryType jobType experience workingShift jobProfile industryType category state city expiredDate status companyId"
+        "jobTitle jobDescription minSalary maxSalary hourlyRate salaryType jobType experience workingShift jobProfile industryType category state city expiredDate status companyId skills"
       )
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -3189,6 +3207,8 @@ exports.getJobPostByCompany = async (req, res) => {
       minSalary: p.minSalary ?? null,
       maxSalary: p.maxSalary ?? null,
       hourlyRate: p.hourlyRate ?? null,
+
+        skills: Array.isArray(p.skills) ? p.skills.filter(Boolean) : [],
 
       expiredDate: p.expiredDate ? formatDateDDMMYYYY(p.expiredDate) : null,
       status: p.status || null,
