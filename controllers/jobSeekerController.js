@@ -413,14 +413,33 @@ exports.getProfile = async (req, res) => {
     const [eduCount, expCount, jssDoc, resumeDoc] = await Promise.all([
       JobSeekerEducation.countDocuments({ userId, isDeleted: false }),
       WorkExperience.countDocuments({ userId, isDeleted: false }),
-      JobSeekerSkill.findOne({ userId, isDeleted: false }).select("skillIds").lean(),
+     
+       JobSeekerSkill.findOne({ userId, isDeleted: false })
+        .select("skills skillIds")
+        .lean(),
+
+
       Resume.findOne({ userId, isDeleted: false }).select("_id").lean()
     ]);
 
-    const skillsCount       = Array.isArray(jssDoc?.skillIds) ? jssDoc.skillIds.length : 0;
+     // Prefer `skills`. If some old docs used `skillIds`, handle that too without model changes.
+    const skillsArray = Array.isArray(jssDoc?.skills)
+      ? jssDoc.skills
+      : (Array.isArray(jssDoc?.skillIds) ? jssDoc.skillIds : []);
+
+    // Normalize skill strings a bit (trim + dedupe) — harmless & robust
+    const normalizedSkills = Array.from(
+      new Set(
+        (skillsArray || [])
+          .filter(s => typeof s === "string")
+          .map(s => s.trim())
+          .filter(Boolean)
+      )
+    );
+
     const isEducationAdded  = eduCount  > 0;
     const isExperienceAdded = expCount  > 0;
-    const isSkillsAdded     = skillsCount >= 3;   // use >0 if "any skill" should be true
+     const isSkillsAdded     = normalizedSkills.length > 0;
     const isResumeAdded     = !!resumeDoc;
 
     const formatDate = (date) => {
