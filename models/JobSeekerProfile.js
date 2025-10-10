@@ -133,6 +133,16 @@ const profileSchema = new mongoose.Schema(
         required: true
       },
 
+      myJobs: { 
+    type: Number, 
+    default: 0 
+  },
+
+   myAttendance: { 
+    type: Number, 
+    default: 0 
+  },
+
 
   
   

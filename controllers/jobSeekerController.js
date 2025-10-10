@@ -410,7 +410,7 @@ exports.getProfile = async (req, res) => {
     }
 
     // ---- Compute section-completion flags from child collections ----
-    const [eduCount, expCount, jssDoc, resumeDoc] = await Promise.all([
+    const [eduCount, expCount, jssDoc, resumeDoc, approvedJobsCount] = await Promise.all([
       JobSeekerEducation.countDocuments({ userId, isDeleted: false }),
       WorkExperience.countDocuments({ userId, isDeleted: false }),
      
@@ -419,7 +419,8 @@ exports.getProfile = async (req, res) => {
         .lean(),
 
 
-      Resume.findOne({ userId, isDeleted: false }).select("_id").lean()
+      Resume.findOne({ userId, isDeleted: false }).select("_id").lean(),
+       JobApplication.countDocuments({ userId, employerApprovalStatus: "Approved" })
     ]);
 
      // Prefer `skills`. If some old docs used `skillIds`, handle that too without model changes.
@@ -484,7 +485,11 @@ exports.getProfile = async (req, res) => {
         isResumeAdded,
         isEducationAdded,
         isSkillsAdded,
-        isExperienceAdded
+        isExperienceAdded,
+
+        // ✅ new fields
+        myJobs: approvedJobsCount,   // number of approved applications
+        myAttendance: 0
       }
     });
   } catch (error) {
