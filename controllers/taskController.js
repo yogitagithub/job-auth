@@ -179,6 +179,11 @@ if (jobApp.employerApprovalStatus !== "Approved") {
 
     await session.commitTransaction(); session.endSession();
 
+       const responseWorkedHours =
+      (created.startTime && created.endTime && typeof created.workedHours === "number" && created.workedHours > 0)
+        ? created.workedHours
+        : created.hoursWorked;
+
     return res.status(200).json({
       status: true,
       message: "Task created successfully.",
@@ -190,7 +195,7 @@ if (jobApp.employerApprovalStatus !== "Approved") {
         startTime: created.startTime,
         endTime: created.endTime,
         hoursWorked: created.hoursWorked, 
-        workedHours: created.workedHours,          // computed by pre('save')
+        workedHours: responseWorkedHours,          // computed by pre('save')
         progressPercent: created.progressPercent,  // echoes input
         status: created.status,                    // derived from progress
         employerApprovedTask: created.employerApprovedTask,
