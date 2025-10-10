@@ -849,14 +849,13 @@ exports.getSeekerDetails = async (req, res) => {
   try {
     const { jobSeekerId } = req.params || {};
 
-    // ---- validate ----
     if (!jobSeekerId || !mongoose.isValidObjectId(jobSeekerId)) {
       return res.status(400).json({ status: false, message: "Valid jobSeekerId is required in params." });
     }
 
-    // ---- seeker profile (must be active) ----
+    // include userId so we can fetch skills by userId
     const seeker = await JobSeekerProfile.findById(jobSeekerId)
-      .select("name phoneNumber email state city image jobProfile dateOfBirth gender panCardNumber address alternatePhoneNumber pincode industryType isDeleted CurrentSalary currentSalary")
+      .select("userId name phoneNumber email state city image jobProfile dateOfBirth gender panCardNumber address alternatePhoneNumber pincode industryType isDeleted CurrentSalary currentSalary")
       .populate([
         { path: "state", select: "state" },
         { path: "jobProfile", select: "jobProfile name" },
@@ -871,25 +870,21 @@ exports.getSeekerDetails = async (req, res) => {
       return res.status(409).json({ status: false, message: "This job seeker profile is disabled." });
     }
 
-    // ---- related sections ----
-    const [educations, experiences, jsSkills, resumes] = await Promise.all([
-      JobSeekerEducation.find({ jobSeekerId }).select({
-        jobSeekerId: 1, _id: 0,
-        degree: 1,
-        boardOfUniversity: 1, boardofuniversity: 1,
-        sessionFrom: 1, sessionfrom: 1,
-        sessionTo: 1, sessionto: 1,
-        marks: 1,
-        gradeOrPercentage: 1, gradeorPercentage: 1
-      }).lean(),
+    const [educationsRaw, experiencesRaw, resumesRaw] = await Promise.all([
+      JobSeekerEducation.find({ jobSeekerId })
+        .select({
+          jobSeekerId: 1, _id: 0,
+          degree: 1,
+          boardOfUniversity: 1, boardofuniversity: 1,
+          sessionFrom: 1, sessionfrom: 1,
+          sessionTo: 1, sessionto: 1,
+          marks: 1,
+          gradeOrPercentage: 1, gradeorPercentage: 1
+        })
+        .lean(),
 
       WorkExperience.find({ jobSeekerId })
         .select("jobSeekerId companyName jobTitle sessionFrom sessionTo roleDescription -_id")
-        .lean(),
-
-      JobSeekerSkill.find({ jobSeekerId, isDeleted: false })
-        .select("jobSeekerId skillIds -_id")
-        .populate({ path: "skillIds", select: "skill", model: "Skill" }) // your Skill schema uses field "skill"
         .lean(),
 
       Resume.find({ jobSeekerId, isDeleted: { $ne: true } })
@@ -897,7 +892,22 @@ exports.getSeekerDetails = async (req, res) => {
         .lean()
     ]);
 
-    // ---- helpers ----
+    // ---------- SKILLS: always array ----------
+    let skills = [];
+    if (seeker.userId) {
+      const jss = await JobSeekerSkill
+        .findOne({ userId: seeker.userId, isDeleted: false })
+        .select("skills")
+        .lean();
+
+      if (jss && Array.isArray(jss.skills)) {
+        skills = Array.from(new Set(
+          jss.skills.filter(s => typeof s === "string").map(s => s.trim()).filter(Boolean)
+        ));
+      }
+    }
+
+    // ---------- helpers ----------
     const formatDate = (date) => {
       if (!date) return null;
       const d = new Date(date);
@@ -924,23 +934,15 @@ exports.getSeekerDetails = async (req, res) => {
       roleDescription: x.roleDescription ?? null
     });
 
-    // skills -> array of strings or null
-    const skillNames = Array.from(
-      new Set(
-        (jsSkills || [])
-          .flatMap(doc => (doc.skillIds || []))
-          .map(s => (s && typeof s === "object" && "skill" in s) ? s.skill : null)
-          .filter(Boolean)
-      )
-    );
-    const skills = skillNames.length ? skillNames : null;
+    // ---------- ALWAYS ARRAYS (even when nothing found) ----------
+    const educations = Array.isArray(educationsRaw) ? educationsRaw.map(normalizeEdu) : [];        // NEW
+    const experiences = Array.isArray(experiencesRaw) ? experiencesRaw.map(normalizeExp) : [];      // NEW
+    const resumes = Array.isArray(resumesRaw)                                                                 // NEW
+      ? resumesRaw.map(r => ({ fileName: r.fileName ?? null }))
+      : [];
+    // -------------------------------------------------------------
 
-    const normalizedResumes = (resumes || []).map(r => ({
-      fileName: r.fileName ?? null
-     
-    }));
-
-    // ---- response ----
+    // --- response ---
     const data = {
       jobSeekerId: jobSeekerId.toString(),
       jobSeekerName: seeker.name ?? null,
@@ -950,7 +952,7 @@ exports.getSeekerDetails = async (req, res) => {
       image: seeker.image ?? null,
       dateOfBirth: formatDate(seeker.dateOfBirth),
       gender: seeker.gender ?? null,
-      panCardNumber: seeker.panCardNumber ?? null,          // consider removing from public if needed
+      panCardNumber: seeker.panCardNumber ?? null,
       address: seeker.address ?? null,
       pincode: seeker.pincode ?? null,
       state: seeker.state?.state ?? null,
@@ -958,10 +960,10 @@ exports.getSeekerDetails = async (req, res) => {
       jobProfile: seeker.jobProfile ? (seeker.jobProfile.jobProfile || seeker.jobProfile.name || null) : null,
       industryType: seeker.industryType ? (seeker.industryType.industryType || seeker.industryType.name || null) : null,
       currentSalary: seeker.CurrentSalary ?? seeker.currentSalary ?? null,
-      educations: (educations || []).map(normalizeEdu),
-      experiences: (experiences || []).map(normalizeExp),
-      skills,
-      resumes: normalizedResumes
+      educations,     // always []
+      experiences,    // always []
+      skills,         // always []
+      resumes         // always []
     };
 
     return res.status(200).json({
@@ -974,6 +976,8 @@ exports.getSeekerDetails = async (req, res) => {
     return res.status(500).json({ status: false, message: "Server error", error: err.message });
   }
 };
+
+
 
 
 
