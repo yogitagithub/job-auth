@@ -2748,6 +2748,18 @@ function pickLabel(doc, isState = false) {
 
 
 //get job list based on job seeker skills
+const pickLabelOne = (obj, isState = false) =>
+  obj ? (obj.label || obj.title || obj.name || (isState ? obj.state : null)) : null;
+
+const formatDate = (iso) => {
+  if (!iso) return null;
+  const d = new Date(iso);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}-${mm}-${yyyy}`;
+};
+
 exports.getBasedOnSkillsJobs = async (req, res) => {
   try {
     const { userId, role } = req.user || {};
@@ -2755,12 +2767,15 @@ exports.getBasedOnSkillsJobs = async (req, res) => {
       return res.status(403).json({ status: false, message: "Only job seekers can view job posts." });
     }
 
-    // 1) Get seeker's skills (ObjectIds) from JobSeekerSkill
+    // 1️⃣ Get seeker’s skills (strings)
     const jss = await JobSeekerSkill.findOne({ userId, isDeleted: false })
-      .select("skillIds")
+      .select("skills")
       .lean();
 
-    const seekerSkills = (jss?.skillIds || []).map(id => new mongoose.Types.ObjectId(id));
+    const seekerSkills = (jss?.skills || [])
+      .map(s => String(s || "").trim())
+      .filter(Boolean);
+
     if (!seekerSkills.length) {
       return res.status(200).json({
         status: true,
@@ -2772,22 +2787,33 @@ exports.getBasedOnSkillsJobs = async (req, res) => {
       });
     }
 
-    // 2) Pagination inputs
+    // 2️⃣ Pagination
     const page  = Math.max(parseInt(req.query.page, 10)  || 1, 1);
     const limit = Math.min(parseInt(req.query.limit, 10) || 10, 50);
 
-    // 3) ONLY the requested filters:
+    // 3️⃣ Create regexes for skills (case + space insensitive)
+    const skillRegexes = seekerSkills.map(s =>
+      new RegExp(`^\\s*${escapeRegex(s)}\\s*$`, "i")
+    );
+
+    // 4️⃣ Final filter
     const baseFilter = {
-      status: "active",
-      skills: { $in: seekerSkills }   // any skill overlap (includes "all" too)
+      isDeleted: false,
+      status: "active",                // only active jobs
+      adminAprrovalJobs: "Approved",   // ✅ only admin-approved posts
+      skills: { $in: skillRegexes },   // at least one matching skill
     };
 
-    // ---- PASS 1: rank globally (minimal fields) so pagination respects overlap ranking ----
-    const minimal = await JobPost.find(baseFilter).select("_id skills createdAt").lean();
+    // ---- PASS 1: lightweight fetch for ranking ----
+    const minimal = await JobPost
+      .find(baseFilter)
+      .select("_id skills createdAt")
+      .lean();
+
     if (!minimal.length) {
       return res.status(200).json({
         status: true,
-        message: "No matching job posts.",
+        message: "No matching job posts found.",
         totalRecord: 0,
         totalPage: 0,
         currentPage: page,
@@ -2795,11 +2821,13 @@ exports.getBasedOnSkillsJobs = async (req, res) => {
       });
     }
 
-    const sset = new Set(seekerSkills.map(String));
+    // rank by overlap (skill match count)
+    const seekerSet = new Set(seekerSkills.map(s => s.toLowerCase()));
     const ranked = minimal
       .map(doc => {
-        const ids = (doc.skills || []).map(s => String(s));
-        const overlap = ids.reduce((c, id) => c + (sset.has(id) ? 1 : 0), 0);
+        const arr = (doc.skills || [])
+          .map(s => String(s || "").trim().toLowerCase());
+        const overlap = arr.reduce((c, s) => c + (seekerSet.has(s) ? 1 : 0), 0);
         return { _id: String(doc._id), createdAt: doc.createdAt, overlap };
       })
       .sort((a, b) => (b.overlap - a.overlap) || (new Date(b.createdAt) - new Date(a.createdAt)));
@@ -2810,12 +2838,10 @@ exports.getBasedOnSkillsJobs = async (req, res) => {
     const pageIds     = ranked.slice(start, start + limit).map(r => new mongoose.Types.ObjectId(r._id));
     const orderIndex  = new Map(pageIds.map((id, i) => [String(id), i]));
 
-    // ---- PASS 2: fetch full docs for the page, populate company + skill names ----
+    // ---- PASS 2: fetch populated docs ----
     const pageDocs = await JobPost.find({ _id: { $in: pageIds } })
-     .populate({ path: "companyId", select: "companyName image" })
-      .populate({ path: "skills", select: "skill" })
-
-       .populate({ path: "category",     select: "name title label" })
+      .populate({ path: "companyId",    select: "companyName image" })
+      .populate({ path: "category",     select: "name title label" })
       .populate({ path: "industryType", select: "name title label" })
       .populate({ path: "jobType",      select: "name type label title" })
       .populate({ path: "salaryType",   select: "name type label title" })
@@ -2823,97 +2849,55 @@ exports.getBasedOnSkillsJobs = async (req, res) => {
       .populate({ path: "workingShift", select: "name label shift" })
       .populate({ path: "otherField",   select: "name label title" })
       .populate({ path: "jobProfile",   select: "name title label" })
-  .populate({ path: "state",        select: "state name" })
-
+      .populate({ path: "state",        select: "state name" })
       .lean();
 
-    // keep the ranked order
+    // maintain ranked order
     pageDocs.sort((a, b) => orderIndex.get(String(a._id)) - orderIndex.get(String(b._id)));
 
+    // 5️⃣ Response formatting
+    const jobPosts = pageDocs.map(job => {
+      const {
+        companyId, skills, category, industryType, jobType, salaryType,
+        experience, workingShift, otherField, jobProfile, state,
+        expiredDate, isDeleted, __v, updatedAt, createdAt, ...rest
+      } = job;
 
-    const formatDate = (iso) => {
-  if (!iso) return null;
-  const d = new Date(iso);
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  return `${dd}-${mm}-${yyyy}`;
-};
-
-
-     // reshape output
-   const jobPosts = pageDocs.map(job => {
-  // 1) pull out populated refs and the rest of the raw fields
-  const {
-    companyId,
-    skills,
-    category,
-    industryType,
-    jobType,
-    salaryType,
-    experience,
-    workingShift,
-    otherField,
-    jobProfile,
-    state,
-    expiredDate,
-
-      isDeleted,      // drop
-    __v,            // drop
-    updatedAt,      // drop
-    createdAt,    // drop
-
-
-    ...rest
-  } = job;
-
-  // 2) company flatten
-  const companyName  = companyId?.companyName ?? null;
-const companyImage = companyId?.image ?? null;
-
-  // 3) build final payload with label strings
-  return {
-    ...rest, // all other JobPost fields you want to keep
-      expiredDate: formatDate(expiredDate), 
-    companyName,
-    companyImage,
-    skills: (skills || []).map(s => s.skill),          // ["React js", "Express js", ...]
-
-    // <-- labels instead of ObjectIds
-    category:     pickLabel(category),
-    industryType: pickLabel(industryType),
-    jobType:      pickLabel(jobType),
-    salaryType:   pickLabel(salaryType),
-    experience:   pickLabel(experience),
-    workingShift: pickLabel(workingShift),
-    otherField:   pickLabel(otherField),
-    jobProfile:   pickLabel(jobProfile),
-    state:        pickLabel(state, true)
-  };
-});
-
-
+      return {
+        ...rest,
+        expiredDate: formatDate(expiredDate),
+        companyName:  companyId?.companyName ?? null,
+        companyImage: companyId?.image ?? null,
+        skills: (skills || []),
+        category:     pickLabelOne(category),
+        industryType: pickLabelOne(industryType),
+        jobType:      pickLabelOne(jobType),
+        salaryType:   pickLabelOne(salaryType),
+        experience:   pickLabelOne(experience),
+        workingShift: pickLabelOne(workingShift),
+        otherField:   pickLabelOne(otherField),
+        jobProfile:   pickLabelOne(jobProfile),
+        state:        pickLabelOne(state, true)
+      };
+    });
 
     return res.status(200).json({
       status: true,
       message: "Based on skills job posts where fetched successfully.",
-     data: {
-       totalRecord,
-      totalPage,
-      currentPage: page,
-      jobPosts
-     }
+      data: { totalRecord, totalPage, currentPage: page, jobPosts }
     });
 
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ 
-      status: false, 
-      message: "Server error", 
-      error: err.message 
+    return res.status(500).json({
+      status: false,
+      message: "Server error",
+      error: err.message
     });
   }
 };
+
+
 
 
 
