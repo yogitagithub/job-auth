@@ -156,12 +156,23 @@ if (jobApp.employerApprovalStatus !== "Approved") {
       }
     }
 
+
+      // ------ NEW: compute workedHours so it is persisted ------
+    let workedHours = 0;
+    if (startTime && endTime) {
+      workedHours = Math.max(0, (endTime - startTime) / (1000 * 60 * 60)); // millis → hours
+      workedHours = Number(workedHours.toFixed(2)); // keep 2 decimals
+    } else {
+      workedHours = hoursWorked; // fallback to provided hours
+    }
+
     const payload = {
       jobApplicationId,
       title,
       description,
       fileUrl,
        hoursWorked,
+       workedHours,
       ...(startTime ? { startTime } : {}),
       ...(endTime ? { endTime } : {}),
     };
@@ -567,7 +578,7 @@ exports.getMyTasks = async (req, res) => {
 
     const tasks = await Task.find(taskFilter)
       .select(
-        "jobApplicationId title description fileUrl startTime endTime workedHours progressPercent status employerApprovedTask submittedAt"
+        "jobApplicationId title description fileUrl startTime endTime hoursWorked workedHours progressPercent status employerApprovedTask submittedAt"
       )
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -598,6 +609,11 @@ exports.getMyTasks = async (req, res) => {
       const fileUrl =
         t.fileUrl && String(t.fileUrl).trim() !== "" ? t.fileUrl : null;
 
+          // prefer computed workedHours; fallback to hoursWorked; else 0
+      const worked = (typeof t.workedHours === "number" && t.workedHours > 0)
+        ? t.workedHours
+        : (typeof t.hoursWorked === "number" ? t.hoursWorked : 0);
+
       return {
         taskId: String(t._id),
         jobApplicationId,
@@ -610,11 +626,12 @@ exports.getMyTasks = async (req, res) => {
         description: t.description,
         fileUrl,                                        // null when missing/empty
 
-        // formatted strings returned as startTime/endTime
-        startTime: t.startTime ? formatTimeHHMMSS(t.startTime) : null,
-        endTime:   t.endTime   ? formatTimeHHMMSS(t.endTime)   : null,
+       startTime: t.startTime ? formatTimeHHMMSS(t.startTime) : "",
+        endTime:   t.endTime   ? formatTimeHHMMSS(t.endTime)   : "",
 
-        workedHours: t.workedHours ?? 0,
+         workedHours: worked,
+        hoursWorked: typeof t.hoursWorked === "number" ? t.hoursWorked : worked,
+
         progressPercent: t.progressPercent,
         status: t.status,
         employerApprovedTask: t.employerApprovedTask,
