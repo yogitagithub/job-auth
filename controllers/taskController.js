@@ -94,16 +94,7 @@ exports.uploadTask = async (req, res) => {
     }
 
 
-      // validate required hoursWorked from user
-    if (hoursWorkedRaw === undefined || hoursWorkedRaw === null || String(hoursWorkedRaw).trim() === "") {
-      await session.abortTransaction(); session.endSession();
-      return res.status(400).json({ status: false, message: "hoursWorked is required." });
-    }
-    const hoursWorked = Number(hoursWorkedRaw);
-    if (!Number.isFinite(hoursWorked) || hoursWorked < 0 || hoursWorked > 24) { // adjust upper bound as you like
-      await session.abortTransaction(); session.endSession();
-      return res.status(400).json({ status: false, message: "hoursWorked must be a number between 0 and 24." });
-    }
+    
 
     // profile must exist
     const profile = await JobSeekerProfile.findOne({ userId, isDeleted: false })
@@ -156,14 +147,27 @@ if (jobApp.employerApprovalStatus !== "Approved") {
       }
     }
 
-
-      // ------ NEW: compute workedHours so it is persisted ------
-    let workedHours = 0;
+     // ---- decide hoursWorked ----
+    let hoursWorkedFinal;
     if (startTime && endTime) {
-      workedHours = Math.max(0, (endTime - startTime) / (1000 * 60 * 60)); // millis → hours
-      workedHours = Number(workedHours.toFixed(2)); // keep 2 decimals
+      if (endTime < startTime) {
+        await session.abortTransaction(); session.endSession();
+        return res.status(400).json({ status: false, message: "endTime cannot be before startTime." });
+      }
+      const diffHrs = (endTime - startTime) / (1000 * 60 * 60);
+      hoursWorkedFinal = Number(Math.max(0, diffHrs).toFixed(2)); // e.g., 3.00
     } else {
-      workedHours = hoursWorked; // fallback to provided hours
+      // only required when start/end are not both provided
+      if (hoursWorkedRaw === undefined || hoursWorkedRaw === null || String(hoursWorkedRaw).trim() === "") {
+        await session.abortTransaction(); session.endSession();
+        return res.status(400).json({ status: false, message: "hoursWorked is required when startTime/endTime are not provided." });
+      }
+      hoursWorkedFinal = Number(hoursWorkedRaw);
+    }
+
+    if (!Number.isFinite(hoursWorkedFinal) || hoursWorkedFinal < 0 || hoursWorkedFinal > 24) {
+      await session.abortTransaction(); session.endSession();
+      return res.status(400).json({ status: false, message: "hoursWorked must be a number between 0 and 24." });
     }
 
     const payload = {
@@ -171,8 +175,7 @@ if (jobApp.employerApprovalStatus !== "Approved") {
       title,
       description,
       fileUrl,
-       hoursWorked,
-       workedHours,
+       hoursWorked: hoursWorkedFinal,  
       ...(startTime ? { startTime } : {}),
       ...(endTime ? { endTime } : {}),
     };
@@ -186,7 +189,8 @@ if (jobApp.employerApprovalStatus !== "Approved") {
       payload.progressPercent = p; // status auto-mapped in Task pre('save')
     }
 
-    const [created] = await Task.create([payload], { session });
+   // Use .save() so pre('save') sets status from progress
+    const created = await new Task(payload).save({ session });
 
     await session.commitTransaction(); session.endSession();
 
@@ -205,10 +209,9 @@ if (jobApp.employerApprovalStatus !== "Approved") {
         fileUrl: created.fileUrl,
         startTime: created.startTime,
         endTime: created.endTime,
-        hoursWorked: created.hoursWorked, 
-        workedHours: responseWorkedHours,          // computed by pre('save')
-        progressPercent: created.progressPercent,  // echoes input
-        status: created.status,                    // derived from progress
+     hoursWorked: created.hoursWorked, 
+        progressPercent: created.progressPercent,  
+        status: created.status,                   
         employerApprovedTask: created.employerApprovedTask,
         submittedAt: created.submittedAt,
         createdAt: created.createdAt,
@@ -578,7 +581,7 @@ exports.getMyTasks = async (req, res) => {
 
     const tasks = await Task.find(taskFilter)
       .select(
-        "jobApplicationId title description fileUrl startTime endTime hoursWorked workedHours progressPercent status employerApprovedTask submittedAt"
+        "jobApplicationId title description fileUrl startTime endTime hoursWorked progressPercent status employerApprovedTask submittedAt"
       )
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -629,9 +632,9 @@ exports.getMyTasks = async (req, res) => {
        startTime: t.startTime ? formatTimeHHMMSS(t.startTime) : "",
         endTime:   t.endTime   ? formatTimeHHMMSS(t.endTime)   : "",
 
-         workedHours: worked,
-        hoursWorked: typeof t.hoursWorked === "number" ? t.hoursWorked : worked,
-
+         // only one field now
+        hoursWorked: typeof t.hoursWorked === "number" ? t.hoursWorked : 0,
+        
         progressPercent: t.progressPercent,
         status: t.status,
         employerApprovedTask: t.employerApprovedTask,

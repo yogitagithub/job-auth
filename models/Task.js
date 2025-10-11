@@ -27,13 +27,8 @@ const taskSchema = new mongoose.Schema(
     endTime: { type: Date },             // set when user ends
 
 
-    //this will be provided by user
-    hoursWorked: { type: Number, 
-      required: true 
-    },
-
-
-    workedHours: { type: Number, default: 0 }, // auto-computed (hours, decimals allowed)
+    // Single source of truth for hours
+    hoursWorked: { type: Number, required: true },
 
     // ---- Progress & status ----
     progressPercent: {
@@ -81,24 +76,19 @@ function mapStatus(p) {
   return "At Risk";
 }
 
-// Recompute derived fields before save
+// Keep only validations/derived status here (no workedHours calc)
 taskSchema.pre("save", function (next) {
-  // compute workedHours if both times exist
   if (this.startTime && this.endTime) {
     if (this.endTime < this.startTime) {
       return next(new Error("endTime cannot be before startTime"));
     }
-    const diffMs = this.endTime - this.startTime;
-    // round to 2 decimals
-    this.workedHours = Math.round((diffMs / 36e5) * 100) / 100;
   }
-
-  // compute status from progress
   if (typeof this.progressPercent === "number") {
     this.status = mapStatus(this.progressPercent);
   }
-
   next();
 });
+
+
 
 module.exports = mongoose.model("Task", taskSchema);
