@@ -49,10 +49,18 @@ const profileSchema = new mongoose.Schema(
 
       alternatePhoneNumber: { type: String },
       
-    jobProfile: {  
-    type: mongoose.Schema.Types.ObjectId,
-  ref: "JobProfile",
+  //   jobProfile: {  
+  //   type: mongoose.Schema.Types.ObjectId,
+  // ref: "JobProfile",
+  // },
+
+
+   jobProfile: { 
+    type: String, 
+    trim: true, 
+    maxlength: 120 
   },
+
 
     address: {
       type: String,

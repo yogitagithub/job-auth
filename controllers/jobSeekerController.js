@@ -93,23 +93,11 @@ exports.saveProfile = async (req, res) => {
       req.body.industryType = doc._id;
     }
 
-    // ---------- jobProfile (optional; accept name or ObjectId) ----------
+   // ---------- jobProfile (optional; free text) ----------
     if (Object.prototype.hasOwnProperty.call(req.body, "jobProfile")) {
-      const val = req.body.jobProfile;
-      let doc = null;
-
-      if (mongoose.Types.ObjectId.isValid(val)) doc = await JobProfile.findById(val);
-      if (!doc && typeof val === "string") doc = await JobProfile.findOne({ name: val.trim() });
-
-      if (!doc) {
-        return res.status(400).json({
-          status: false,
-          message: "Invalid job profile (use valid name or id)."
-        });
-      }
-      req.body.jobProfile = doc._id;
+      const jp = String(req.body.jobProfile || "").trim();
+      req.body.jobProfile = jp.length ? jp : null; // store null if empty
     }
-
 
       // ---------- salaryType (REQUIRED on create; accept name or ObjectId) ----------
     // allow alias "SalaryType"
@@ -337,7 +325,7 @@ if (nextIsExperienced === false) {
     const populated = await JobSeekerProfile.findById(profile._id)
       .populate("industryType", "name")
       .populate("state", "state")
-      .populate("jobProfile", "name")
+     
        .populate("salaryType", "name");
 
 
@@ -350,8 +338,9 @@ if (nextIsExperienced === false) {
         ...populated.toObject(),
         industryType: populated.industryType?.name || null,
         state: populated.state?.state || null,
-        jobProfile: populated.jobProfile?.name || null,
+       
          salaryType:   populated.salaryType?.name   || null,
+          jobProfile: populated.jobProfile || null,
         city: populated.city ?? null,
         dateOfBirth: populated.dateOfBirth
           ? populated.dateOfBirth.toISOString().split("T")[0]
