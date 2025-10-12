@@ -859,6 +859,11 @@ exports.getSeekerDetails = async (req, res) => {
       return res.status(409).json({ status: false, message: "This job seeker profile is disabled." });
     }
 
+      // include legacy docs w/o the flag, exclude when true
+    const notDeleted = { $or: [{ isDeleted: { $exists: false } }, { isDeleted: false }] };
+    const jsId = new mongoose.Types.ObjectId(jobSeekerId);
+
+
     const [educationsRaw, experiencesRaw, resumesRaw] = await Promise.all([
       JobSeekerEducation.find({ jobSeekerId })
         .select({
@@ -868,33 +873,40 @@ exports.getSeekerDetails = async (req, res) => {
           sessionFrom: 1, sessionfrom: 1,
           sessionTo: 1, sessionto: 1,
           marks: 1,
-          gradeOrPercentage: 1, gradeorPercentage: 1
+          gradeOrPercentage: 1, gradeorPercentage: 1,
+           isDeleted: 1
+          
         })
         .lean(),
 
-      WorkExperience.find({ jobSeekerId })
-        .select("jobSeekerId companyName jobTitle sessionFrom sessionTo roleDescription -_id")
+     
+      WorkExperience.find({ jobSeekerId: jsId, ...notDeleted })
+        .select("jobSeekerId companyName jobTitle sessionFrom sessionTo roleDescription isDeleted -_id")
         .lean(),
 
-      Resume.find({ jobSeekerId, isDeleted: { $ne: true } })
-        .select("jobSeekerId fileName fileUrl -_id")
+      Resume.find({ jobSeekerId: jsId, ...notDeleted })
+        .select("jobSeekerId fileName fileUrl isDeleted -_id")
         .lean()
     ]);
 
-    // ---------- SKILLS: always array ----------
+  // ---------- SKILLS ----------
     let skills = [];
     if (seeker.userId) {
       const jss = await JobSeekerSkill
-        .findOne({ userId: seeker.userId, isDeleted: false })
-        .select("skills")
+        .findOne({ userId: seeker.userId, ...notDeleted }) // doc-level soft delete
+        .select("skills isDeleted")
         .lean();
 
-      if (jss && Array.isArray(jss.skills)) {
+      if (jss?.skills?.length) {
+        // If you ever move to per-item soft delete in skills, add filtering here
         skills = Array.from(new Set(
-          jss.skills.filter(s => typeof s === "string").map(s => s.trim()).filter(Boolean)
+          jss.skills
+            .map(s => (typeof s === "string" ? s.trim() : "")) // your schema = [String]
+            .filter(Boolean)
         ));
       }
     }
+
 
     // ---------- helpers ----------
     const formatDate = (date) => {
@@ -923,13 +935,19 @@ exports.getSeekerDetails = async (req, res) => {
       roleDescription: x.roleDescription ?? null
     });
 
-    // ---------- ALWAYS ARRAYS (even when nothing found) ----------
-    const educations = Array.isArray(educationsRaw) ? educationsRaw.map(normalizeEdu) : [];        // NEW
-    const experiences = Array.isArray(experiencesRaw) ? experiencesRaw.map(normalizeExp) : [];      // NEW
-    const resumes = Array.isArray(resumesRaw)                                                                 // NEW
-      ? resumesRaw.map(r => ({ fileName: r.fileName ?? null }))
+   // Double-guard in memory as well (safety)
+    const educations = (educationsRaw || [])
+      .filter(e => e?.isDeleted !== true)
+      .map(normalizeEdu);
+
+    const experiences = (experiencesRaw || [])
+      .filter(x => x?.isDeleted !== true)
+      .map(normalizeExp);
+
+    const resumes = Array.isArray(resumesRaw)
+      ? resumesRaw.filter(r => r?.isDeleted !== true)
+                 .map(r => ({ fileName: r.fileName ?? null, fileUrl: r.fileUrl ?? null }))
       : [];
-    // -------------------------------------------------------------
 
     // --- response ---
     const data = {
