@@ -138,7 +138,7 @@ const profileSchema = new mongoose.Schema(
    salaryType: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "SalaryType",
-        required: true
+        // required: true
       },
 
       myJobs: { 
