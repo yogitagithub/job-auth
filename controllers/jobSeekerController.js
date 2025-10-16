@@ -380,7 +380,7 @@ exports.getProfile = async (req, res) => {
     // fetch the profile (don't filter isDeleted so we can detect explicitly)
     const profile = await JobSeekerProfile.findOne({ userId })
       .populate("industryType", "name")
-      .populate("jobProfile", "name")
+     
       .populate("state", "state")
        .populate("salaryType", "name");
 
@@ -443,6 +443,11 @@ exports.getProfile = async (req, res) => {
 
     const p = profile.toObject();
 
+      const jobProfileName =
+      (typeof p.jobProfile === "string" && p.jobProfile.trim()) ||
+      (p.jobProfile && typeof p.jobProfile === "object" && (p.jobProfile.name || p.jobProfile.jobProfile)) ||
+      null;
+
     return res.status(200).json({
       status: true,
       message: "Job seeker profile fetched successfully.",
@@ -455,7 +460,7 @@ exports.getProfile = async (req, res) => {
         gender: p.gender,
         email: p.email,
         industryType: p.industryType?.name || null,
-        jobProfile: p.jobProfile?.name || null,
+         jobProfile: jobProfileName,  
          salaryType:   p.salaryType?.name   || null,  
         address: p.address,
         state: p.state?.state || null,
