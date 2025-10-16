@@ -82,11 +82,11 @@ const companyProfileSchema = new mongoose.Schema({
     trim: true
   },
 
-  // aboutCompany: {
-  //    type: String,
-  //     default: null,
-  //   trim: true
-  // },
+  aboutCompany: {
+     type: String,
+      default: null,
+    trim: true
+  },
 
    isDeleted: { 
     type: Boolean, 

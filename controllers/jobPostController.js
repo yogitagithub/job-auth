@@ -1863,7 +1863,7 @@ exports.getJobDetailsPublic = async (req, res) => {
 
       company:        jobPost.companyId?.companyName ?? null,
       companyImage:   jobPost.companyId?.image ?? null,
-      aboutCompany:   jobPost.companyId?.aboutCompany ?? null,
+     aboutCompany:   jobPost.companyId?.aboutCompany ?? null,
 
       category:       jobPost.category?.name ?? null,
       industryType:   jobPost.industryType?.name ?? null,
@@ -1872,17 +1872,16 @@ exports.getJobDetailsPublic = async (req, res) => {
       experience:     jobPost.experience?.name ?? null,
       otherField:     jobPost.otherField?.name ?? null,
        workingShift:     jobPost.workingShift?.name ?? null,
-        jobProfile:     jobPost.jobProfile?.name ?? null,
+       jobProfile:     jobPost.jobProfile?.name ?? null, 
       state:          jobPost.state?.state ?? null,
        city:           jobPost.city ?? null,
 
       jobTitle:           jobPost.jobTitle ?? null,
       jobDescription:     jobPost.jobDescription ?? null,
      
-
-       skills: Array.isArray(jobPost.skills)
-    ? jobPost.skills.map(s => s?.skill).filter(Boolean)   // ⬅️ names
-    : [],
+ skills: Array.isArray(jobPost.skills)
+        ? jobPost.skills.filter(s => typeof s === "string" && s.trim().length > 0)
+        : [],
 
     
       minSalary:          jobPost.minSalary ?? null,
