@@ -663,3 +663,134 @@ exports.getMyTasks = async (req, res) => {
     });
   }
 };
+
+
+//get only approved task
+exports.getApprovedTasks = async (req, res) => {
+  try {
+    const { role, userId } = req.user || {};
+    if (role !== "employer") {
+      return res.status(403).json({
+        status: false,
+        message: "Only employers can view approved tasks from this endpoint."
+      });
+    }
+
+    const { applicationId } = req.params || {};
+    if (!mongoose.isValidObjectId(applicationId)) {
+      return res.status(400).json({ status: false, message: "Invalid applicationId." });
+    }
+
+    // ---- pagination ----
+    const pageParam = parseInt(req.query.page, 10);
+    const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
+
+    const limitRaw = (req.query.limit || "").toString().toLowerCase();
+    const limit =
+      limitRaw === "all"
+        ? 0
+        : (() => {
+            const n = parseInt(limitRaw || "10", 10);
+            if (!Number.isFinite(n) || n < 1) return 10;
+            return Math.min(n, 100);
+          })();
+    const skip = limit ? (page - 1) * limit : 0;
+
+    // ---- authorize employer for this application ----
+    const appDoc = await JobApplication.findById(applicationId)
+      .select("_id userId jobPostId")
+      .lean();
+
+    if (!appDoc) {
+      return res.status(404).json({ status: false, message: "Job application not found." });
+    }
+
+    const owns = await JobPost.exists({ _id: appDoc.jobPostId, userId, isDeleted: false });
+    if (!owns) {
+      return res.status(403).json({ status: false, message: "Not authorized for this application." });
+    }
+
+    // ---- fetch only APPROVED tasks for this application ----
+    const taskFilter = {
+      jobApplicationId: appDoc._id,
+      employerApprovedTask: "Approved"
+    };
+
+    const totalRecord = await Task.countDocuments(taskFilter);
+
+    const tasks = await Task.find(taskFilter)
+      .select(
+        "jobApplicationId title description fileUrl startTime endTime hoursWorked progressPercent status employerApprovedTask submittedAt"
+      )
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit || 0)
+      .populate({
+        path: "jobApplicationId",
+        select: "jobPostId",
+        populate: {
+          path: "jobPostId",
+          select: "jobTitle companyId",
+          populate: {
+            path: "companyId",
+            select: "companyName image"
+          }
+        }
+      })
+      .lean();
+
+    // ---- shape response (same fields/order as your sample) ----
+    const taskList = tasks.map(t => {
+      const app = t.jobApplicationId || null;
+      const jp  = app && app.jobPostId ? app.jobPostId : null;
+      const co  = jp && jp.companyId ? jp.companyId : null;
+
+      const jobApplicationId =
+        app && app._id ? String(app._id) : (t.jobApplicationId ? String(t.jobApplicationId) : null);
+
+      const fileUrl = t.fileUrl && String(t.fileUrl).trim() !== "" ? t.fileUrl : null;
+
+      return {
+        taskId: String(t._id),
+        jobApplicationId,
+        jobTitle: jp ? jp.jobTitle || null : null,
+        companyName: co ? co.companyName || null : null,
+        companyImage: co ? co.image || null : null,
+        title: t.title,
+        description: t.description,
+        fileUrl,
+        startTime: t.startTime ? formatTimeHHMMSS(t.startTime) : "",
+        endTime:   t.endTime   ? formatTimeHHMMSS(t.endTime)   : "",
+        hoursWorked: typeof t.hoursWorked === "number" ? t.hoursWorked : 0,
+        progressPercent: t.progressPercent,
+        status: t.status,
+        employerApprovedTask: t.employerApprovedTask, // will always be "Approved"
+        submittedDate: t.submittedAt ? formatDateDDMMYYYY(t.submittedAt) : null
+      };
+    });
+
+    const totalPage = limit && totalRecord > 0 ? Math.ceil(totalRecord / limit) : 1;
+    const currentPage = limit ? Math.min(page, totalPage || 1) : 1;
+
+    return res.status(200).json({
+      status: true,
+      message: "Approved tasks fetched successfully.",
+     data: { 
+      
+      totalRecord,
+      totalPage,
+      currentPage,
+     
+      taskList
+     }
+    });
+  } catch (err) {
+    console.error("getApprovedTasks error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Server error",
+      error: err.message
+    });
+  }
+};
+

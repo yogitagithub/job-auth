@@ -234,25 +234,7 @@ jobProfile,
     }
 
 
-      // jobProfile is optional: only lookup/validate when user sent a non-empty value
-    let jobProfileDoc = null;
-    if (jobProfile && String(jobProfile).trim()) {
-      jobProfileDoc = await JobProfile.findOne({
-        name: jobProfile,
-        isDeleted: false,
-      });
-      if (!jobProfileDoc) {
-        return res.status(400).json({
-          status: false,
-          message: "Invalid or deleted job profile name.",
-        });
-      }
-    }
-
-
-   
-
-
+    
 
 // expiry (+30 days default)
     let expiry = expiredDate ? new Date(expiredDate) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
@@ -287,7 +269,7 @@ jobProfile,
       workingShift: workingShiftDoc._id,
     
    
-       jobProfile: jobProfileDoc ? jobProfileDoc._id : null,
+      jobProfile: jobProfile ? String(jobProfile).trim() : null,
 
       jobTitle,
       jobDescription,
@@ -338,7 +320,7 @@ jobProfile,
         otherField: otherFieldDoc.name,
         workingShift: workingShiftDoc.name,
        
-         jobProfile: jobProfileDoc ? jobProfileDoc.name : null,
+        jobProfile: jobPost.jobProfile,
 
       
 

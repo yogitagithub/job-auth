@@ -126,10 +126,18 @@ skills: {
     },
 
         
-        jobProfile: {  
-        type: mongoose.Schema.Types.ObjectId,
-      ref: "JobProfile",
-      },
+      //   jobProfile: {  
+      //   type: mongoose.Schema.Types.ObjectId,
+      // ref: "JobProfile",
+      // },
+
+
+      
+   jobProfile: { 
+    type: String, 
+    trim: true, 
+    maxlength: 120 
+  },
 
 
 

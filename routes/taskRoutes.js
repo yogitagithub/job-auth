@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { uploadTask, updateTask, updatedTaskDetails, updateTaskPayment, getMyTasks } = require('../controllers/taskController');
+const { uploadTask, updateTask, updatedTaskDetails, updateTaskPayment, getMyTasks, getApprovedTasks } = require('../controllers/taskController');
 const { verifyToken } = require('../middleware/authMiddleware');
 const uploadCertificate = require("../middleware/uploadCertificate");
 
@@ -11,6 +11,11 @@ router.post("/upload-task", verifyToken, uploadCertificate.single("file"), uploa
 
 //get all the task 
 router.get("/my-tasks/:applicationId", verifyToken, getMyTasks);
+
+
+//get only approved task
+router.get("/approvedTasks/:applicationId", verifyToken, getApprovedTasks); 
+
 
 
 //updating task by employer
