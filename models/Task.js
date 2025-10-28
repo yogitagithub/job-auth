@@ -50,10 +50,17 @@ const taskSchema = new mongoose.Schema(
      
     },
 
-  //   isRemarksAdded: { 
-  //   type: Boolean, 
-  //   default: false 
-  // },
+    isRemarksAdded: { 
+    type: Boolean, 
+    default: false 
+  },
+
+
+  // Task model (add under employerApprovedTask / isRemarksAdded)
+remarks: { type: String, trim: true, maxlength: 2000, default: "" },
+remarksAddedAt: { type: Date, default: null },
+remarksAddedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+
 
 
     isPaid: {

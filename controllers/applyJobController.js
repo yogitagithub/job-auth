@@ -99,7 +99,7 @@ exports.applyJobs = async (req, res) => {
       // Increment post counters only on transition Withdrawn -> Applied
       await JobPost.updateOne(
         { _id: jobPostId, isDeleted: false, status: "active" },
-        { $inc: { appliedCandidates: 1 }, $set: { isApplied: true } }
+        { $inc: { appliedCandidates: 1, applicationsPending: 1 }, $set: { isApplied: true } }
       );
 
       return res.status(200).json({
@@ -121,7 +121,7 @@ exports.applyJobs = async (req, res) => {
 
     await JobPost.updateOne(
       { _id: jobPostId, isDeleted: false, status: "active" },
-      { $inc: { appliedCandidates: 1 }, $set: { isApplied: true } }
+      { $inc: { appliedCandidates: 1, applicationsPending: 1 }, $set: { isApplied: true } }
     );
 
     return res.status(201).json({

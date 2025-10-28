@@ -282,7 +282,8 @@ exports.updateTask = async (req, res) => {
       description: task.description,
       startTime: task.startTime ? formatTimeHHMMSS(task.startTime) : null,
       endTime: task.endTime ? formatTimeHHMMSS(task.endTime) : null,
-      workedHours: formatHours(task.workedHours),
+      // workedHours: formatHours(task.workedHours),
+      hoursWorked: formatHours(task.hoursWorked),
       progressPercent: `${Number(task.progressPercent)}%`,
       status: task.status,
       employerApprovedTask: task.employerApprovedTask,
@@ -577,6 +578,34 @@ exports.getMyTasks = async (req, res) => {
     // ----- fetch tasks in scope -----
     const taskFilter = { jobApplicationId: { $in: appIds } };
 
+
+      // NEW: filter by employerApprovedTask
+    const VALID_TYPES = { pending: "Pending", approved: "Approved", rejected: "Rejected" };
+    const rawType = req.query.type;
+
+    if (typeof rawType !== "undefined" && rawType !== null && String(rawType).trim() !== "") {
+      // allow single, multiple, comma-separated, or repeated query params
+      const arr = Array.isArray(rawType) ? rawType : String(rawType).split(",");
+      const normalized = Array.from(new Set(
+        arr.map(t => String(t).trim().toLowerCase()).map(t => VALID_TYPES[t]).filter(Boolean)
+      ));
+      if (normalized.length === 1) {
+        taskFilter.employerApprovedTask = normalized[0];
+      } else if (normalized.length > 1) {
+        taskFilter.employerApprovedTask = { $in: normalized };
+      } else {
+        // if only invalid values were provided, return empty result instead of error
+        return res.status(200).json({
+          status: true,
+          message: "Tasks fetched successfully.",
+          totalRecord: 0,
+          totalPage: 1,
+          currentPage: 1,
+          data: [],
+        });
+      }
+    }
+
     const totalRecord = await Task.countDocuments(taskFilter);
 
     const tasks = await Task.find(taskFilter)
@@ -612,10 +641,7 @@ exports.getMyTasks = async (req, res) => {
       const fileUrl =
         t.fileUrl && String(t.fileUrl).trim() !== "" ? t.fileUrl : null;
 
-          // prefer computed workedHours; fallback to hoursWorked; else 0
-      const worked = (typeof t.workedHours === "number" && t.workedHours > 0)
-        ? t.workedHours
-        : (typeof t.hoursWorked === "number" ? t.hoursWorked : 0);
+        
 
       return {
         taskId: String(t._id),
@@ -791,6 +817,99 @@ exports.getApprovedTasks = async (req, res) => {
       message: "Server error",
       error: err.message
     });
+  }
+};
+
+
+// adding remarks
+exports.updateTaskRemarks = async (req, res) => {
+  try {
+    const { role, userId } = req.user || {};
+    if (!(role === "employer" || role === "admin")) {
+      return res.status(403).json({ status: false, message: "Only employers can add remarks." });
+    }
+
+    const { taskId } = req.params || {};
+    const { isRemarksAdded, remarks } = req.body || {};
+
+    if (!taskId || !mongoose.isValidObjectId(taskId)) {
+      return res.status(400).json({ status: false, message: "Valid taskId is required." });
+    }
+    if (typeof isRemarksAdded !== "boolean") {
+      return res.status(400).json({ status: false, message: "isRemarksAdded must be boolean." });
+    }
+
+    // Load task + application (to check employer owns the job post)
+    const task = await Task.findById(taskId).populate({
+      path: "jobApplicationId",
+      select: "jobPostId",
+      model: JobApplication,
+    });
+    if (!task) return res.status(404).json({ status: false, message: "Task not found." });
+
+    // Only the employer who owns the post (or admin) can update remarks
+    if (role !== "admin") {
+      const owns = await JobPost.exists({ _id: task.jobApplicationId.jobPostId, userId });
+      if (!owns) {
+        return res.status(403).json({ status: false, message: "Not authorized for this task." });
+      }
+    }
+
+    // >>> CORE RULE: remarks can be added ONLY if task itself is Approved <<<
+    if (isRemarksAdded === true) {
+      if (task.employerApprovedTask !== "Approved") {
+        return res.status(409).json({
+          status: false,
+          message: "You can add remarks only after the task is Approved.",
+        });
+      }
+      const txt = String(remarks || "").trim();
+      if (!txt) {
+        return res.status(400).json({
+          status: false,
+          message: "remarks is required when isRemarksAdded is true.",
+        });
+      }
+      if (txt.length > 2000) {
+        return res.status(400).json({
+          status: false,
+          message: "remarks must be ≤ 2000 characters.",
+        });
+      }
+
+      task.isRemarksAdded  = true;
+      task.remarks = txt;          // optional field in your schema
+      task.remarksAddedAt  = new Date();   // optional audit fields
+      task.remarksAddedBy  = userId;       // optional audit fields
+    } else {
+      // Turning OFF remarks clears fields
+      task.isRemarksAdded  = false;
+      task.remarks = "";           // optional
+      task.remarksAddedAt  = null;         // optional
+      task.remarksAddedBy  = null;         // optional
+    }
+
+    await task.save();
+
+    const data = {
+      _id: task._id,
+      jobApplicationId: task.jobApplicationId?._id || task.jobApplicationId,
+      title: task.title,
+      description: task.description,
+      startTime: task.startTime ? formatTimeHHMMSS(task.startTime) : null,
+      endTime: task.endTime ? formatTimeHHMMSS(task.endTime) : null,
+       hoursWorked: Number(task.hoursWorked ?? 0),
+      progressPercent: `${Number(task.progressPercent)}%`,
+      status: task.status,
+      employerApprovedTask: task.employerApprovedTask,
+      isRemarksAdded: task.isRemarksAdded,
+      remarks: task.remarks || null, // optional
+      submittedAt: formatDateDDMMYYYY(task.submittedAt),
+    };
+
+    return res.json({ status: true, message: "Remarks updated.", data });
+  } catch (err) {
+    return res.status(500).json({ status: false, message: err?.message || "Server error." });
   }
 };
 
