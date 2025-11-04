@@ -148,9 +148,9 @@ skills: {
       default: 'active'
     },
 
-    hourlyRate: {
-      type: Number
-    },
+    // hourlyRate: {
+    //   type: Number
+    // },
 
   expiredDate: { 
     type: Date,

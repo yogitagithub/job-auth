@@ -2,8 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const { uploadTask, updateTask, updatedTaskDetails, 
-    updateTaskPayment, getMyTasks, getApprovedTasks, 
-    updateTaskRemarks } = require('../controllers/taskController');
+    updateTaskPayment, getMyTasks, getApprovedTasks, getPaymentsList, getPaymentDetails } = require('../controllers/taskController');
 
 const { verifyToken } = require('../middleware/authMiddleware');
 const uploadCertificate = require("../middleware/uploadCertificate");
@@ -31,9 +30,16 @@ router.get('/updated-task-details/:jobApplicationId', verifyToken, updatedTaskDe
  //update isPaid field by employer only
  router.put("/task-payment/:taskId", verifyToken, updateTaskPayment);
 
+ //payment list
+ router.get("/payments", verifyToken, getPaymentsList);
 
- // adding remarks
- router.put("/task/:taskId/remarks", verifyToken, updateTaskRemarks);
+ //payment details
+router.get("/paymentDetails/:paymentId", verifyToken, getPaymentDetails);
+
+
+
+
+
 
 
 
