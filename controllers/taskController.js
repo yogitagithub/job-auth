@@ -235,14 +235,13 @@ exports.updateTask = async (req, res) => {
       return res.status(403).json({ status: false, message: "Only employers can update tasks." });
     }
 
-    const { taskId, employerApprovedTask, isRemarksAdded, remarks } = req.body || {};
+    const { taskId, employerApprovedTask } = req.body || {};
+    const hasRemarks = Object.prototype.hasOwnProperty.call(req.body, "remarks");
+    const remarksFromReq = hasRemarks ? String(req.body.remarks ?? "").trim() : undefined;
 
-    // --- Basic validations ---
     if (!taskId || !mongoose.isValidObjectId(taskId)) {
       return res.status(400).json({ status: false, message: "Valid taskId is required." });
     }
-
-    // If approval is being sent, validate value
     if (typeof employerApprovedTask !== "undefined" && !ALLOWED_APPROVAL.includes(employerApprovedTask)) {
       return res.status(400).json({
         status: false,
@@ -250,12 +249,6 @@ exports.updateTask = async (req, res) => {
       });
     }
 
-    // If remarks toggle is being sent, validate boolean
-    if (typeof isRemarksAdded !== "undefined" && typeof isRemarksAdded !== "boolean") {
-      return res.status(400).json({ status: false, message: "isRemarksAdded must be boolean." });
-    }
-
-    // Load task and related application (need jobPostId + app approval)
     const task = await Task.findById(taskId).populate({
       path: "jobApplicationId",
       select: "userId jobPostId employerApprovalStatus",
@@ -263,7 +256,7 @@ exports.updateTask = async (req, res) => {
     });
     if (!task) return res.status(404).json({ status: false, message: "Task not found." });
 
-    // Ownership: employer must own the job post (admin bypass)
+    // Ownership (admin bypass)
     if (role !== "admin") {
       const jobPost = await JobPost.findOne({ _id: task.jobApplicationId.jobPostId, userId }).select("_id");
       if (!jobPost) {
@@ -271,7 +264,7 @@ exports.updateTask = async (req, res) => {
       }
     }
 
-    // Application must itself be employer-approved
+    // Application must already be employer-approved
     if (task.jobApplicationId.employerApprovalStatus !== "Approved") {
       return res.status(409).json({
         status: false,
@@ -279,70 +272,49 @@ exports.updateTask = async (req, res) => {
       });
     }
 
-    // --- Apply updates (approval first, then remarks rules) ---
-    let updatedSomething = false;
-
-    // 1) Update approval if provided
+    // Apply approval if present
     if (typeof employerApprovedTask !== "undefined") {
       task.employerApprovedTask = employerApprovedTask;
-      updatedSomething = true;
     }
 
-    // Determine what the approval will be *after* this request
-    const finalApproval = typeof employerApprovedTask !== "undefined"
-      ? employerApprovedTask
-      : task.employerApprovedTask;
+    // What will approval be after this call?
+    const finalApproval =
+      typeof employerApprovedTask !== "undefined" ? employerApprovedTask : task.employerApprovedTask;
 
-    // 2) Update remarks if provided
-    if (typeof isRemarksAdded !== "undefined") {
-      if (isRemarksAdded === true) {
-        // remarks can be added only if task is Approved (now or already)
-        if (finalApproval !== "Approved") {
-          return res.status(409).json({
-            status: false,
-            message: "You can add remarks only after the task is Approved.",
-          });
-        }
-
-        const txt = String(remarks || "").trim();
-        if (!txt) {
-          return res.status(400).json({
-            status: false,
-            message: "remarks is required when isRemarksAdded is true.",
-          });
-        }
-        if (txt.length > 2000) {
-          return res.status(400).json({
-            status: false,
-            message: "remarks must be ≤ 2000 characters.",
-          });
-        }
-
-        task.isRemarksAdded = true;
-        task.remarks = txt;
-        task.remarksAddedAt = new Date();
-        task.remarksAddedBy = userId;
-        updatedSomething = true;
-      } else {
-        // Turning OFF remarks clears fields
-        task.isRemarksAdded = false;
-        task.remarks = "";
-        task.remarksAddedAt = null;
-        task.remarksAddedBy = null;
-        updatedSomething = true;
+    // Remarks rules
+    if (hasRemarks) {
+      if (finalApproval !== "Approved") {
+        // Sending remarks when NOT Approved is forbidden
+        return res.status(409).json({
+          status: false,
+          message:
+            finalApproval === "Rejected"
+              ? "You cannot add remarks when a task is Rejected."
+              : "You can add remarks only after the task is Approved.",
+        });
       }
+
+      // finalApproval === "Approved"
+      if (remarksFromReq.length > 2000) {
+        return res.status(400).json({ status: false, message: "remarks must be ≤ 2000 characters." });
+      }
+
+      // remarks are optional: set only if provided (including empty string to clear if you want)
+      task.remarks = remarksFromReq;                 // allow empty "" to clear, or remove this line if you never want to clear
+      task.remarksAddedAt = new Date();
+      task.remarksAddedBy = userId;
     }
 
-    if (!updatedSomething) {
+    // Prevent "no-op" updates
+    if (typeof employerApprovedTask === "undefined" && !hasRemarks) {
       return res.status(400).json({
         status: false,
-        message: "Nothing to update. Send employerApprovedTask and/or isRemarksAdded (+ remarks).",
+        message: "Nothing to update. Send employerApprovedTask and/or remarks.",
       });
     }
 
     await task.save();
 
-    // --- Response payload (same shape you used) ---
     const data = {
       _id: task._id,
       jobApplicationId: task.jobApplicationId?._id || task.jobApplicationId,
@@ -354,18 +326,16 @@ exports.updateTask = async (req, res) => {
       progressPercent: `${Number(task.progressPercent)}%`,
       status: task.status,
       employerApprovedTask: task.employerApprovedTask,
-      isRemarksAdded: task.isRemarksAdded,
-      remarks: task.isRemarksAdded ? task.remarks : null,
+      remarks: task.employerApprovedTask === "Approved" && task.remarks ? task.remarks : null,
       submittedAt: formatDateDDMMYYYY(task.submittedAt),
     };
 
-    // Friendly message depending on what changed
     let msg = "Task updated.";
-    if (typeof employerApprovedTask !== "undefined" && typeof isRemarksAdded !== "undefined") {
+    if (typeof employerApprovedTask !== "undefined" && hasRemarks) {
       msg = "Task approval and remarks updated.";
     } else if (typeof employerApprovedTask !== "undefined") {
       msg = "Task approval status updated.";
-    } else if (typeof isRemarksAdded !== "undefined") {
+    } else if (hasRemarks) {
       msg = "Remarks updated.";
     }
 

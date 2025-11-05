@@ -50,10 +50,10 @@ const taskSchema = new mongoose.Schema(
      
     },
 
-    isRemarksAdded: { 
-    type: Boolean, 
-    default: false 
-  },
+  //   isRemarksAdded: { 
+  //   type: Boolean, 
+  //   default: false 
+  // },
 
 
   // Task model (add under employerApprovedTask / isRemarksAdded)
