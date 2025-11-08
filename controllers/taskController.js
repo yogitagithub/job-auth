@@ -1073,7 +1073,6 @@ exports.getApprovedCandidatePayment = async (req, res) => {
 
 //job seeker payment history
 
-
 exports.getSeekerPaymentHistory = async (req, res) => {
   try {
     const { role, userId } = req.user || {};
@@ -1104,7 +1103,7 @@ exports.getSeekerPaymentHistory = async (req, res) => {
     const limit = parseInt(req.query.limit) > 0 ? parseInt(req.query.limit) : 10;
     const skip = (page - 1) * limit;
 
-    // Filter only non-deleted, paid payments
+    // Filter only non-deleted payments
     const filter = {
       jobSeekerId: jobSeeker._id,
       isDeleted: false
@@ -1131,7 +1130,11 @@ exports.getSeekerPaymentHistory = async (req, res) => {
         .lean()
     ]);
 
-    // Transform data
+    // Calculate total hours and total amount
+    const totalHours = payments.reduce((sum, p) => sum + (p.totalHours || 0), 0);
+    const totalAmount = payments.reduce((sum, p) => sum + (p.totalAmount || 0), 0);
+
+    // Transform data (exclude totalHours and totalAmount from each record)
     const paymentHistoryList = payments.map((p) => ({
       _id: p._id.toString(),
       jobApplicationId: p.jobApplicationId?._id?.toString() || null,
@@ -1139,9 +1142,7 @@ exports.getSeekerPaymentHistory = async (req, res) => {
         p.employerId?.companyName ||
         p.jobApplicationId?.jobPostId?.companyName ||
         "Unknown",
-      jobTitle: p.jobApplicationId?.jobPostId?.jobTitle || null,
-      totalHours: p.totalHours,
-      totalAmount: p.totalAmount
+      jobTitle: p.jobApplicationId?.jobPostId?.jobTitle || null
     }));
 
     const totalPage = limit ? Math.ceil(totalRecord / limit) : 1;
@@ -1155,11 +1156,13 @@ exports.getSeekerPaymentHistory = async (req, res) => {
         totalRecord,
         totalPage,
         currentPage,
-        paymentHistoryList
+        paymentHistoryList,
+        totalHours,
+        totalAmount
       }
     });
   } catch (err) {
-    console.error("getJobSeekerPaymentHistory error:", err);
+    console.error("getSeekerPaymentHistory error:", err);
     return res.status(500).json({
       status: false,
       message: "Server error",
@@ -1167,6 +1170,7 @@ exports.getSeekerPaymentHistory = async (req, res) => {
     });
   }
 };
+
 
 
 
