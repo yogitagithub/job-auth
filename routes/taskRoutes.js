@@ -2,7 +2,8 @@ const express = require("express");
 const router = express.Router();
 
 const { uploadTask, updateTask, updatedTaskDetails, 
-    updateTaskPayment, getMyTasks, getApprovedTasks, getPaymentsList, getPaymentDetails, getApprovedCandidatePayment } = require('../controllers/taskController');
+    updateTaskPayment, getMyTasks, getApprovedTasks, getPaymentsList, getPaymentDetails, 
+    getApprovedCandidatePayment, getSeekerPaymentHistory } = require('../controllers/taskController');
 
 const { verifyToken } = require('../middleware/authMiddleware');
 const uploadCertificate = require("../middleware/uploadCertificate");
@@ -36,6 +37,9 @@ router.get('/updated-task-details/:jobApplicationId', verifyToken, updatedTaskDe
 
  //candidate list of payments
  router.get("/approvedCandidatePayment", verifyToken, getApprovedCandidatePayment);
+
+ //job seeker payment history
+ router.get("/paymentHistory", verifyToken, getSeekerPaymentHistory);
 
  //payment details
 router.get("/paymentDetails/:paymentId", verifyToken, getPaymentDetails);

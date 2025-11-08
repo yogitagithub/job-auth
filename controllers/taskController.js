@@ -1071,6 +1071,103 @@ exports.getApprovedCandidatePayment = async (req, res) => {
   }
 };
 
+//job seeker payment history
+
+
+exports.getSeekerPaymentHistory = async (req, res) => {
+  try {
+    const { role, userId } = req.user || {};
+
+    // Only job seekers allowed
+    if (role !== "job_seeker") {
+      return res.status(403).json({
+        status: false,
+        message: "Only job seekers can view payment history."
+      });
+    }
+
+    // Find job seeker profile
+    const jobSeeker = await JobSeekerProfile.findOne({
+      userId,
+      isDeleted: false
+    }).select("_id");
+
+    if (!jobSeeker) {
+      return res.status(404).json({
+        status: false,
+        message: "Job seeker profile not found."
+      });
+    }
+
+    // Pagination setup
+    const page = parseInt(req.query.page) > 0 ? parseInt(req.query.page) : 1;
+    const limit = parseInt(req.query.limit) > 0 ? parseInt(req.query.limit) : 10;
+    const skip = (page - 1) * limit;
+
+    // Filter only non-deleted, paid payments
+    const filter = {
+      jobSeekerId: jobSeeker._id,
+      isDeleted: false
+    };
+
+    const [totalRecord, payments] = await Promise.all([
+      Payment.countDocuments(filter),
+      Payment.find(filter)
+        .populate({
+          path: "employerId",
+          select: "companyName"
+        })
+        .populate({
+          path: "jobApplicationId",
+          select: "jobPostId",
+          populate: {
+            path: "jobPostId",
+            select: "jobTitle"
+          }
+        })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+    ]);
+
+    // Transform data
+    const paymentHistoryList = payments.map((p) => ({
+      _id: p._id.toString(),
+      jobApplicationId: p.jobApplicationId?._id?.toString() || null,
+      employerName:
+        p.employerId?.companyName ||
+        p.jobApplicationId?.jobPostId?.companyName ||
+        "Unknown",
+      jobTitle: p.jobApplicationId?.jobPostId?.jobTitle || null,
+      totalHours: p.totalHours,
+      totalAmount: p.totalAmount
+    }));
+
+    const totalPage = limit ? Math.ceil(totalRecord / limit) : 1;
+    const currentPage = limit ? Math.min(page, totalPage || 1) : 1;
+
+    // Final response
+    return res.status(200).json({
+      status: true,
+      message: "Payments fetched successfully.",
+      data: {
+        totalRecord,
+        totalPage,
+        currentPage,
+        paymentHistoryList
+      }
+    });
+  } catch (err) {
+    console.error("getJobSeekerPaymentHistory error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Server error",
+      error: err.message
+    });
+  }
+};
+
 
 
 exports.getPaymentDetails = async (req, res) => {
