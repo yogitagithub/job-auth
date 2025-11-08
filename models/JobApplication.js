@@ -45,7 +45,7 @@ const jobApplicationSchema = new mongoose.Schema(
 
      employerApprovalStatus: {
       type: String,
-      enum: ["Pending", "Approved", "Rejected"],
+      enum: ["Pending", "Approved", "Rejected", "Disconnected"],
       default: "Pending"
     },
 
