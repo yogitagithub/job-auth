@@ -857,7 +857,7 @@ exports.updateTaskPayment = async (req, res) => {
 //   }
 // };
 
-//payment list
+//payment history
 const toInt = (v, d) => {
   const n = parseInt(v, 10);
   return Number.isFinite(n) && n > 0 ? n : d;
@@ -945,7 +945,134 @@ exports.getPaymentsList = async (req, res) => {
   }
 };
 
-//payment details
+
+//candidate list of payments
+exports.getApprovedCandidatePayment = async (req, res) => {
+  try {
+    const { userId, role } = req.user || {};
+    if (!(role === "employer" || role === "admin")) {
+      return res.status(403).json({
+        status: false,
+        message: "Only employers can access this data.",
+      });
+    }
+
+    // ---------- Pagination inputs ----------
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+
+    // ---------- Step 1: Employer's Job Posts ----------
+    const jobPosts = await JobPost.find({ userId })
+      .select("_id companyId minSalary")
+      .populate("companyId", "companyName");
+
+    if (!jobPosts.length) {
+      return res.status(404).json({
+        status: false,
+        message: "No job posts found for this employer.",
+      });
+    }
+
+    const jobPostIds = jobPosts.map((j) => j._id);
+
+    // ---------- Step 2: All Approved Applications for those posts ----------
+    const jobApplications = await JobApplication.find({
+      jobPostId: { $in: jobPostIds },
+      employerApprovalStatus: "Approved",
+    })
+      // NOTE: field is "name" in jobseekerprofiles, not "fullName"
+      .populate("jobSeekerId", "_id name userId")
+      .populate("userId", "_id name email");
+
+    if (!jobApplications.length) {
+      return res.status(404).json({
+        status: false,
+        message: "No approved job applications found.",
+      });
+    }
+
+    // ---------- Step 3: Build the full results array ----------
+    const allResults = [];
+
+    for (const app of jobApplications) {
+      const tasks = await Task.find({
+        jobApplicationId: app._id,
+        employerApprovedTask: "Approved",
+      }).select("hoursWorked");
+
+      // If no approved tasks, we don't show this application
+      if (!tasks.length) continue;
+
+      const totalHours = tasks.reduce(
+        (sum, t) => sum + (t.hoursWorked || 0),
+        0
+      );
+
+      const jobPost = jobPosts.find(
+        (p) => String(p._id) === String(app.jobPostId)
+      );
+
+      const minSalary = jobPost?.minSalary || 0;
+      const totalAmount = Number((totalHours * minSalary).toFixed(2));
+
+      const employerName = jobPost?.companyId?.companyName || "";
+
+      // ---------- jobSeekerName: use jobSeekerId.name or fallback to user.name ----------
+      let jobSeekerName = "";
+
+      if (app.jobSeekerId && app.jobSeekerId.name) {
+        jobSeekerName = app.jobSeekerId.name;       // from jobseekerprofiles.name
+      } else if (app.userId && app.userId.name) {
+        jobSeekerName = app.userId.name;            // from users.name
+      }
+      // if neither exists, it stays ""
+
+      allResults.push({
+        jobApplicationId: app._id,
+        employerName,
+        jobSeekerName,
+        totalHours,
+        totalAmount,
+      });
+    }
+
+    if (!allResults.length) {
+      return res.status(404).json({
+        status: false,
+        message: "No approved tasks found.",
+      });
+    }
+
+    // ---------- Step 4: Apply pagination on the final array ----------
+    const totalRecord = allResults.length;
+    const totalPage = Math.max(1, Math.ceil(totalRecord / limit));
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+
+    const approvedPaymentList = allResults.slice(startIndex, endIndex);
+
+    // ---------- Final Response ----------
+    return res.status(200).json({
+      status: true,
+      message: "Payments fetched successfully.",
+      data: {
+        totalRecord,
+        totalPage,
+        currentPage: page,
+        approvedPaymentList,
+      },
+    });
+  } catch (error) {
+    console.error("getApprovedCandidatePayment error:", error);
+    return res.status(500).json({
+      status: false,
+      message: error.message || "Server error",
+    });
+  }
+};
+
+
+
 exports.getPaymentDetails = async (req, res) => {
   try {
     const { paymentId } = req.params;
