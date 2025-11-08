@@ -6,7 +6,7 @@ const { createJobPost, getAllJobPosts,
     updateJobPostStatus, deleteJobPostById, 
     getAllJobPostsPublic, getJobDetailsPublic, 
     getTopCategories, getBasedOnSkillsJobs, getRecommendedJobs, toggleSavedJob, 
-    getSeekerSavedJobs, getJobPostByCompany, getJobPostsAscending } = require('../controllers/jobPostController');
+    getSeekerSavedJobs, getJobPostByCompany, getJobPostsAscending, searchPublicJobs } = require('../controllers/jobPostController');
     
 const { verifyToken } = require('../middleware/authMiddleware');
 
@@ -56,6 +56,9 @@ router.get("/seekerSavedJobs", verifyToken, getSeekerSavedJobs);
 
 //get job list in ascending order when passing in params jobTitle and skills
 router.get("/job-list-ascending", getJobPostsAscending);
+
+//search public jobs
+router.get("/jobSearch", searchPublicJobs);
 
 
 

@@ -3336,6 +3336,100 @@ exports.getJobPostsAscending = async (req, res) => {
 };
 
 
+//search public jobs
+
+
+const escapeRegExp = (str = "") =>
+  str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+
+exports.searchPublicJobs = async (req, res) => {
+  try {
+    const rawSearch = (req.query.search || "").trim();
+    if (!rawSearch) {
+      return res.status(400).json({
+        status: false,
+        message: "Search term is required."
+      });
+    }
+
+    const term = escapeRegExp(rawSearch);
+    const regex = new RegExp(term, "i");
+
+    // Pagination
+    const page = parseInt(req.query.page, 10) > 0 ? parseInt(req.query.page, 10) : 1;
+    const limit = parseInt(req.query.limit, 10) > 0 ? parseInt(req.query.limit, 10) : 10;
+    const skip = (page - 1) * limit;
+
+    // Find matching companies
+    const companies = await CompanyProfile.find({ companyName: regex }).select("_id companyName");
+    const companyIds = companies.map(c => c._id);
+
+    // Filter
+    const filter = {
+      isDeleted: false,
+      status: "active",
+      adminAprrovalJobs: "Approved",
+      isAdminApproved: true,
+      $or: [
+        { jobTitle: regex },
+        { skills: regex },
+        { companyId: { $in: companyIds } }
+      ]
+    };
+
+    // Query
+    const [totalRecord, posts] = await Promise.all([
+      JobPost.countDocuments(filter),
+      JobPost.find(filter)
+        .populate({ path: "companyId", select: "companyName" })
+        .collation({ locale: "en", strength: 2 })
+        .sort({ jobTitle: 1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+    ]);
+
+    const totalPage = limit ? Math.ceil(totalRecord / limit) : 1;
+    const currentPage = limit ? Math.min(page, totalPage || 1) : 1;
+
+    // Transform response
+    const list = posts.map(p => ({
+      jobPostId: p._id.toString(),
+      jobTitle: p.jobTitle,
+      companyName: p.companyId?.companyName || "",
+      skills: p.skills || [],
+      minSalary: p.minSalary ?? null,
+      maxSalary: p.maxSalary ?? null,
+      city: p.city || null,
+      expiredDate: p.expiredDate,
+      createdAt: p.createdAt
+    }));
+
+    // ✅ Final response in payment-style format
+    return res.status(200).json({
+      status: true,
+      message: "Jobs fetched successfully.",
+      data: {
+        totalRecord,
+        totalPage,
+        currentPage,
+        list
+      }
+    });
+  } catch (err) {
+    console.error("searchPublicJobs error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Server error",
+      error: err.message
+    });
+  }
+};
+
+
+
+
 
 
 
