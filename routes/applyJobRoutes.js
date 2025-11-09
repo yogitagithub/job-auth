@@ -21,7 +21,7 @@ router.get('/applicantsDetails/:jobPostId', verifyToken, getApplicantsDetails);
 router.put('/withdraw-application', verifyToken, withdrawApplication);
 
 router.get('/getAll-appliedJobs', verifyToken, getMyApplications);
-router.put("/:applicationId/employer-approval", verifyToken, updateEmployerApprovalStatus);
+router.put("/employerApproval", verifyToken, updateEmployerApprovalStatus);
 router.get("/approved-applicants", verifyToken, getApprovedApplicants);
 
 

@@ -1855,13 +1855,10 @@ exports.getMyApplications = async (req, res) => {
   }
 };
 
-
-
 exports.updateEmployerApprovalStatus = async (req, res) => {
   try {
     const { role, userId } = req.user;
-    const { applicationId } = req.params;
-    const { employerApprovalStatus } = req.body;
+    const { applicationId, employerApprovalStatus } = req.body;
 
     // 1) auth: only employer or admin
     if (role !== "employer" && role !== "admin") {
@@ -1887,7 +1884,7 @@ exports.updateEmployerApprovalStatus = async (req, res) => {
       });
     }
 
-    // 3) load application (need jobPostId to verify ownership & current status)
+    // 3) load application
     const application = await JobApplication.findById(applicationId).select(
       "_id jobPostId employerApprovalStatus"
     );
@@ -1900,7 +1897,7 @@ exports.updateEmployerApprovalStatus = async (req, res) => {
 
     const prev = application.employerApprovalStatus;
 
-    // ✅ Rule: you can mark as Disconnected ONLY if it's currently Approved
+    // ✅ Rule: can disconnect only if currently Approved
     if (employerApprovalStatus === "Disconnected" && prev !== "Approved") {
       return res.status(400).json({
         status: false,
@@ -1909,7 +1906,7 @@ exports.updateEmployerApprovalStatus = async (req, res) => {
       });
     }
 
-    // 4) if employer, ensure they own the job post
+    // 4) if employer, verify ownership
     if (role === "employer") {
       const post = await JobPost.findById(application.jobPostId).select("userId");
       if (!post) {
@@ -1949,8 +1946,6 @@ exports.updateEmployerApprovalStatus = async (req, res) => {
     });
   }
 };
-
-
 
 
 
