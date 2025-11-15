@@ -448,6 +448,7 @@ exports.updatedTaskDetails = async (req, res) => {
   }
 };
 
+
 exports.updateTaskPayment = async (req, res) => {
   try {
     const { taskId } = req.params;
@@ -473,11 +474,12 @@ exports.updateTaskPayment = async (req, res) => {
     // 🔍 Find task and populate related data
     const task = await Task.findById(taskId).populate({
       path: "jobApplicationId",
-      select: "jobPostId jobSeekerId",
+      // ⬅️ include hourlyRate here
+      select: "jobPostId jobSeekerId hourlyRate",
       populate: {
         path: "jobPostId",
         model: "JobPost",
-        select: "userId companyId minSalary",
+        select: "userId companyId", // minSalary not needed anymore
       },
     });
 
@@ -530,10 +532,10 @@ exports.updateTaskPayment = async (req, res) => {
       const jobSeekerId = task.jobApplicationId.jobSeekerId;
       const companyId = jobPost.companyId;
 
-      // ⚡ Use minSalary as hourly rate
-      const minSalary = Number(jobPost.minSalary || 0);
+      // ⚡ Use hourlyRate from JobApplication
+      const hourlyRate = Number(task.jobApplicationId.hourlyRate || 0);
       const hoursWorked = Number(task.hoursWorked || 0);
-      const totalAmount = Number((hoursWorked * minSalary).toFixed(2));
+      const totalAmount = Number((hoursWorked * hourlyRate).toFixed(2));
 
       // Fetch related names
       const [company, seeker] = await Promise.all([
@@ -559,8 +561,8 @@ exports.updateTaskPayment = async (req, res) => {
         jobSeekerId,
         jobSeekerName,
         totalHours: hoursWorked,
-        totalAmount,
-        taskId: task._id, // optional: keep link to task
+        totalAmount,          // ✅ hoursWorked * hourlyRate
+        taskId: task._id,     // optional: keep link to task
         isDeleted: false,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -601,6 +603,8 @@ const toInt = (v, d) => {
   return Number.isFinite(n) && n > 0 ? n : d;
 };
 
+
+
 exports.getPaymentsList = async (req, res) => {
   try {
     const { role, userId } = req.user || {};
@@ -619,7 +623,7 @@ exports.getPaymentsList = async (req, res) => {
       match.jobSeekerId = new mongoose.Types.ObjectId(jobSeekerId);
     }
 
-    // ---- employer scoping (no aggregation): restrict by CompanyProfile owned by this user
+    // ---- employer scoping: restrict by CompanyProfile owned by this user
     if (role !== "admin") {
       const company = await CompanyProfile.findOne({ userId }).select("_id");
       if (!company) {
@@ -631,25 +635,41 @@ exports.getPaymentsList = async (req, res) => {
       match.employerId = company._id;
     }
 
-    // ---- count + fetch
+    // ---- count
     const totalRecord = await Payment.countDocuments(match);
 
+    // ---- fetch payments
     const payments = await Payment.find(match)
       .sort({ createdAt: -1, _id: -1 })
       .skip((p - 1) * l)
       .limit(l)
-      // populate only what we need to derive names
-      .populate({ path: "employerId", model: "CompanyProfile", select: "companyName name" })
-      .populate({ path: "jobSeekerId", model: "JobSeekerProfile", select: "fullName firstName lastName name" })
-      .select("_id jobApplicationId employerId jobSeekerId totalHours totalAmount") // project to essentials
+      // populate only what we need to derive names + hourlyRate
+      .populate({
+        path: "employerId",
+        model: "CompanyProfile",
+        select: "companyName name",
+      })
+      .populate({
+        path: "jobSeekerId",
+        model: "JobSeekerProfile",
+        select: "fullName firstName lastName name",
+      })
+      .populate({
+        path: "jobApplicationId",
+        model: "JobApplication",
+        select: "hourlyRate",
+      })
+      // we don't need stored totalAmount anymore; we will compute it
+      .select("_id jobApplicationId employerId jobSeekerId totalHours")
       .lean();
 
     const totalPage = totalRecord ? Math.ceil(totalRecord / l) : 0;
 
-    // ---- shape minimal items
+    // ---- shape minimal items + compute totalAmount = totalHours * hourlyRate
     const paymentList = payments.map((doc) => {
       const company = doc.employerId || {};
       const seeker = doc.jobSeekerId || {};
+      const jobApp = doc.jobApplicationId || {};
 
       const employerName = company.companyName || company.name || "Employer";
       const jobSeekerName =
@@ -658,13 +678,17 @@ exports.getPaymentsList = async (req, res) => {
         seeker.name ||
         "Job Seeker";
 
+      const totalHours = Number(doc.totalHours ?? 0);
+      const hourlyRate = Number(jobApp.hourlyRate ?? 0); // from JobApplication
+      const totalAmount = totalHours * hourlyRate;
+
       return {
         _id: String(doc._id),
-        jobApplicationId: String(doc.jobApplicationId),
+        jobApplicationId: String(jobApp._id || doc.jobApplicationId),
         employerName,
         jobSeekerName,
-        totalHours: Number(doc.totalHours ?? 0),
-        totalAmount: Number(doc.totalAmount ?? 0),
+        totalHours,
+        totalAmount,
       };
     });
 
@@ -679,12 +703,13 @@ exports.getPaymentsList = async (req, res) => {
       },
     });
   } catch (err) {
-    return res.status(500).json({ status: false, message: err?.message || "Server error." });
+    console.error("getPaymentsList error:", err);
+    return res
+      .status(500)
+      .json({ status: false, message: err?.message || "Server error." });
   }
 };
 
-
-//candidate list of payments
 exports.getApprovedCandidatePayment = async (req, res) => {
   try {
     const { userId, role } = req.user || {};
