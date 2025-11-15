@@ -49,6 +49,12 @@ const jobApplicationSchema = new mongoose.Schema(
       default: "Pending"
     },
 
+
+     hourlyRate: {
+      type: Number,
+      default: null,
+    },
+
     
 
     appliedAt: {

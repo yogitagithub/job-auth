@@ -1855,10 +1855,11 @@ exports.getMyApplications = async (req, res) => {
   }
 };
 
+
 exports.updateEmployerApprovalStatus = async (req, res) => {
   try {
     const { role, userId } = req.user;
-    const { applicationId, employerApprovalStatus } = req.body;
+    const { applicationId, employerApprovalStatus, hourlyRate } = req.body;
 
     // 1) auth: only employer or admin
     if (role !== "employer" && role !== "admin") {
@@ -1884,9 +1885,43 @@ exports.updateEmployerApprovalStatus = async (req, res) => {
       });
     }
 
+    // ✅ Extra validation based on status
+    let numericHourlyRate = null;
+
+    if (employerApprovalStatus === "Approved") {
+      // hourlyRate is REQUIRED and must be a positive number
+      if (
+        hourlyRate === undefined ||
+        hourlyRate === null ||
+        String(hourlyRate).trim() === ""
+      ) {
+        return res.status(400).json({
+          status: false,
+          message: "hourlyRate is required when approval status is Approved.",
+        });
+      }
+
+      numericHourlyRate = Number(hourlyRate);
+      if (!Number.isFinite(numericHourlyRate) || numericHourlyRate <= 0) {
+        return res.status(400).json({
+          status: false,
+          message: "hourlyRate must be a positive number.",
+        });
+      }
+    } else {
+      // For Rejected / Disconnected / Pending — employer must NOT send hourlyRate
+      if (hourlyRate !== undefined) {
+        return res.status(400).json({
+          status: false,
+          message:
+            "hourlyRate should not be sent unless approval status is Approved.",
+        });
+      }
+    }
+
     // 3) load application
     const application = await JobApplication.findById(applicationId).select(
-      "_id jobPostId employerApprovalStatus"
+      "_id jobPostId employerApprovalStatus hourlyRate"
     );
     if (!application) {
       return res.status(404).json({
@@ -1926,6 +1961,15 @@ exports.updateEmployerApprovalStatus = async (req, res) => {
 
     // 5) perform update
     application.employerApprovalStatus = employerApprovalStatus;
+
+    // set hourlyRate only when Approved
+    if (employerApprovalStatus === "Approved") {
+      application.hourlyRate = numericHourlyRate;
+    } else {
+      // optional: clear any previous rate when it becomes Rejected/Disconnected/Pending
+      application.hourlyRate = null;
+    }
+
     await application.save();
 
     return res.status(200).json({
@@ -1935,6 +1979,7 @@ exports.updateEmployerApprovalStatus = async (req, res) => {
         applicationId: application._id,
         previousStatus: prev,
         currentStatus: application.employerApprovalStatus,
+        hourlyRate: application.hourlyRate,
       },
     });
   } catch (err) {

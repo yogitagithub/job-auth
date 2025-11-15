@@ -95,13 +95,12 @@ jobProfile,
       displayPhoneNumber,
       displayEmail,
 
-      hourlyRate,
+      
       expiredDate
 
     } = req.body || {};
 
-      const normHourlyRate = asNullableNumber(hourlyRate);
-
+    
     // quick required checks
     const required = { category, industryType, salaryType, jobType, experience, otherField, workingShift };
     for (const [k, v] of Object.entries(required)) {
@@ -280,7 +279,7 @@ jobProfile,
       displayPhoneNumber,
       displayEmail,
 
-       hourlyRate: normHourlyRate,
+     
 
       expiredDate: expiry,
       status: "active",
@@ -327,7 +326,7 @@ jobProfile,
         jobTitle: jobPost.jobTitle,
         jobDescription: jobPost.jobDescription,
 
-        hourlyRate: jobPost.hourlyRate ?? null,
+       
 
         minSalary: jobPost.minSalary,
         maxSalary: jobPost.maxSalary,
