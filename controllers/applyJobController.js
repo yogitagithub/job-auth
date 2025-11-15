@@ -2070,7 +2070,7 @@ exports.getApprovedApplicants = async (req, res) => {
     const [totalRecord, applications] = await Promise.all([
       JobApplication.countDocuments(filter),
       JobApplication.find(filter)
-        .select("userId jobSeekerId jobPostId status employerApprovalStatus appliedAt createdAt")
+        .select("userId jobSeekerId jobPostId status employerApprovalStatus appliedAt createdAt hourlyRate")
         .populate({
           path: "jobSeekerId",
           match: { isDeleted: false },
@@ -2125,6 +2125,8 @@ exports.getApprovedApplicants = async (req, res) => {
           status: a.status, // "Applied"
           employerApprovalStatus: a.employerApprovalStatus, // "Approved"
           appliedAt: formatDate(a.appliedAt),
+
+           hourlyRate: a.hourlyRate ?? null,
 
           // flattened job seeker fields
           jobSeekerName: p.name ?? null,
