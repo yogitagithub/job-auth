@@ -334,7 +334,7 @@ exports.updateTask = async (req, res) => {
     if (typeof employerApprovedTask !== "undefined" && hasRemarks) {
       msg = "Task approval and remarks updated.";
     } else if (typeof employerApprovedTask !== "undefined") {
-      msg = "Task approval status updated.";
+      msg = "Task status updated.";
     } else if (hasRemarks) {
       msg = "Remarks updated.";
     }
