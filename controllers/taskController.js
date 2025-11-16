@@ -334,7 +334,7 @@ exports.updateTask = async (req, res) => {
     if (typeof employerApprovedTask !== "undefined" && hasRemarks) {
       msg = "Task approval and remarks updated.";
     } else if (typeof employerApprovedTask !== "undefined") {
-      msg = "Task approval status updated.";
+      msg = "Task status updated.";
     } else if (hasRemarks) {
       msg = "Remarks updated.";
     }
@@ -344,6 +344,123 @@ exports.updateTask = async (req, res) => {
     return res.status(500).json({ status: false, message: err?.message || "Server error." });
   }
 };
+
+// exports.updateTask = async (req, res) => {
+//   try {
+//     const { role, userId } = req.user || {};
+//     if (!(role === "employer" || role === "admin")) {
+//       return res.status(403).json({ status: false, message: "Only employers can update tasks." });
+//     }
+
+//     const { taskId, employerApprovedTask } = req.body || {};
+//     const hasRemarks = Object.prototype.hasOwnProperty.call(req.body, "remarks");
+//     const remarksFromReq = hasRemarks ? String(req.body.remarks ?? "").trim() : undefined;
+
+//     if (!taskId || !mongoose.isValidObjectId(taskId)) {
+//       return res.status(400).json({ status: false, message: "Valid taskId is required." });
+//     }
+//     if (typeof employerApprovedTask !== "undefined" && !ALLOWED_APPROVAL.includes(employerApprovedTask)) {
+//       return res.status(400).json({
+//         status: false,
+//         message: `employerApprovedTask must be one of ${ALLOWED_APPROVAL.join(", ")}.`,
+//       });
+//     }
+
+//     const task = await Task.findById(taskId).populate({
+//       path: "jobApplicationId",
+//       select: "userId jobPostId employerApprovalStatus",
+//       model: JobApplication,
+//     });
+//     if (!task) return res.status(404).json({ status: false, message: "Task not found." });
+
+//     // Ownership (admin bypass)
+//     if (role !== "admin") {
+//       const jobPost = await JobPost.findOne({ _id: task.jobApplicationId.jobPostId, userId }).select("_id");
+//       if (!jobPost) {
+//         return res.status(403).json({ status: false, message: "You are not authorized for this task." });
+//       }
+//     }
+
+//     // Application must already be employer-approved
+//     if (task.jobApplicationId.employerApprovalStatus !== "Approved") {
+//       return res.status(409).json({
+//         status: false,
+//         message: "Candidate is not employer-approved for this job application.",
+//       });
+//     }
+
+//     // Apply approval if present
+//     if (typeof employerApprovedTask !== "undefined") {
+//       task.employerApprovedTask = employerApprovedTask;
+//     }
+
+//     // What will approval be after this call?
+//     const finalApproval =
+//       typeof employerApprovedTask !== "undefined" ? employerApprovedTask : task.employerApprovedTask;
+
+//     // Remarks rules
+//     if (hasRemarks) {
+//       if (finalApproval !== "Approved") {
+//         // Sending remarks when NOT Approved is forbidden
+//         return res.status(409).json({
+//           status: false,
+//           message:
+//             finalApproval === "Rejected"
+//               ? "You cannot add remarks when a task is Rejected."
+//               : "You can add remarks only after the task is Approved.",
+//         });
+//       }
+
+//       // finalApproval === "Approved"
+//       if (remarksFromReq.length > 2000) {
+//         return res.status(400).json({ status: false, message: "remarks must be ≤ 2000 characters." });
+//       }
+
+//       // remarks are optional: set only if provided (including empty string to clear if you want)
+//       task.remarks = remarksFromReq;                 // allow empty "" to clear, or remove this line if you never want to clear
+//       task.remarksAddedAt = new Date();
+//       task.remarksAddedBy = userId;
+//     }
+
+//     // Prevent "no-op" updates
+//     if (typeof employerApprovedTask === "undefined" && !hasRemarks) {
+//       return res.status(400).json({
+//         status: false,
+//         message: "Nothing to update. Send employerApprovedTask and/or remarks.",
+//       });
+//     }
+
+//     await task.save();
+
+//     const data = {
+//       _id: task._id,
+//       jobApplicationId: task.jobApplicationId?._id || task.jobApplicationId,
+//       title: task.title,
+//       description: task.description,
+//       startTime: task.startTime ? formatTimeHHMMSS(task.startTime) : null,
+//       endTime: task.endTime ? formatTimeHHMMSS(task.endTime) : null,
+//       hoursWorked: formatHours(task.hoursWorked),
+//       progressPercent: `${Number(task.progressPercent)}%`,
+//       status: task.status,
+//       employerApprovedTask: task.employerApprovedTask,
+//       remarks: task.employerApprovedTask === "Approved" && task.remarks ? task.remarks : null,
+//       submittedAt: formatDateDDMMYYYY(task.submittedAt),
+//     };
+
+//     let msg = "Task updated.";
+//     if (typeof employerApprovedTask !== "undefined" && hasRemarks) {
+//       msg = "Task approval and remarks updated.";
+//     } else if (typeof employerApprovedTask !== "undefined") {
+//       msg = "Task approval status updated.";
+//     } else if (hasRemarks) {
+//       msg = "Remarks updated.";
+//     }
+
+//     return res.json({ status: true, message: msg, data });
+//   } catch (err) {
+//     return res.status(500).json({ status: false, message: err?.message || "Server error." });
+//   }
+// };
 
 
 
@@ -448,6 +565,7 @@ exports.updatedTaskDetails = async (req, res) => {
   }
 };
 
+
 exports.updateTaskPayment = async (req, res) => {
   try {
     const { taskId } = req.params;
@@ -473,11 +591,12 @@ exports.updateTaskPayment = async (req, res) => {
     // 🔍 Find task and populate related data
     const task = await Task.findById(taskId).populate({
       path: "jobApplicationId",
-      select: "jobPostId jobSeekerId",
+      // ⬅️ include hourlyRate here
+      select: "jobPostId jobSeekerId hourlyRate",
       populate: {
         path: "jobPostId",
         model: "JobPost",
-        select: "userId companyId minSalary",
+        select: "userId companyId", // minSalary not needed anymore
       },
     });
 
@@ -530,10 +649,10 @@ exports.updateTaskPayment = async (req, res) => {
       const jobSeekerId = task.jobApplicationId.jobSeekerId;
       const companyId = jobPost.companyId;
 
-      // ⚡ Use minSalary as hourly rate
-      const minSalary = Number(jobPost.minSalary || 0);
+      // ⚡ Use hourlyRate from JobApplication
+      const hourlyRate = Number(task.jobApplicationId.hourlyRate || 0);
       const hoursWorked = Number(task.hoursWorked || 0);
-      const totalAmount = Number((hoursWorked * minSalary).toFixed(2));
+      const totalAmount = Number((hoursWorked * hourlyRate).toFixed(2));
 
       // Fetch related names
       const [company, seeker] = await Promise.all([
@@ -559,8 +678,8 @@ exports.updateTaskPayment = async (req, res) => {
         jobSeekerId,
         jobSeekerName,
         totalHours: hoursWorked,
-        totalAmount,
-        taskId: task._id, // optional: keep link to task
+        totalAmount,          // ✅ hoursWorked * hourlyRate
+        taskId: task._id,     // optional: keep link to task
         isDeleted: false,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -594,6 +713,154 @@ exports.updateTaskPayment = async (req, res) => {
     });
   }
 };
+
+
+// exports.updateTaskPayment = async (req, res) => {
+//   try {
+//     const { taskId } = req.params;
+//     const { isPaid } = req.body;
+//     const { userId, role } = req.user;
+
+//     // 🧩 Role check
+//     if (role !== "employer" && role !== "admin") {
+//       return res.status(403).json({
+//         status: false,
+//         message: "Only employers or admin can update isPaid status.",
+//       });
+//     }
+
+//     // 🧾 Validate payload
+//     if (typeof isPaid !== "boolean") {
+//       return res.status(400).json({
+//         status: false,
+//         message: "isPaid must be a boolean value.",
+//       });
+//     }
+
+//     // 🔍 Find task and populate related data
+//     const task = await Task.findById(taskId).populate({
+//       path: "jobApplicationId",
+//       select: "jobPostId jobSeekerId",
+//       populate: {
+//         path: "jobPostId",
+//         model: "JobPost",
+//         select: "userId companyId minSalary",
+//       },
+//     });
+
+//     if (!task) {
+//       return res.status(404).json({
+//         status: false,
+//         message: "Task not found.",
+//       });
+//     }
+
+//     const jobPost = task.jobApplicationId?.jobPostId;
+//     if (!jobPost) {
+//       return res.status(400).json({
+//         status: false,
+//         message: "Broken link: JobApplication → JobPost.",
+//       });
+//     }
+
+//     // 🛡️ Ownership check (employer restriction)
+//     if (role !== "admin") {
+//       const owns =
+//         jobPost.userId instanceof mongoose.Types.ObjectId
+//           ? jobPost.userId.equals(userId)
+//           : String(jobPost.userId) === String(userId);
+
+//       if (!owns) {
+//         return res.status(403).json({
+//           status: false,
+//           message: "You can only update isPaid for your own job post tasks.",
+//         });
+//       }
+//     }
+
+//     // 🚫 Cannot mark paid if not approved
+//     if (isPaid === true && task.employerApprovedTask !== "Approved") {
+//       return res.status(409).json({
+//         status: false,
+//         message: "Cannot mark paid. Task must be employer-approved first.",
+//       });
+//     }
+
+//     // ✅ Update task payment flag
+//     task.isPaid = isPaid;
+//     await task.save();
+
+//     // 💰 If paid, create NEW payment document for this task only
+//     let paymentDoc = null;
+//     if (isPaid === true) {
+//       const jobApplicationId = task.jobApplicationId._id;
+//       const jobSeekerId = task.jobApplicationId.jobSeekerId;
+//       const companyId = jobPost.companyId;
+
+//       // ⚡ Use minSalary as hourly rate
+//       const minSalary = Number(jobPost.minSalary || 0);
+//       const hoursWorked = Number(task.hoursWorked || 0);
+//       const totalAmount = Number((hoursWorked * minSalary).toFixed(2));
+
+//       // Fetch related names
+//       const [company, seeker] = await Promise.all([
+//         CompanyProfile.findById(companyId).select("companyName name"),
+//         JobSeekerProfile.findById(jobSeekerId).select(
+//           "fullName firstName lastName name"
+//         ),
+//       ]);
+
+//       const employerName =
+//         company?.companyName || company?.name || "Employer";
+//       const jobSeekerName =
+//         seeker?.fullName ||
+//         [seeker?.firstName, seeker?.lastName].filter(Boolean).join(" ") ||
+//         seeker?.name ||
+//         "Job Seeker";
+
+//       // ✨ Create new payment document
+//       paymentDoc = await Payment.create({
+//         jobApplicationId,
+//         employerId: companyId,
+//         employerName,
+//         jobSeekerId,
+//         jobSeekerName,
+//         totalHours: hoursWorked,
+//         totalAmount,
+//         taskId: task._id, // optional: keep link to task
+//         isDeleted: false,
+//         createdAt: new Date(),
+//         updatedAt: new Date(),
+//       });
+//     }
+
+//     return res.json({
+//       status: true,
+//       message: paymentDoc
+//         ? "New payment record created and task marked as paid."
+//         : "Task payment status updated successfully.",
+//       data: {
+//         _id: task._id,
+//         title: task.title,
+//         description: task.description,
+//         startTime: task.startTime,
+//         endTime: task.endTime,
+//         hoursWorked: task.hoursWorked,
+//         progressPercent: task.progressPercent,
+//         status: task.status,
+//         employerApprovedTask: task.employerApprovedTask,
+//         isPaid: task.isPaid,
+//         submittedAt: task.submittedAt,
+//       },
+//     });
+//   } catch (err) {
+//     console.error("❌ Error in updateTaskPayment:", err);
+//     return res.status(500).json({
+//       status: false,
+//       message: err?.message || "Server error while updating task payment.",
+//     });
+//   }
+// };
 
 
 
@@ -863,6 +1130,7 @@ const toInt = (v, d) => {
   return Number.isFinite(n) && n > 0 ? n : d;
 };
 
+
 exports.getPaymentsList = async (req, res) => {
   try {
     const { role, userId } = req.user || {};
@@ -881,7 +1149,7 @@ exports.getPaymentsList = async (req, res) => {
       match.jobSeekerId = new mongoose.Types.ObjectId(jobSeekerId);
     }
 
-    // ---- employer scoping (no aggregation): restrict by CompanyProfile owned by this user
+    // ---- employer scoping: restrict by CompanyProfile owned by this user
     if (role !== "admin") {
       const company = await CompanyProfile.findOne({ userId }).select("_id");
       if (!company) {
@@ -893,25 +1161,41 @@ exports.getPaymentsList = async (req, res) => {
       match.employerId = company._id;
     }
 
-    // ---- count + fetch
+    // ---- count
     const totalRecord = await Payment.countDocuments(match);
 
+    // ---- fetch payments
     const payments = await Payment.find(match)
       .sort({ createdAt: -1, _id: -1 })
       .skip((p - 1) * l)
       .limit(l)
-      // populate only what we need to derive names
-      .populate({ path: "employerId", model: "CompanyProfile", select: "companyName name" })
-      .populate({ path: "jobSeekerId", model: "JobSeekerProfile", select: "fullName firstName lastName name" })
-      .select("_id jobApplicationId employerId jobSeekerId totalHours totalAmount") // project to essentials
+      // populate only what we need to derive names + hourlyRate
+      .populate({
+        path: "employerId",
+        model: "CompanyProfile",
+        select: "companyName name",
+      })
+      .populate({
+        path: "jobSeekerId",
+        model: "JobSeekerProfile",
+        select: "fullName firstName lastName name",
+      })
+      .populate({
+        path: "jobApplicationId",
+        model: "JobApplication",
+        select: "hourlyRate",
+      })
+      // we don't need stored totalAmount anymore; we will compute it
+      .select("_id jobApplicationId employerId jobSeekerId totalHours")
       .lean();
 
     const totalPage = totalRecord ? Math.ceil(totalRecord / l) : 0;
 
-    // ---- shape minimal items
+    // ---- shape minimal items + compute totalAmount = totalHours * hourlyRate
     const paymentList = payments.map((doc) => {
       const company = doc.employerId || {};
       const seeker = doc.jobSeekerId || {};
+      const jobApp = doc.jobApplicationId || {};
 
       const employerName = company.companyName || company.name || "Employer";
       const jobSeekerName =
@@ -920,13 +1204,17 @@ exports.getPaymentsList = async (req, res) => {
         seeker.name ||
         "Job Seeker";
 
+      const totalHours = Number(doc.totalHours ?? 0);
+      const hourlyRate = Number(jobApp.hourlyRate ?? 0); // from JobApplication
+      const totalAmount = totalHours * hourlyRate;
+
       return {
         _id: String(doc._id),
-        jobApplicationId: String(doc.jobApplicationId),
+        jobApplicationId: String(jobApp._id || doc.jobApplicationId),
         employerName,
         jobSeekerName,
-        totalHours: Number(doc.totalHours ?? 0),
-        totalAmount: Number(doc.totalAmount ?? 0),
+        totalHours,
+        totalAmount,
       };
     });
 
@@ -941,12 +1229,98 @@ exports.getPaymentsList = async (req, res) => {
       },
     });
   } catch (err) {
-    return res.status(500).json({ status: false, message: err?.message || "Server error." });
+    console.error("getPaymentsList error:", err);
+    return res
+      .status(500)
+      .json({ status: false, message: err?.message || "Server error." });
   }
 };
 
 
-//candidate list of payments
+
+// exports.getPaymentsList = async (req, res) => {
+//   try {
+//     const { role, userId } = req.user || {};
+//     const { page = 1, limit = 10, jobApplicationId, jobSeekerId } = req.query;
+
+//     const p = toInt(page, 1);
+//     const l = Math.min(toInt(limit, 10), 100);
+
+//     // ---- base match
+//     const match = { isDeleted: false };
+
+//     if (jobApplicationId && mongoose.isValidObjectId(jobApplicationId)) {
+//       match.jobApplicationId = new mongoose.Types.ObjectId(jobApplicationId);
+//     }
+//     if (jobSeekerId && mongoose.isValidObjectId(jobSeekerId)) {
+//       match.jobSeekerId = new mongoose.Types.ObjectId(jobSeekerId);
+//     }
+
+//     // ---- employer scoping (no aggregation): restrict by CompanyProfile owned by this user
+//     if (role !== "admin") {
+//       const company = await CompanyProfile.findOne({ userId }).select("_id");
+//       if (!company) {
+//         return res.status(403).json({
+//           status: false,
+//           message: "Company profile not found for this employer.",
+//         });
+//       }
+//       match.employerId = company._id;
+//     }
+
+//     // ---- count + fetch
+//     const totalRecord = await Payment.countDocuments(match);
+
+//     const payments = await Payment.find(match)
+//       .sort({ createdAt: -1, _id: -1 })
+//       .skip((p - 1) * l)
+//       .limit(l)
+//       // populate only what we need to derive names
+//       .populate({ path: "employerId", model: "CompanyProfile", select: "companyName name" })
+//       .populate({ path: "jobSeekerId", model: "JobSeekerProfile", select: "fullName firstName lastName name" })
+//       .select("_id jobApplicationId employerId jobSeekerId totalHours totalAmount") // project to essentials
+//       .lean();
+
+//     const totalPage = totalRecord ? Math.ceil(totalRecord / l) : 0;
+
+//     // ---- shape minimal items
+//     const paymentList = payments.map((doc) => {
+//       const company = doc.employerId || {};
+//       const seeker = doc.jobSeekerId || {};
+
+//       const employerName = company.companyName || company.name || "Employer";
+//       const jobSeekerName =
+//         seeker.fullName ||
+//         [seeker.firstName, seeker.lastName].filter(Boolean).join(" ") ||
+//         seeker.name ||
+//         "Job Seeker";
+
+//       return {
+//         _id: String(doc._id),
+//         jobApplicationId: String(doc.jobApplicationId),
+//         employerName,
+//         jobSeekerName,
+//         totalHours: Number(doc.totalHours ?? 0),
+//         totalAmount: Number(doc.totalAmount ?? 0),
+//       };
+//     });
+
+//     return res.json({
+//       status: true,
+//       message: "Payments fetched successfully.",
+//       data: {
+//         totalRecord,
+//         totalPage,
+//         currentPage: p,
+//         paymentList,
+//       },
+//     });
+//   } catch (err) {
+//     return res.status(500).json({ status: false, message: err?.message || "Server error." });
+//   }
+// };
+
+
 exports.getApprovedCandidatePayment = async (req, res) => {
   try {
     const { userId, role } = req.user || {};
@@ -957,13 +1331,13 @@ exports.getApprovedCandidatePayment = async (req, res) => {
       });
     }
 
-    // ---------- Pagination inputs ----------
+    // ---------- Pagination ----------
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
 
-    // ---------- Step 1: Employer's Job Posts ----------
+    // ---------- Step 1: Employer job posts ----------
     const jobPosts = await JobPost.find({ userId })
-      .select("_id companyId minSalary")
+      .select("_id companyId")
       .populate("companyId", "companyName");
 
     if (!jobPosts.length) {
@@ -975,12 +1349,12 @@ exports.getApprovedCandidatePayment = async (req, res) => {
 
     const jobPostIds = jobPosts.map((j) => j._id);
 
-    // ---------- Step 2: All Approved Applications for those posts ----------
+    // ---------- Step 2: Approved job applications ----------
     const jobApplications = await JobApplication.find({
       jobPostId: { $in: jobPostIds },
       employerApprovalStatus: "Approved",
     })
-      // NOTE: field is "name" in jobseekerprofiles, not "fullName"
+      .select("jobPostId jobSeekerId userId hourlyRate")
       .populate("jobSeekerId", "_id name userId")
       .populate("userId", "_id name email");
 
@@ -991,7 +1365,7 @@ exports.getApprovedCandidatePayment = async (req, res) => {
       });
     }
 
-    // ---------- Step 3: Build the full results array ----------
+    // ---------- Step 3: Build results ----------
     const allResults = [];
 
     for (const app of jobApplications) {
@@ -1000,7 +1374,6 @@ exports.getApprovedCandidatePayment = async (req, res) => {
         employerApprovedTask: "Approved",
       }).select("hoursWorked");
 
-      // If no approved tasks, we don't show this application
       if (!tasks.length) continue;
 
       const totalHours = tasks.reduce(
@@ -1012,27 +1385,28 @@ exports.getApprovedCandidatePayment = async (req, res) => {
         (p) => String(p._id) === String(app.jobPostId)
       );
 
-      const minSalary = jobPost?.minSalary || 0;
-      const totalAmount = Number((totalHours * minSalary).toFixed(2));
-
       const employerName = jobPost?.companyId?.companyName || "";
 
-      // ---------- jobSeekerName: use jobSeekerId.name or fallback to user.name ----------
-      let jobSeekerName = "";
+      // ---------- hourlyRate from JobApplication ----------
+      const hourlyRate = Number(app.hourlyRate ?? 0);
 
-      if (app.jobSeekerId && app.jobSeekerId.name) {
-        jobSeekerName = app.jobSeekerId.name;       // from jobseekerprofiles.name
-      } else if (app.userId && app.userId.name) {
-        jobSeekerName = app.userId.name;            // from users.name
+      // ---------- totalAmount = totalHours * hourlyRate ----------
+      const totalAmount = Number((totalHours * hourlyRate).toFixed(2));
+
+      // ---------- jobSeekerName ----------
+      let jobSeekerName = "";
+      if (app.jobSeekerId?.name) {
+        jobSeekerName = app.jobSeekerId.name;
+      } else if (app.userId?.name) {
+        jobSeekerName = app.userId.name;
       }
-      // if neither exists, it stays ""
 
       allResults.push({
         jobApplicationId: app._id,
         employerName,
         jobSeekerName,
         totalHours,
-        totalAmount,
+        totalAmount, // <-- ONLY THIS RETURNS
       });
     }
 
@@ -1043,7 +1417,7 @@ exports.getApprovedCandidatePayment = async (req, res) => {
       });
     }
 
-    // ---------- Step 4: Apply pagination on the final array ----------
+    // ---------- Pagination ----------
     const totalRecord = allResults.length;
     const totalPage = Math.max(1, Math.ceil(totalRecord / limit));
     const startIndex = (page - 1) * limit;
@@ -1051,7 +1425,6 @@ exports.getApprovedCandidatePayment = async (req, res) => {
 
     const approvedPaymentList = allResults.slice(startIndex, endIndex);
 
-    // ---------- Final Response ----------
     return res.status(200).json({
       status: true,
       message: "Payments fetched successfully.",
@@ -1070,6 +1443,217 @@ exports.getApprovedCandidatePayment = async (req, res) => {
     });
   }
 };
+
+
+
+
+// exports.getPaymentsList = async (req, res) => {
+//   try {
+//     const { role, userId } = req.user || {};
+//     const { page = 1, limit = 10, jobApplicationId, jobSeekerId } = req.query;
+
+//     const p = toInt(page, 1);
+//     const l = Math.min(toInt(limit, 10), 100);
+
+//     // ---- base match
+//     const match = { isDeleted: false };
+
+//     if (jobApplicationId && mongoose.isValidObjectId(jobApplicationId)) {
+//       match.jobApplicationId = new mongoose.Types.ObjectId(jobApplicationId);
+//     }
+//     if (jobSeekerId && mongoose.isValidObjectId(jobSeekerId)) {
+//       match.jobSeekerId = new mongoose.Types.ObjectId(jobSeekerId);
+//     }
+
+//     // ---- employer scoping (no aggregation): restrict by CompanyProfile owned by this user
+//     if (role !== "admin") {
+//       const company = await CompanyProfile.findOne({ userId }).select("_id");
+//       if (!company) {
+//         return res.status(403).json({
+//           status: false,
+//           message: "Company profile not found for this employer.",
+//         });
+//       }
+//       match.employerId = company._id;
+//     }
+
+//     // ---- count + fetch
+//     const totalRecord = await Payment.countDocuments(match);
+
+//     const payments = await Payment.find(match)
+//       .sort({ createdAt: -1, _id: -1 })
+//       .skip((p - 1) * l)
+//       .limit(l)
+//       // populate only what we need to derive names
+//       .populate({ path: "employerId", model: "CompanyProfile", select: "companyName name" })
+//       .populate({ path: "jobSeekerId", model: "JobSeekerProfile", select: "fullName firstName lastName name" })
+//       .select("_id jobApplicationId employerId jobSeekerId totalHours totalAmount") // project to essentials
+//       .lean();
+
+//     const totalPage = totalRecord ? Math.ceil(totalRecord / l) : 0;
+
+//     // ---- shape minimal items
+//     const paymentList = payments.map((doc) => {
+//       const company = doc.employerId || {};
+//       const seeker = doc.jobSeekerId || {};
+
+//       const employerName = company.companyName || company.name || "Employer";
+//       const jobSeekerName =
+//         seeker.fullName ||
+//         [seeker.firstName, seeker.lastName].filter(Boolean).join(" ") ||
+//         seeker.name ||
+//         "Job Seeker";
+
+//       return {
+//         _id: String(doc._id),
+//         jobApplicationId: String(doc.jobApplicationId),
+//         employerName,
+//         jobSeekerName,
+//         totalHours: Number(doc.totalHours ?? 0),
+//         totalAmount: Number(doc.totalAmount ?? 0),
+//       };
+//     });
+
+//     return res.json({
+//       status: true,
+//       message: "Payments fetched successfully.",
+//       data: {
+//         totalRecord,
+//         totalPage,
+//         currentPage: p,
+//         paymentList,
+//       },
+//     });
+//   } catch (err) {
+//     return res.status(500).json({ status: false, message: err?.message || "Server error." });
+//   }
+// };
+
+
+//candidate list of payments
+// exports.getApprovedCandidatePayment = async (req, res) => {
+//   try {
+//     const { userId, role } = req.user || {};
+//     if (!(role === "employer" || role === "admin")) {
+//       return res.status(403).json({
+//         status: false,
+//         message: "Only employers can access this data.",
+//       });
+//     }
+
+//     // ---------- Pagination inputs ----------
+//     const page = parseInt(req.query.page, 10) || 1;
+//     const limit = parseInt(req.query.limit, 10) || 10;
+
+//     // ---------- Step 1: Employer's Job Posts ----------
+//     const jobPosts = await JobPost.find({ userId })
+//       .select("_id companyId minSalary")
+//       .populate("companyId", "companyName");
+
+//     if (!jobPosts.length) {
+//       return res.status(404).json({
+//         status: false,
+//         message: "No job posts found for this employer.",
+//       });
+//     }
+
+//     const jobPostIds = jobPosts.map((j) => j._id);
+
+//     // ---------- Step 2: All Approved Applications for those posts ----------
+//     const jobApplications = await JobApplication.find({
+//       jobPostId: { $in: jobPostIds },
+//       employerApprovalStatus: "Approved",
+//     })
+//       // NOTE: field is "name" in jobseekerprofiles, not "fullName"
+//       .populate("jobSeekerId", "_id name userId")
+//       .populate("userId", "_id name email");
+
+//     if (!jobApplications.length) {
+//       return res.status(404).json({
+//         status: false,
+//         message: "No approved job applications found.",
+//       });
+//     }
+
+//     // ---------- Step 3: Build the full results array ----------
+//     const allResults = [];
+
+//     for (const app of jobApplications) {
+//       const tasks = await Task.find({
+//         jobApplicationId: app._id,
+//         employerApprovedTask: "Approved",
+//       }).select("hoursWorked");
+
+//       // If no approved tasks, we don't show this application
+//       if (!tasks.length) continue;
+
+//       const totalHours = tasks.reduce(
+//         (sum, t) => sum + (t.hoursWorked || 0),
+//         0
+//       );
+
+//       const jobPost = jobPosts.find(
+//         (p) => String(p._id) === String(app.jobPostId)
+//       );
+
+//       const minSalary = jobPost?.minSalary || 0;
+//       const totalAmount = Number((totalHours * minSalary).toFixed(2));
+
+//       const employerName = jobPost?.companyId?.companyName || "";
+
+//       // ---------- jobSeekerName: use jobSeekerId.name or fallback to user.name ----------
+//       let jobSeekerName = "";
+
+//       if (app.jobSeekerId && app.jobSeekerId.name) {
+//         jobSeekerName = app.jobSeekerId.name;       // from jobseekerprofiles.name
+//       } else if (app.userId && app.userId.name) {
+//         jobSeekerName = app.userId.name;            // from users.name
+//       }
+//       // if neither exists, it stays ""
+
+//       allResults.push({
+//         jobApplicationId: app._id,
+//         employerName,
+//         jobSeekerName,
+//         totalHours,
+//         totalAmount,
+//       });
+//     }
+
+//     if (!allResults.length) {
+//       return res.status(404).json({
+//         status: false,
+//         message: "No approved tasks found.",
+//       });
+//     }
+
+//     // ---------- Step 4: Apply pagination on the final array ----------
+//     const totalRecord = allResults.length;
+//     const totalPage = Math.max(1, Math.ceil(totalRecord / limit));
+//     const startIndex = (page - 1) * limit;
+//     const endIndex = startIndex + limit;
+
+//     const approvedPaymentList = allResults.slice(startIndex, endIndex);
+
+//     // ---------- Final Response ----------
+//     return res.status(200).json({
+//       status: true,
+//       message: "Payments fetched successfully.",
+//       data: {
+//         totalRecord,
+//         totalPage,
+//         currentPage: page,
+//         approvedPaymentList,
+//       },
+//     });
+//   } catch (error) {
+//     console.error("getApprovedCandidatePayment error:", error);
+//     return res.status(500).json({
+//       status: false,
+//       message: error.message || "Server error",
+//     });
+//   }
+// };
 
 //job seeker payment history
 

@@ -440,151 +440,6 @@ exports.getApplicantsForJob = async (req, res) => {
   }
 };
 
-// exports.getApplicantsForJob = async (req, res) => {
-//   try {
-//     const { role, userId } = req.user;
-//     const { jobPostId } = req.params;
-
-//     // ✅ validate id
-//     if (!jobPostId || !mongoose.isValidObjectId(jobPostId)) {
-//       return res.status(400).json({ status: false, message: "Valid Job Post ID is required." });
-//     }
-
-//     // ✅ load job post
-//     const post = await JobPost.findById(jobPostId)
-//       .select("_id userId companyId isDeleted status appliedCandidates");
-//     if (!post) return res.status(404).json({ status: false, message: "Job post not found." });
-//     if (post.isDeleted) {
-//       return res.status(410).json({ status: false, message: "This job post has been removed." });
-//     }
-
-//     // ✅ access control
-//     const isOwnerEmployer = role === "employer" && post.userId?.equals(userId);
-//     if (!(role === "admin" || isOwnerEmployer)) {
-//       return res.status(403).json({ status: false, message: "You are not allowed to view applicants for this post." });
-//     }
-
-//     // 🔎 query params
-//     const pageParam = parseInt(req.query.page, 10);
-//     const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
-//     const limitRaw = (req.query.limit || "").toString().toLowerCase();
-//     const limit =
-//       limitRaw === "all"
-//         ? 0
-//         : (() => {
-//             const n = parseInt(limitRaw || "10", 10);
-//             if (!Number.isFinite(n) || n < 1) return 10;
-//             return Math.min(n, 100);
-//           })();
-//     const skip = limit ? (page - 1) * limit : 0;
-
-//     // ✅ filter by status
-//     const statusQuery = (req.query.status || "Applied").trim();
-//     const statusFilter = statusQuery.toLowerCase() === "all" ? {} : { status: "Applied" };
-//     const filter = { jobPostId: post._id, ...statusFilter };
-
-//     // ✅ fetch applications
-//     const [totalRecord, applications] = await Promise.all([
-//       JobApplication.countDocuments(filter),
-//       JobApplication.find(filter)
-//         .select("userId jobSeekerId status employerApprovalStatus appliedAt createdAt")
-//         .populate({
-//           path: "jobSeekerId",
-//           match: { isDeleted: false },
-//           select: [
-//             "name",
-//             "phoneNumber",
-//             "email",
-//             "state",
-//             "city",
-//             "image",
-//             "jobProfile",
-//             "dateOfBirth",
-//             "gender",
-//             "panCardNumber",
-//             "address",
-//             "alternatePhoneNumber",
-//             "pincode",
-//             "industryType"
-//           ].join(" "),
-//           populate: [
-//             { path: "state", select: "state" },
-//             { path: "jobProfile", select: "jobProfile name" },
-//             { path: "industryType", select: "industryType name" }
-//           ]
-//         })
-//         .sort({ createdAt: -1 })
-//         .skip(skip)
-//         .limit(limit)
-//         .lean()
-//     ]);
-
-//     // ✅ date formatter INSIDE function
-//     const formatDate = (date) => {
-//       if (!date) return null;
-//       const d = new Date(date);
-//       const day = String(d.getDate()).padStart(2, "0");
-//       const month = String(d.getMonth() + 1).padStart(2, "0");
-//       const year = d.getFullYear();
-//       return `${day}-${month}-${year}`;
-//     };
-
-//     const data = applications
-//       .filter(a => !!a.jobSeekerId)
-//       .map(a => {
-//         const p = a.jobSeekerId;
-//         return {
-//           applicationId: a._id.toString(),
-//           status: a.status,
-//           employerApprovalStatus: a.employerApprovalStatus,
-
-//           jobSeekerName: p.name ?? null,
-//           phoneNumber: p.phoneNumber ?? null,
-//           email: p.email ?? null,
-//           dateOfBirth: formatDate(p.dateOfBirth),   // ✅ formatted
-//           gender: p.gender ?? null,
-//           panCardNumber: p.panCardNumber ?? null,
-//           address: p.address ?? null,
-//           alternatePhoneNumber: p.alternatePhoneNumber ?? null,
-//           pincode: p.pincode ?? null,
-//           state: p.state?.state ?? null,
-//           city: p.city ?? null,
-//           image: p.image ?? null,
-         
-
-//            // ✅ safe mapping (works for both jobProfile.jobProfile or jobProfile.name)
-//           jobProfile: p.jobProfile
-//             ? p.jobProfile.jobProfile || p.jobProfile.name || null
-//             : null,
-
-//           // ✅ safe mapping (works for both industryType.industryType or industryType.name)
-//           industryType: p.industryType
-//             ? p.industryType.industryType || p.industryType.name || null
-//             : null,
-
-//         };
-//       });
-
-//     const totalPage = limit && totalRecord > 0 ? Math.ceil(totalRecord / limit) : 1;
-//     const currentPage = limit ? Math.min(page, totalPage || 1) : 1;
-
-//     return res.status(200).json({
-//       status: true,
-//       message: "Applicants fetched successfully.",
-//       totalRecord,
-//       totalPage,
-//       currentPage,
-//       data
-//     });
-//   } catch (err) {
-//     console.error("getApplicantsForJob error:", err);
-//     return res.status(500).json({ status: false, message: "Server error", error: err.message });
-//   }
-// };
-
-
-
-// for employer only without job post id filter applied
 function escapeRegExp(s = "") {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -724,7 +579,7 @@ exports.getApplicantsForEmployer = async (req, res) => {
     const filter = {
       jobPostId: { $in: jobPostIds },
       ...statusFilter,
-      employerApprovalStatus: { $ne: "Disconnected" }, // 🚫 exclude disconnected
+      employerApprovalStatus: "Pending", // 🚫 exclude disconnected
       ...(seekerIds ? { jobSeekerId: { $in: seekerIds } } : {})
     };
 
@@ -832,7 +687,6 @@ exports.getApplicantsForEmployer = async (req, res) => {
 };
 
 
-
 // exports.getApplicantsForEmployer = async (req, res) => {
 //   try {
 //     const { role, userId } = req.user;
@@ -888,10 +742,8 @@ exports.getApplicantsForEmployer = async (req, res) => {
 //     const stateName        = (req.query.state || "").trim();
 //     const cityName         = (req.query.city || "").trim();
 //     const jobProfileName   = (req.query.jobProfile || "").trim();
-//       const jobSeekerName    = (req.query.jobSeekerName || "").trim();
+//     const jobSeekerName    = (req.query.jobSeekerName || "").trim();
 
-//     // Resolve IDs for the names provided. If a name is provided but not found,
-//     // we can short-circuit to an empty result.
 //     const [
 //       industryDoc,
 //       jobProfileDoc,
@@ -918,7 +770,7 @@ exports.getApplicantsForEmployer = async (req, res) => {
 //         : null
 //     ]);
 
-//     // If a specific name was provided but no doc found => empty result fast
+//     // If specific name provided but not found => empty result
 //     if (industryTypeName && !industryDoc) {
 //       return res.status(200).json({
 //         status: true,
@@ -941,25 +793,21 @@ exports.getApplicantsForEmployer = async (req, res) => {
 //       });
 //     }
 
-//     // Build a filter to pre-select matching seekers by their profile
+//     // Build seeker profile filter
 //     const seekerFilter = { isDeleted: false };
 //     if (industryDoc) seekerFilter.industryType = industryDoc._id;
 //     if (jobProfileDoc) seekerFilter.jobProfile = jobProfileDoc._id;
 //     if (stateDoc) seekerFilter.state = stateDoc._id;
 //     if (cityName)
 //       seekerFilter.city = { $regex: `^${escapeRegExp(cityName)}$`, $options: "i" };
-
-//       if (jobSeekerName)
-      
-//       seekerFilter.name = { $regex: escapeRegExp(jobSeekerName), $options: "i" }; 
-
+//     if (jobSeekerName)
+//       seekerFilter.name = { $regex: escapeRegExp(jobSeekerName), $options: "i" };
 
 //     let seekerIds = null;
 //     const anySeekerFilter =
 //       industryDoc || jobProfileDoc || stateDoc || !!cityName || !!jobSeekerName;
 
 //     if (anySeekerFilter) {
-//       // fetch only ids; if none, short-circuit
 //       seekerIds = await JobSeekerProfile.find(seekerFilter).distinct("_id");
 //       if (!seekerIds.length) {
 //         return res.status(200).json({
@@ -974,6 +822,7 @@ exports.getApplicantsForEmployer = async (req, res) => {
 //     const filter = {
 //       jobPostId: { $in: jobPostIds },
 //       ...statusFilter,
+//       employerApprovalStatus: { $ne: "Disconnected" }, // 🚫 exclude disconnected
 //       ...(seekerIds ? { jobSeekerId: { $in: seekerIds } } : {})
 //     };
 
@@ -986,7 +835,7 @@ exports.getApplicantsForEmployer = async (req, res) => {
 //         )
 //         .populate({
 //           path: "jobSeekerId",
-//           match: { isDeleted: false }, // (we already filtered by ids if needed)
+//           match: { isDeleted: false },
 //           select: [
 //             "name",
 //             "phoneNumber",
@@ -1027,14 +876,14 @@ exports.getApplicantsForEmployer = async (req, res) => {
 //     };
 
 //     const data = applications
-//       .filter(a => !!a.jobSeekerId) // drop if profile missing
+//       .filter(a => !!a.jobSeekerId)
 //       .map(a => {
 //         const p = a.jobSeekerId;
 //         return {
 //           jobPostId: a.jobPostId?.toString() || null,
 //           applicationId: a._id.toString(),
 //           status: a.status,
-//           employerApprovalStatus: a.employerApprovalStatus,
+//           employerApprovalStatus: a.employerApprovalStatus, // ✅ still visible
 
 //           jobSeekerName: p.name ?? null,
 //           phoneNumber: p.phoneNumber ?? null,
@@ -1072,18 +921,16 @@ exports.getApplicantsForEmployer = async (req, res) => {
 //     });
 //   } catch (err) {
 //     console.error("getApplicantsForEmployer error:", err);
-//     return res.status(500).json({ status: false, message: "Server error", error: err.message });
+//     return res.status(500).json({
+//       status: false,
+//       message: "Server error",
+//       error: err.message
+//     });
 //   }
 // };
 
 
 
-
-
-
-
-
-//get full details of job seeker by employer and admin
 exports.getApplicantsDetails = async (req, res) => {
   try {
     const { role, userId } = req.user;
@@ -1328,223 +1175,6 @@ exports.getApplicantsDetails = async (req, res) => {
   }
 };
 
-// exports.getApplicantsDetails = async (req, res) => {
-//   try {
-//     const { role, userId } = req.user;
-//     const { jobPostId } = req.params;
-
-//     // --- validate ---
-//     if (!jobPostId || !mongoose.isValidObjectId(jobPostId)) {
-//       return res.status(400).json({ status: false, message: "Valid Job Post ID is required." });
-//     }
-
-//     // --- job post ---
-//     const post = await JobPost.findById(jobPostId).select("_id userId isDeleted");
-//     if (!post) {
-//       return res.status(404).json({ status: false, message: "Job post not found." });
-//     }
-//     if (post.isDeleted) {
-//       return res.status(410).json({ status: false, message: "This job post has been removed." });
-//     }
-
-//     // --- ACL ---
-//     if (role === "job_seeker") {
-//       return res.status(403).json({ status: false, message: "Job seekers are not allowed to view applicants." });
-//     }
-//     const isOwnerEmployer = role === "employer" && post.userId?.equals(userId);
-//     if (!(role === "admin" || isOwnerEmployer)) {
-//       return res.status(403).json({ status: false, message: "You are not allowed to view applicants for this post." });
-//     }
-
-//     // --- pagination ---
-//     const pageParam = parseInt(req.query.page, 10);
-//     const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
-
-//     const limitRaw = (req.query.limit || "").toString().toLowerCase();
-//     const limit =
-//       limitRaw === "all"
-//         ? 0
-//         : (() => {
-//             const n = parseInt(limitRaw || "10", 10);
-//             if (!Number.isFinite(n) || n < 1) return 10;
-//             return Math.min(n, 100);
-//           })();
-//     const skip = limit ? (page - 1) * limit : 0;
-
-//     // --- filter ---
-//     const statusQuery = (req.query.status || "Applied").trim();
-//     const statusFilter = statusQuery.toLowerCase() === "all" ? {} : { status: "Applied" };
-//     const filter = { jobPostId: post._id, ...statusFilter };
-
-//     // --- fetch applications (+ profile) ---
-//     const [totalRecord, apps] = await Promise.all([
-//       JobApplication.countDocuments(filter),
-//       JobApplication.find(filter)
-//         .select("jobSeekerId status employerApprovalStatus createdAt")
-//         .populate({
-//           path: "jobSeekerId",
-//           match: { isDeleted: false },
-//           select:
-//             "name phoneNumber email state city image jobProfile dateOfBirth gender panCardNumber address alternatePhoneNumber pincode industryType",
-//           populate: [
-//             { path: "state", select: "state" },
-//             { path: "jobProfile", select: "jobProfile name" },
-//             { path: "industryType", select: "industryType name" }
-//           ]
-//         })
-//         .sort({ createdAt: -1 })
-//         .skip(skip)
-//         .limit(limit)
-//         .lean()
-//     ]);
-
-//     const seekerIds = apps
-//       .filter(a => a.jobSeekerId)
-//       .map(a => a.jobSeekerId._id?.toString?.() || a.jobSeekerId.toString());
-//     const uniqueSeekerIds = [...new Set(seekerIds)];
-
-//     // ---------- helpers ----------
-//     const formatDate = (date) => {
-//       if (!date) return null;
-//       const d = new Date(date);
-//       const dd = String(d.getDate()).padStart(2, "0");
-//       const mm = String(d.getMonth() + 1).padStart(2, "0");
-//       const yyyy = d.getFullYear();
-//       return `${dd}-${mm}-${yyyy}`;
-//     };
-//     const bucketBySeeker = (arr) =>
-//       arr.reduce((m, x) => {
-//         const k = x.jobSeekerId?.toString?.() || "";
-//         (m[k] = m[k] || []).push(x);
-//         return m;
-//       }, {});
-
-//     if (uniqueSeekerIds.length === 0) {
-//       return res.status(200).json({
-//         status: true,
-//         message: "Applicants details fetched successfully.",
-//         totalRecord,
-//         totalPage: 1,
-//         currentPage: 1,
-//         data: []
-//       });
-//     }
-
-//     // ---------- batched related fetches ----------
-//     const [educations, experiences, jsSkills, resumes] = await Promise.all([
-//       // EDUCATIONS
-//       JobSeekerEducation.find({ jobSeekerId: { $in: uniqueSeekerIds } })
-//         .select({
-//           jobSeekerId: 1, _id: 0,
-//           degree: 1,
-//           boardOfUniversity: 1, boardofuniversity: 1,
-//           sessionFrom: 1, sessionfrom: 1,
-//           sessionTo: 1, sessionto: 1,
-//           marks: 1,
-//           gradeOrPercentage: 1, gradeorPercentage: 1
-//         })
-//         .lean(),
-
-//       // WORK EXPERIENCE
-//       WorkExperience.find({ jobSeekerId: { $in: uniqueSeekerIds } })
-//         .select("jobSeekerId companyName jobTitle sessionFrom sessionTo roleDescription -_id")
-//         .lean(),
-
-//       // ✅ JOB SEEKER SKILLS (user's skills) -> populate to get admin skill names
-//       JobSeekerSkill.find({ jobSeekerId: { $in: uniqueSeekerIds }, isDeleted: false })
-//         .select("jobSeekerId skillIds -_id")
-//         .populate({ path: "skillIds", select: "skill" })
-//         .lean(),
-
-//       // RESUMES
-//       Resume.find({ jobSeekerId: { $in: uniqueSeekerIds } })
-//         .select("jobSeekerId fileName -_id")
-//         .lean()
-//     ]);
-
-//     const eduBySeeker = bucketBySeeker(educations);
-//     const expBySeeker = bucketBySeeker(experiences);
-
-//     // Build a map: jobSeekerId -> [skill names]
-//     const skillsBySeeker = jsSkills.reduce((acc, doc) => {
-//       const sid = doc.jobSeekerId.toString();
-//       const names = (doc.skillIds || [])
-//         .map(s => (s && typeof s === "object" && "skill" in s) ? s.skill : s) // populated name or raw id
-//         .filter(Boolean);
-//       acc[sid] = Array.from(new Set([...(acc[sid] || []), ...names]));
-//       return acc;
-//     }, {});
-
-//     const resBySeeker = bucketBySeeker(resumes);
-
-//     // ---------- normalizers ----------
-//     const normalizeEdu = (e) => ({
-//       degree: e.degree ?? null,
-//       boardOfUniversity: e.boardOfUniversity ?? e.boardofuniversity ?? null,
-//       sessionFrom: formatDate(e.sessionFrom ?? e.sessionfrom),
-//       sessionTo: formatDate(e.sessionTo ?? e.sessionto),
-//       marks: e.marks ?? null,
-//       gradeOrPercentage: e.gradeOrPercentage ?? e.gradeorPercentage ?? null
-//     });
-
-//     const normalizeExp = (x) => ({
-//       companyName: x.companyName ?? null,
-//       jobTitle: x.jobTitle ?? null,
-//       sessionFrom: formatDate(x.sessionFrom),
-//       sessionTo: formatDate(x.sessionTo),
-//       roleDescription: x.roleDescription ?? null
-//     });
-
-//     const normalizeResume = (r) => ({ fileName: r.fileName ?? null });
-
-//     // ---------- build response ----------
-//     const data = apps
-//       .filter(a => a.jobSeekerId)
-//       .map(a => {
-//         const p = a.jobSeekerId;
-//         const sid = p._id.toString();
-
-//         return {
-//           applicationId: a._id.toString(),
-//           status: a.status,
-//           employerApprovalStatus: a.employerApprovalStatus,
-
-//           jobSeekerName: p.name ?? null,
-//           email: p.email ?? null,
-//           dateOfBirth: formatDate(p.dateOfBirth),
-//           jobProfile: p.jobProfile ? (p.jobProfile.jobProfile || p.jobProfile.name || null) : null,
-//           industryType: p.industryType ? (p.industryType.industryType || p.industryType.name || null) : null,
-
-//           educations: (eduBySeeker[sid] || []).map(normalizeEdu),
-//           experiences: (expBySeeker[sid] || []).map(normalizeExp),
-
-//           // ✅ array of skill names (empty [] if none)
-//           skills: skillsBySeeker[sid] || [],
-
-//           resumes: (resBySeeker[sid] || []).map(normalizeResume)
-//         };
-//       });
-
-//     const totalPage = limit && totalRecord > 0 ? Math.ceil(totalRecord / limit) : 1;
-//     const currentPage = limit ? Math.min(page, totalPage || 1) : 1;
-
-//     return res.status(200).json({
-//       status: true,
-//       message: "Applicants details fetched successfully.",
-//       totalRecord,
-//       totalPage,
-//       currentPage,
-//       data
-//     });
-//   } catch (err) {
-//     console.error("getApplicantsDetails error:", err);
-//     return res.status(500).json({ status: false, message: "Server error", error: err.message });
-//   }
-// };
-
-
-
-//get full details of job seeker by employer by passing job seeker id
 exports.getSeekerApplicantDetails = async (req, res) => {
   try {
     const { role, userId } = req.user || {};
@@ -1858,7 +1488,7 @@ exports.getMyApplications = async (req, res) => {
 exports.updateEmployerApprovalStatus = async (req, res) => {
   try {
     const { role, userId } = req.user;
-    const { applicationId, employerApprovalStatus } = req.body;
+    const { applicationId, employerApprovalStatus, hourlyRate } = req.body;
 
     // 1) auth: only employer or admin
     if (role !== "employer" && role !== "admin") {
@@ -1884,9 +1514,43 @@ exports.updateEmployerApprovalStatus = async (req, res) => {
       });
     }
 
+    // ✅ Extra validation based on status
+    let numericHourlyRate = null;
+
+    if (employerApprovalStatus === "Approved") {
+      // hourlyRate is REQUIRED and must be a positive number
+      if (
+        hourlyRate === undefined ||
+        hourlyRate === null ||
+        String(hourlyRate).trim() === ""
+      ) {
+        return res.status(400).json({
+          status: false,
+          message: "hourlyRate is required when approval status is Approved.",
+        });
+      }
+
+      numericHourlyRate = Number(hourlyRate);
+      if (!Number.isFinite(numericHourlyRate) || numericHourlyRate <= 0) {
+        return res.status(400).json({
+          status: false,
+          message: "hourlyRate must be a positive number.",
+        });
+      }
+    } else {
+      // For Rejected / Disconnected / Pending — employer must NOT send hourlyRate
+      if (hourlyRate !== undefined) {
+        return res.status(400).json({
+          status: false,
+          message:
+            "hourlyRate should not be sent unless approval status is Approved.",
+        });
+      }
+    }
+
     // 3) load application
     const application = await JobApplication.findById(applicationId).select(
-      "_id jobPostId employerApprovalStatus"
+      "_id jobPostId employerApprovalStatus hourlyRate"
     );
     if (!application) {
       return res.status(404).json({
@@ -1926,6 +1590,15 @@ exports.updateEmployerApprovalStatus = async (req, res) => {
 
     // 5) perform update
     application.employerApprovalStatus = employerApprovalStatus;
+
+    // set hourlyRate only when Approved
+    if (employerApprovalStatus === "Approved") {
+      application.hourlyRate = numericHourlyRate;
+    } else {
+      // optional: clear any previous rate when it becomes Rejected/Disconnected/Pending
+      application.hourlyRate = null;
+    }
+
     await application.save();
 
     return res.status(200).json({
@@ -1935,6 +1608,7 @@ exports.updateEmployerApprovalStatus = async (req, res) => {
         applicationId: application._id,
         previousStatus: prev,
         currentStatus: application.employerApprovalStatus,
+        hourlyRate: application.hourlyRate,
       },
     });
   } catch (err) {
@@ -1946,8 +1620,6 @@ exports.updateEmployerApprovalStatus = async (req, res) => {
     });
   }
 };
-
-
 
 exports.getApprovedApplicants = async (req, res) => {
   try {
@@ -2025,7 +1697,7 @@ exports.getApprovedApplicants = async (req, res) => {
     const [totalRecord, applications] = await Promise.all([
       JobApplication.countDocuments(filter),
       JobApplication.find(filter)
-        .select("userId jobSeekerId jobPostId status employerApprovalStatus appliedAt createdAt")
+        .select("userId jobSeekerId jobPostId status employerApprovalStatus appliedAt createdAt hourlyRate")
         .populate({
           path: "jobSeekerId",
           match: { isDeleted: false },
@@ -2081,6 +1753,8 @@ exports.getApprovedApplicants = async (req, res) => {
           employerApprovalStatus: a.employerApprovalStatus, // "Approved"
           appliedAt: formatDate(a.appliedAt),
 
+           hourlyRate: a.hourlyRate ?? null,
+
           // flattened job seeker fields
           jobSeekerName: p.name ?? null,
           phoneNumber: p.phoneNumber ?? null,
@@ -2115,3 +1789,266 @@ exports.getApprovedApplicants = async (req, res) => {
     return res.status(500).json({ status: false, message: "Server error", error: err.message });
   }
 };
+
+
+
+// exports.updateEmployerApprovalStatus = async (req, res) => {
+//   try {
+//     const { role, userId } = req.user;
+//     const { applicationId, employerApprovalStatus } = req.body;
+
+//     // 1) auth: only employer or admin
+//     if (role !== "employer" && role !== "admin") {
+//       return res.status(403).json({
+//         status: false,
+//         message: "Only employers or admins can update approval status.",
+//       });
+//     }
+
+//     // 2) validate inputs
+//     if (!applicationId || !mongoose.isValidObjectId(applicationId)) {
+//       return res.status(400).json({
+//         status: false,
+//         message: "Valid Job Application ID is required.",
+//       });
+//     }
+
+//     const allowed = ["Pending", "Approved", "Rejected", "Disconnected"];
+//     if (!employerApprovalStatus || !allowed.includes(employerApprovalStatus)) {
+//       return res.status(400).json({
+//         status: false,
+//         message: `Invalid approval status. Allowed values: ${allowed.join(", ")}`,
+//       });
+//     }
+
+//     // 3) load application
+//     const application = await JobApplication.findById(applicationId).select(
+//       "_id jobPostId employerApprovalStatus"
+//     );
+//     if (!application) {
+//       return res.status(404).json({
+//         status: false,
+//         message: "Job application not found.",
+//       });
+//     }
+
+//     const prev = application.employerApprovalStatus;
+
+//     // ✅ Rule: can disconnect only if currently Approved
+//     if (employerApprovalStatus === "Disconnected" && prev !== "Approved") {
+//       return res.status(400).json({
+//         status: false,
+//         message:
+//           "You can disconnect only those applications whose status is currently Approved.",
+//       });
+//     }
+
+//     // 4) if employer, verify ownership
+//     if (role === "employer") {
+//       const post = await JobPost.findById(application.jobPostId).select("userId");
+//       if (!post) {
+//         return res.status(404).json({
+//           status: false,
+//           message: "Job post not found.",
+//         });
+//       }
+//       if (!post.userId.equals(userId)) {
+//         return res.status(403).json({
+//           status: false,
+//           message:
+//             "You are not allowed to update approval status for this application.",
+//         });
+//       }
+//     }
+
+//     // 5) perform update
+//     application.employerApprovalStatus = employerApprovalStatus;
+//     await application.save();
+
+//     return res.status(200).json({
+//       status: true,
+//       message: "Employer approval status updated successfully.",
+//       data: {
+//         applicationId: application._id,
+//         previousStatus: prev,
+//         currentStatus: application.employerApprovalStatus,
+//       },
+//     });
+//   } catch (err) {
+//     console.error("updateEmployerApprovalStatus error:", err);
+//     return res.status(500).json({
+//       status: false,
+//       message: "Server error.",
+//       error: err.message,
+//     });
+//   }
+// };
+
+
+
+// exports.getApprovedApplicants = async (req, res) => {
+//   try {
+//     const { role, userId } = req.user;
+//     const jobPostId = (req.query.jobPostId || "").trim();
+
+//     // pagination
+//     const pageParam = parseInt(req.query.page, 10);
+//     const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
+
+//     const limitRaw = (req.query.limit || "").toString().toLowerCase();
+//     const limit =
+//       limitRaw === "all"
+//         ? 0
+//         : (() => {
+//             const n = parseInt(limitRaw || "10", 10);
+//             if (!Number.isFinite(n) || n < 1) return 10;
+//             return Math.min(n, 100);
+//           })();
+//     const skip = limit ? (page - 1) * limit : 0;
+
+//     // Build the set of jobPostIds we’re allowed to look at
+//     let postIds = [];
+
+//     if (jobPostId) {
+//       // validate given post id
+//       if (!mongoose.isValidObjectId(jobPostId)) {
+//         return res.status(400).json({ status: false, message: "Valid Job Post ID is required." });
+//       }
+
+//       const post = await JobPost.findById(jobPostId).select("_id userId isDeleted");
+//       if (!post) return res.status(404).json({ status: false, message: "Job post not found." });
+//       if (post.isDeleted) {
+//         return res.status(410).json({ status: false, message: "This job post has been removed." });
+//       }
+
+//       // Access control: admin or the employer who owns this post
+//       const isOwnerEmployer = role === "employer" && post.userId?.equals(userId);
+//       if (!(role === "admin" || isOwnerEmployer)) {
+//         return res.status(403).json({ status: false, message: "You are not allowed to view approved applicants for this post." });
+//       }
+//       postIds = [post._id];
+//     } else {
+//       // No jobPostId => Admin sees all, Employer sees only their posts
+//       if (role === "admin") {
+//         const all = await JobPost.find({ isDeleted: false }).select("_id");
+//         postIds = all.map(p => p._id);
+//       } else if (role === "employer") {
+//         const mine = await JobPost.find({ userId, isDeleted: false }).select("_id");
+//         postIds = mine.map(p => p._id);
+//       } else {
+//         return res.status(403).json({ status: false, message: "Only employers or admins can view approved applicants." });
+//       }
+//     }
+
+//     // If there are no posts (e.g., employer with no posts), return empty set
+//     if (postIds.length === 0) {
+//       return res.status(200).json({
+//         status: true,
+//         message: "Approved applicants fetched successfully.",
+//         totalRecord: 0,
+//         totalPage: 1,
+//         currentPage: 1,
+//         data: []
+//       });
+//     }
+
+//     // FILTER: only Approved employerApprovalStatus; usually still Applied
+//     const filter = {
+//       jobPostId: { $in: postIds },
+//       employerApprovalStatus: "Approved",
+//       status: "Applied" // keep only currently active applications
+//     };
+
+//     const [totalRecord, applications] = await Promise.all([
+//       JobApplication.countDocuments(filter),
+//       JobApplication.find(filter)
+//         .select("userId jobSeekerId jobPostId status employerApprovalStatus appliedAt createdAt")
+//         .populate({
+//           path: "jobSeekerId",
+//           match: { isDeleted: false },
+//           select: [
+//             "name",
+//             "phoneNumber",
+//             "email",
+//             "state",
+//             "city",
+//             "image",
+//             "jobProfile",
+//             "dateOfBirth",
+//             "gender",
+//             "panCardNumber",
+//             "address",
+//             "alternatePhoneNumber",
+//             "pincode",
+//             "industryType"
+//           ].join(" "),
+//           populate: [
+//             { path: "state", select: "state" },
+//             { path: "jobProfile", select: "jobProfile name" },
+//             { path: "industryType", select: "industryType name" }
+//           ]
+//         })
+//         .populate({ path: "jobPostId", select: "jobTitle status" })
+//         .sort({ createdAt: -1 })
+//         .skip(skip)
+//         .limit(limit)
+//         .lean()
+//     ]);
+
+//     // inline date formatter (DD-MM-YYYY)
+//     const formatDate = (date) => {
+//       if (!date) return null;
+//       const d = new Date(date);
+//       const day = String(d.getDate()).padStart(2, "0");
+//       const month = String(d.getMonth() + 1).padStart(2, "0");
+//       const year = d.getFullYear();
+//       return `${day}-${month}-${year}`;
+//     };
+
+//     const data = applications
+//       .filter(a => !!a.jobSeekerId) // exclude if profile filtered out
+//       .map(a => {
+//         const p = a.jobSeekerId;
+//         return {
+//           applicationId: a._id.toString(),
+//           jobPostId: a.jobPostId?._id?.toString() || null,
+//           jobTitle: a.jobPostId?.jobTitle || null,
+
+//           status: a.status, // "Applied"
+//           employerApprovalStatus: a.employerApprovalStatus, // "Approved"
+//           appliedAt: formatDate(a.appliedAt),
+
+//           // flattened job seeker fields
+//           jobSeekerName: p.name ?? null,
+//           phoneNumber: p.phoneNumber ?? null,
+//           email: p.email ?? null,
+//           dateOfBirth: formatDate(p.dateOfBirth),
+//           gender: p.gender ?? null,
+//           panCardNumber: p.panCardNumber ?? null,
+//           address: p.address ?? null,
+//           alternatePhoneNumber: p.alternatePhoneNumber ?? null,
+//           pincode: p.pincode ?? null,
+//           state: p.state?.state ?? null,
+//           city: p.city ?? null,
+//           image: p.image ?? null,
+//           jobProfile: p.jobProfile ? (p.jobProfile.jobProfile || p.jobProfile.name || null) : null,
+//           industryType: p.industryType ? (p.industryType.industryType || p.industryType.name || null) : null
+//         };
+//       });
+
+//     const totalPage = limit && totalRecord > 0 ? Math.ceil(totalRecord / limit) : 1;
+//     const currentPage = limit ? Math.min(page, totalPage || 1) : 1;
+
+//     return res.status(200).json({
+//       status: true,
+//       message: "Approved applicants fetched successfully.",
+//       totalRecord,
+//       totalPage,
+//       currentPage,
+//       data
+//     });
+//   } catch (err) {
+//     console.error("getApprovedApplicants error:", err);
+//     return res.status(500).json({ status: false, message: "Server error", error: err.message });
+//   }
+// };
