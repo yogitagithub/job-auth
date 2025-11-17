@@ -1485,6 +1485,7 @@ exports.getMyApplications = async (req, res) => {
   }
 };
 
+
 exports.updateEmployerApprovalStatus = async (req, res) => {
   try {
     const { role, userId } = req.user;
