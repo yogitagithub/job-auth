@@ -2163,6 +2163,7 @@ exports.getApprovedTasks = async (req, res) => {
      
       taskList
      }
+     
     });
   } catch (err) {
     console.error("getApprovedTasks error:", err);
