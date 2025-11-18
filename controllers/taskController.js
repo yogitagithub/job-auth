@@ -1191,6 +1191,60 @@ exports.getPaymentsList = async (req, res) => {
 
     const totalPage = totalRecord ? Math.ceil(totalRecord / l) : 0;
 
+    // ---------- NEW PART: get task counts per jobApplicationId ----------
+    // collect unique jobApplicationIds from payments
+    const jobAppIdStrings = [
+      ...new Set(
+        payments
+          .map((doc) => {
+            const ja = doc.jobApplicationId || {};
+            // if populated, use ja._id; else use doc.jobApplicationId
+            const id = ja._id || doc.jobApplicationId;
+            return id ? id.toString() : null;
+          })
+          .filter(Boolean)
+      ),
+    ];
+
+    let taskStatsMap = {};
+    if (jobAppIdStrings.length > 0) {
+      const jobAppObjectIds = jobAppIdStrings.map(
+        (id) => new mongoose.Types.ObjectId(id)
+      );
+
+      const taskAgg = await Task.aggregate([
+        {
+          $match: {
+            jobApplicationId: { $in: jobAppObjectIds },
+          },
+        },
+        {
+          $group: {
+            _id: "$jobApplicationId",
+            totalTasks: { $sum: 1 },
+            approvedTasks: {
+              $sum: {
+                $cond: [
+                  { $eq: ["$employerApprovedTask", "Approved"] },
+                  1,
+                  0,
+                ],
+              },
+            },
+          },
+        },
+      ]);
+
+      taskStatsMap = taskAgg.reduce((acc, row) => {
+        acc[row._id.toString()] = {
+          totalTasks: row.totalTasks || 0,
+          approvedTasks: row.approvedTasks || 0,
+        };
+        return acc;
+      }, {});
+    }
+    // --------------------------------------------------------------------
+
     // ---- shape minimal items + compute totalAmount = totalHours * hourlyRate
     const paymentList = payments.map((doc) => {
       const company = doc.employerId || {};
@@ -1208,13 +1262,21 @@ exports.getPaymentsList = async (req, res) => {
       const hourlyRate = Number(jobApp.hourlyRate ?? 0); // from JobApplication
       const totalAmount = totalHours * hourlyRate;
 
+      const jobAppIdStr = (jobApp._id || doc.jobApplicationId || "").toString();
+      const stats = taskStatsMap[jobAppIdStr] || {
+        totalTasks: 0,
+        approvedTasks: 0,
+      };
+
       return {
         _id: String(doc._id),
-        jobApplicationId: String(jobApp._id || doc.jobApplicationId),
+        jobApplicationId: jobAppIdStr,
         employerName,
         jobSeekerName,
         totalHours,
         totalAmount,
+        totalTasks: stats.totalTasks,
+        approvedTasks: stats.approvedTasks,
       };
     });
 
@@ -1235,6 +1297,113 @@ exports.getPaymentsList = async (req, res) => {
       .json({ status: false, message: err?.message || "Server error." });
   }
 };
+
+
+
+// exports.getPaymentsList = async (req, res) => {
+//   try {
+//     const { role, userId } = req.user || {};
+//     const { page = 1, limit = 10, jobApplicationId, jobSeekerId } = req.query;
+
+//     const p = toInt(page, 1);
+//     const l = Math.min(toInt(limit, 10), 100);
+
+//     // ---- base match
+//     const match = { isDeleted: false };
+
+//     if (jobApplicationId && mongoose.isValidObjectId(jobApplicationId)) {
+//       match.jobApplicationId = new mongoose.Types.ObjectId(jobApplicationId);
+//     }
+//     if (jobSeekerId && mongoose.isValidObjectId(jobSeekerId)) {
+//       match.jobSeekerId = new mongoose.Types.ObjectId(jobSeekerId);
+//     }
+
+//     // ---- employer scoping: restrict by CompanyProfile owned by this user
+//     if (role !== "admin") {
+//       const company = await CompanyProfile.findOne({ userId }).select("_id");
+//       if (!company) {
+//         return res.status(403).json({
+//           status: false,
+//           message: "Company profile not found for this employer.",
+//         });
+//       }
+//       match.employerId = company._id;
+//     }
+
+//     // ---- count
+//     const totalRecord = await Payment.countDocuments(match);
+
+//     // ---- fetch payments
+//     const payments = await Payment.find(match)
+//       .sort({ createdAt: -1, _id: -1 })
+//       .skip((p - 1) * l)
+//       .limit(l)
+//       // populate only what we need to derive names + hourlyRate
+//       .populate({
+//         path: "employerId",
+//         model: "CompanyProfile",
+//         select: "companyName name",
+//       })
+//       .populate({
+//         path: "jobSeekerId",
+//         model: "JobSeekerProfile",
+//         select: "fullName firstName lastName name",
+//       })
+//       .populate({
+//         path: "jobApplicationId",
+//         model: "JobApplication",
+//         select: "hourlyRate",
+//       })
+//       // we don't need stored totalAmount anymore; we will compute it
+//       .select("_id jobApplicationId employerId jobSeekerId totalHours")
+//       .lean();
+
+//     const totalPage = totalRecord ? Math.ceil(totalRecord / l) : 0;
+
+//     // ---- shape minimal items + compute totalAmount = totalHours * hourlyRate
+//     const paymentList = payments.map((doc) => {
+//       const company = doc.employerId || {};
+//       const seeker = doc.jobSeekerId || {};
+//       const jobApp = doc.jobApplicationId || {};
+
+//       const employerName = company.companyName || company.name || "Employer";
+//       const jobSeekerName =
+//         seeker.fullName ||
+//         [seeker.firstName, seeker.lastName].filter(Boolean).join(" ") ||
+//         seeker.name ||
+//         "Job Seeker";
+
+//       const totalHours = Number(doc.totalHours ?? 0);
+//       const hourlyRate = Number(jobApp.hourlyRate ?? 0); // from JobApplication
+//       const totalAmount = totalHours * hourlyRate;
+
+//       return {
+//         _id: String(doc._id),
+//         jobApplicationId: String(jobApp._id || doc.jobApplicationId),
+//         employerName,
+//         jobSeekerName,
+//         totalHours,
+//         totalAmount,
+//       };
+//     });
+
+//     return res.json({
+//       status: true,
+//       message: "Payments fetched successfully.",
+//       data: {
+//         totalRecord,
+//         totalPage,
+//         currentPage: p,
+//         paymentList,
+//       },
+//     });
+//   } catch (err) {
+//     console.error("getPaymentsList error:", err);
+//     return res
+//       .status(500)
+//       .json({ status: false, message: err?.message || "Server error." });
+//   }
+// };
 
 
 
