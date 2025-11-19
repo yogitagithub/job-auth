@@ -29,7 +29,7 @@ router.put('/update-task', verifyToken, updateTask);
 router.get('/updated-task-details/:jobApplicationId', verifyToken, updatedTaskDetails);
 
  //update isPaid field by employer only
- router.put("/task-payment/:taskId", verifyToken, updateTaskPayment);
+ router.put("/task-payment/:jobApplicationId", verifyToken, updateTaskPayment);
 
  //payment history
  router.get("/payments", verifyToken, getPaymentsList);
