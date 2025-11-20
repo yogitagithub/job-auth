@@ -669,27 +669,27 @@ exports.getPaymentsList = async (req, res) => {
       .populate({
         path: "jobSeekerId",
         model: "JobSeekerProfile",
-        select: "fullName firstName lastName name",
+        // 👇 added phoneNumber + email
+        select:
+          "fullName firstName lastName name phoneNumber email contactEmail",
       })
       .populate({
         path: "jobApplicationId",
         model: "JobApplication",
         select: "hourlyRate",
       })
-      // we don't need stored totalAmount anymore; we will compute it
-      .select("_id jobApplicationId employerId jobSeekerId totalHours")
+      // we also need createdAt as payment date
+      .select("_id jobApplicationId employerId jobSeekerId totalHours createdAt")
       .lean();
 
     const totalPage = totalRecord ? Math.ceil(totalRecord / l) : 0;
 
-    // ---------- NEW PART: get task counts per jobApplicationId ----------
-    // collect unique jobApplicationIds from payments
+    // ---------- get task counts per jobApplicationId ----------
     const jobAppIdStrings = [
       ...new Set(
         payments
           .map((doc) => {
             const ja = doc.jobApplicationId || {};
-            // if populated, use ja._id; else use doc.jobApplicationId
             const id = ja._id || doc.jobApplicationId;
             return id ? id.toString() : null;
           })
@@ -734,9 +734,9 @@ exports.getPaymentsList = async (req, res) => {
         return acc;
       }, {});
     }
-    // --------------------------------------------------------------------
+    // --------------------------------------------------------
 
-    // ---- shape minimal items + compute totalAmount = totalHours * hourlyRate
+    // ---- shape items + compute totalAmount = totalHours * hourlyRate
     const paymentList = payments.map((doc) => {
       const company = doc.employerId || {};
       const seeker = doc.jobSeekerId || {};
@@ -750,7 +750,7 @@ exports.getPaymentsList = async (req, res) => {
         "Job Seeker";
 
       const totalHours = Number(doc.totalHours ?? 0);
-      const hourlyRate = Number(jobApp.hourlyRate ?? 0); // from JobApplication
+      const hourlyRate = Number(jobApp.hourlyRate ?? 0);
       const totalAmount = totalHours * hourlyRate;
 
       const jobAppIdStr = (jobApp._id || doc.jobApplicationId || "").toString();
@@ -759,15 +759,23 @@ exports.getPaymentsList = async (req, res) => {
         approvedTasks: 0,
       };
 
+      // 👇 new fields: phoneNumber, email, paymentDate, isPaid
+      const phoneNumber = seeker.phoneNumber || "";
+      const email = seeker.email || seeker.contactEmail || "";
+
       return {
         _id: String(doc._id),
         jobApplicationId: jobAppIdStr,
         employerName,
         jobSeekerName,
+        phoneNumber,
+        email,
         totalHours,
         totalAmount,
         totalTasks: stats.totalTasks,
         approvedTasks: stats.approvedTasks,
+        paymentDate: doc.createdAt, // when this payment was made
+        isPaid: true,
       };
     });
 
@@ -816,9 +824,9 @@ exports.getApprovedCandidatePayment = async (req, res) => {
       });
     }
 
-    const jobPostIds = jobPosts.map(j => j._id);
+    const jobPostIds = jobPosts.map((j) => j._id);
 
-    // ---------- Step 2: Approved job applications ----------
+    // ---------- Step  2: Approved job applications ----------
     const jobApplications = await JobApplication.find({
       jobPostId: { $in: jobPostIds },
       employerApprovalStatus: "Approved",
@@ -838,45 +846,51 @@ exports.getApprovedCandidatePayment = async (req, res) => {
     const allResults = [];
 
     for (const app of jobApplications) {
-      // 🔴 CHANGE IS HERE: also filter on isPaid: false
-      const tasks = await Task.find({
+      // 👉 Fetch ONLY unpaid tasks for this job application
+      const unpaidTasks = await Task.find({
         jobApplicationId: app._id,
-        employerApprovedTask: "Approved",
-        isPaid: false,              // <--- only unpaid approved tasks
-      }).select("hoursWorked employerApprovedTask isPaid");
+        isPaid: false,
+      }).select("hoursWorked employerApprovedTask");
 
-      // if there is no unpaid approved task, skip this candidate
-      if (!tasks.length) continue;
+      // totalTasks = count of all unpaid tasks
+      const totalTasks = unpaidTasks.length;
 
-      const totalHours = tasks.reduce(
+      // approvedTasks = count of unpaid + approved tasks
+      const approvedTasksList = unpaidTasks.filter(
+        (t) => t.employerApprovedTask === "Approved"
+      );
+      const approvedTasks = approvedTasksList.length;
+
+      // If there is no unpaid approved task, skip this candidate
+      if (!approvedTasksList.length) continue;
+
+      // Total hours from unpaid + approved tasks only
+      const totalHours = approvedTasksList.reduce(
         (sum, t) => sum + (t.hoursWorked || 0),
         0
       );
 
       const jobPost = jobPosts.find(
-        p => String(p._id) === String(app.jobPostId)
+        (p) => String(p._id) === String(app.jobPostId)
       );
       const employerName = jobPost?.companyId?.companyName || "";
 
       const hourlyRate = Number(app.hourlyRate ?? 0);
       const totalAmount = Number((totalHours * hourlyRate).toFixed(2));
 
-      // jobSeekerName
       let jobSeekerName = "";
-      if (app.jobSeekerId?.name) {
-        jobSeekerName = app.jobSeekerId.name;
-      } else if (app.userId?.name) {
-        jobSeekerName = app.userId.name;
-      }
+      if (app.jobSeekerId?.name) jobSeekerName = app.jobSeekerId.name;
+      else if (app.userId?.name) jobSeekerName = app.userId.name;
 
       allResults.push({
         jobApplicationId: app._id,
         employerName,
         jobSeekerName,
+        totalTasks,      // only unpaid tasks
+        approvedTasks,   // only unpaid + approved tasks
         totalHours,
         totalAmount,
-        employerApprovedTask: "Approved", // since we filtered by this
-        isPaid: false,                     // since we filtered by this
+        isPaid: false,   // because we are showing only unpaid data
       });
     }
 
@@ -913,6 +927,8 @@ exports.getApprovedCandidatePayment = async (req, res) => {
     });
   }
 };
+
+
 
 
 
