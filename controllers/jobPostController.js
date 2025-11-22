@@ -13,6 +13,7 @@ const OtherField = require("../models/AdminOtherField");
 const WorkingShift   = require("../models/AdminWorkingShift"); 
 const JobProfile   = require("../models/AdminJobProfile"); 
 const JobSeekerSkill = require("../models/JobSeekerSkill");
+const List = require("../models/ProfessionalKeyword");
  
 const Skill = require("../models/Skills");
 
@@ -3423,6 +3424,84 @@ exports.searchPublicJobs = async (req, res) => {
       status: false,
       message: "Server error",
       error: err.message
+    });
+  }
+};
+
+//list with alphabet without token
+exports.getProfessionalKeywords = async (req, res) => {
+  try {
+    const raw = (req.params.text || "").trim();
+
+    if (!raw) {
+      return res.status(400).json({
+        status: false,
+        message: "Please provide a letter or prefix in the URL.",
+      });
+    }
+
+    const search = raw.toUpperCase();
+
+    // ---------- CASE 1: Single letter ----------
+    if (search.length === 1) {
+      const doc = await List.findOne({
+        letter: search,
+        isDeleted: false,
+      }).lean();
+
+      if (!doc) {
+        return res.status(404).json({
+          status: false,
+          message: `No keywords found for letter '${search}'.`,
+          data: [],
+        });
+      }
+
+      return res.status(200).json({
+        status: true,
+        message: "Realted names fetched successfully.",
+        data: doc.names,   // ONLY return names[]
+      });
+    }
+
+    // ---------- CASE 2: Prefix search ----------
+    const regex = new RegExp("^" + search, "i");
+
+    const docs = await List.find(
+      {
+        isDeleted: false,
+        names: { $regex: regex },
+      },
+      { names: 1 }
+    ).lean();
+
+    const matchedNames = [];
+    docs.forEach((doc) => {
+      doc.names
+        .filter((name) => regex.test(name))
+        .forEach((name) => matchedNames.push(name));
+    });
+
+    if (!matchedNames.length) {
+      return res.status(404).json({
+        status: false,
+        message: `No keywords found starting with '${raw}'.`,
+        data: [],
+      });
+    }
+
+    const uniqueSorted = [...new Set(matchedNames)].sort();
+
+    return res.status(200).json({
+      status: true,
+      message: "Professional keywords fetched successfully.",
+      data: uniqueSorted,  // ONLY names[]
+    });
+  } catch (err) {
+    console.error("Error in getProfessionalKeywords:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Server error while fetching professional keywords.",
     });
   }
 };
