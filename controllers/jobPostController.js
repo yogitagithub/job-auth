@@ -3483,8 +3483,8 @@ exports.getProfessionalKeywords = async (req, res) => {
     });
 
     if (!matchedNames.length) {
-      return res.status(404).json({
-        status: false,
+      return res.status(200).json({
+        status: true,
         message: `No keywords found starting with '${raw}'.`,
         data: [],
       });

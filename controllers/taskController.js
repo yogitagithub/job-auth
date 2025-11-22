@@ -927,11 +927,12 @@ exports.getApprovedCandidatePayment = async (req, res) => {
 };
 
 
+
+
 exports.getSeekerPaymentHistory = async (req, res) => {
   try {
     const { role, userId } = req.user || {};
 
-    // Only job seekers allowed
     if (role !== "job_seeker") {
       return res.status(403).json({
         status: false,
@@ -939,12 +940,11 @@ exports.getSeekerPaymentHistory = async (req, res) => {
       });
     }
 
-    // ---- Find job seeker profile (with details we need) ----
     const jobSeeker = await JobSeekerProfile.findOne({
       userId,
       isDeleted: false,
     })
-      .select("_id fullName firstName lastName phoneNumber email")
+      .select("_id fullName firstName lastName name phoneNumber email")
       .lean();
 
     if (!jobSeeker) {
@@ -954,16 +954,13 @@ exports.getSeekerPaymentHistory = async (req, res) => {
       });
     }
 
-    // ---- Pagination setup ----
     const pageParam = parseInt(req.query.page, 10);
     const limitParam = parseInt(req.query.limit, 10);
 
     const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
-    const limit =
-      Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 10;
+    const limit = Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 10;
     const skip = (page - 1) * limit;
 
-    // ---- Filter only non-deleted payments for this job seeker ----
     const filter = {
       jobSeekerId: jobSeeker._id,
       isDeleted: false,
@@ -974,7 +971,8 @@ exports.getSeekerPaymentHistory = async (req, res) => {
       Payment.find(filter)
         .populate({
           path: "employerId",
-          select: "companyName",
+          // 👇 add phoneNumber & email here
+          select: "companyName phoneNumber email",
         })
         .populate({
           path: "jobApplicationId",
@@ -994,35 +992,32 @@ exports.getSeekerPaymentHistory = async (req, res) => {
         .lean(),
     ]);
 
-    // ---- Overall totals (OUTSIDE array – keep these) ----
-    const totalHours = payments.reduce(
+    const totalPayableHours = payments.reduce(
       (sum, p) => sum + (p.totalHours || 0),
       0
     );
-    const totalAmount = payments.reduce(
+
+    const totalPayableAmount = payments.reduce(
       (sum, p) => sum + (p.totalAmount || 0),
       0
     );
 
-    // Prepare job seeker name once
     const jobSeekerName =
       jobSeeker.fullName ||
+      jobSeeker.name ||
       [jobSeeker.firstName, jobSeeker.lastName].filter(Boolean).join(" ") ||
       "Unknown";
 
-    // ---- Transform data for paymentHistoryList (INSIDE array) ----
     const paymentHistoryList = await Promise.all(
       payments.map(async (p) => {
         const jobApp = p.jobApplicationId;
         const jobPost = jobApp?.jobPostId;
 
-        // Employer name: employerId.companyName → jobPost.companyId.companyName → "Unknown"
         const employerName =
           p.employerId?.companyName ||
           jobPost?.companyId?.companyName ||
           "Unknown";
 
-        // Fetch tasks for this job application (for counts)
         const tasks = await Task.find({
           jobApplicationId: jobApp?._id,
         })
@@ -1034,18 +1029,25 @@ exports.getSeekerPaymentHistory = async (req, res) => {
           (t) => t.employerApprovedTask === "Approved"
         ).length;
 
-        // NOTE: totalHours & totalAmount are NOT included here (only outside)
         return {
           _id: p._id.toString(),
           jobApplicationId: jobApp?._id?.toString() || null,
           employerName,
+          
+          // 👇 NEW FIELDS
+          employerPhoneNumber: p.employerId?.phoneNumber || null,
+          employerEmail: p.employerId?.email || null,
+
           jobSeekerName,
           phoneNumber: jobSeeker.phoneNumber || null,
           email: jobSeeker.email || null,
           totalTasks,
           approvedTasks,
           paymentDate: p.createdAt,
-          isPaid: true, // history = already paid
+          isPaid: true,
+
+          totalHours: p.totalHours || 0,
+          totalAmount: p.totalAmount || 0,
         };
       })
     );
@@ -1053,7 +1055,6 @@ exports.getSeekerPaymentHistory = async (req, res) => {
     const totalPage = limit ? Math.ceil(totalRecord / limit) : 1;
     const currentPage = limit ? Math.min(page, totalPage || 1) : 1;
 
-    // ---- Final response ----
     return res.status(200).json({
       status: true,
       message: "Payments fetched successfully.",
@@ -1062,8 +1063,8 @@ exports.getSeekerPaymentHistory = async (req, res) => {
         totalPage,
         currentPage,
         paymentHistoryList,
-        totalHours, // overall summary
-        totalAmount,
+        totalPayableHours,
+        totalPayableAmount,
       },
     });
   } catch (err) {
