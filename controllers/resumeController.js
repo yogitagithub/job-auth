@@ -35,7 +35,12 @@ exports.createResume = async (req, res) => {
     // Only consider active (not soft-deleted) resume for updates
     const activeResume = await Resume.findOne({ userId, isDeleted: { $ne: true } }).session(session);
 
-    const fileUrl = `${process.env.BASE_URL}/uploads/resumes/${req.file.filename}`;
+
+    const rawBaseUrl = process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
+    const baseUrl = rawBaseUrl.replace(/\/+$/, "");
+
+    const fileUrl = `${baseUrl}/uploads/resumes/${req.file.filename}`;
+    // const fileUrl = `${process.env.BASE_URL}/uploads/resumes/${req.file.filename}`;
 
     if (activeResume) {
       // Best-effort delete of the previous file

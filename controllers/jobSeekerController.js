@@ -803,7 +803,14 @@ exports.getAllJobSeekers = async (req, res) => {
       phoneNumber: seeker.phoneNumber,
       jobSeekerName: seeker.name ?? null,
       industryType: seeker.industryType?.name ?? null,
-      jobProfile:   seeker.jobProfile?.name   ?? null,
+     
+
+      jobProfile:
+    typeof seeker.jobProfile === "string"
+      ? seeker.jobProfile
+      : seeker.jobProfile?.name ?? null,
+
+      
       panCardNumber: seeker.panCardNumber ?? null,
       alternatePhoneNumber: seeker.alternatePhoneNumber ?? null,
       dateOfBirth: seeker.dateOfBirth ? new Date(seeker.dateOfBirth).toISOString().split("T")[0] : null,
