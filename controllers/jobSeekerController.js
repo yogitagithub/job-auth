@@ -698,7 +698,6 @@ exports.getAllJobSeekers = async (req, res) => {
   try {
     const page  = parseInt(req.query.page, 10)  || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
-    const skip  = (page - 1) * limit;
 
     const { city = "", jobProfile = "" } = req.query;
 
@@ -721,17 +720,17 @@ exports.getAllJobSeekers = async (req, res) => {
         const regexes = terms.map(t => new RegExp(`^${escapeRegex(t)}$`, "i"));
         const orClauses = [];
 
-        // (A) JobProfile names -> JobProfile IDs -> filter by jobProfile
+        // (A) JobProfile names -> JobProfile IDs -> filter by jobProfile (for future use if you switch to ObjectId)
         const matchedProfiles = await JobProfile
           .find({ name: { $in: regexes } })
           .select("_id")
           .lean();
+
         if (matchedProfiles.length) {
           orClauses.push({ jobProfile: { $in: matchedProfiles.map(d => d._id) } });
         }
 
         // (B) Skill names -> JobSeekerSkill.userId -> filter by userId
-        // JobSeekerSkill schema: { userId, skills: [String], isDeleted }
         const skillRows = await JobSeekerSkill
           .find({ isDeleted: false, skills: { $in: regexes } })
           .select("userId")
@@ -742,7 +741,9 @@ exports.getAllJobSeekers = async (req, res) => {
           orClauses.push({ userId: { $in: skillUserIds } });
         }
 
-        // If nothing matched any term, return empty page quickly
+        // (C) Direct string match on jobProfile (because in your schema jobProfile is String)
+        orClauses.push({ jobProfile: { $in: terms } });
+
         if (!orClauses.length) {
           return res.json({
             status: true,
@@ -754,32 +755,29 @@ exports.getAllJobSeekers = async (req, res) => {
           });
         }
 
-        // Apply (jobProfile name OR has any skill)
         filter.$or = orClauses;
       }
     }
 
-    // -------- count & fetch USING THE SAME FILTER --------
-    const totalSeekers = await JobSeekerProfile.countDocuments(filter);
-
+    // -------- fetch ALL seekers using filter (no pagination yet) --------
     const seekers = await JobSeekerProfile.find(filter)
-      .select("userId phoneNumber name industryType jobProfile panCardNumber alternatePhoneNumber dateOfBirth email gender address state city pincode image CurrentSalary")
+      .select(
+        "userId phoneNumber name industryType jobProfile panCardNumber alternatePhoneNumber " +
+        "dateOfBirth email gender address state city pincode image CurrentSalary currentSalary " +
+        "isResumeAdded isEducationAdded isSkillsAdded isExperienceAdded"
+      )
       .populate("industryType", "name")
-      .populate("jobProfile",   "name")
-      .populate("state",        "state")
-      .skip(skip)
-      .limit(limit)
+      .populate("state", "state")
       .sort({ createdAt: -1 })
       .lean();
 
-    // Return empty page (200) if none
     if (!seekers.length) {
       return res.json({
         status: true,
         message: "Job seekers profiles fetched successfully.",
-        totalSeekers,
+        totalSeekers: 0,
         currentPage: page,
-        totalPages: Math.ceil(totalSeekers / limit),
+        totalPages: 0,
         data: []
       });
     }
@@ -793,46 +791,85 @@ exports.getAllJobSeekers = async (req, res) => {
       : [];
 
     const skillsByUserId = new Map(
-      skillDocs.map(d => [String(d.userId), Array.isArray(d.skills) ? d.skills.filter(Boolean) : []])
+      skillDocs.map(d => [
+        String(d.userId),
+        Array.isArray(d.skills) ? d.skills.filter(Boolean) : []
+      ])
     );
 
-    // -------- shape response (skills as [] if none) --------
-    const data = seekers.map(seeker => ({
-      id: seeker._id,
-      userId: seeker.userId,
-      phoneNumber: seeker.phoneNumber,
-      jobSeekerName: seeker.name ?? null,
-      industryType: seeker.industryType?.name ?? null,
-     
+    // -------- shape response --------
+    const shaped = seekers.map(seeker => {
+      const skills = skillsByUserId.get(String(seeker.userId)) ?? [];
 
-      jobProfile:
-    typeof seeker.jobProfile === "string"
-      ? seeker.jobProfile
-      : seeker.jobProfile?.name ?? null,
+      return {
+        id: seeker._id,
+        userId: seeker.userId,
+        phoneNumber: seeker.phoneNumber,
+        jobSeekerName: seeker.name ?? null,
+        industryType: seeker.industryType?.name ?? null,
 
-      
-      panCardNumber: seeker.panCardNumber ?? null,
-      alternatePhoneNumber: seeker.alternatePhoneNumber ?? null,
-      dateOfBirth: seeker.dateOfBirth ? new Date(seeker.dateOfBirth).toISOString().split("T")[0] : null,
-      email: seeker.email ?? null,
-      gender: seeker.gender ?? null,
-      address: seeker.address ?? null,
-      state: seeker.state?.state ?? null,
-      city: seeker.city ?? null,
-      pincode: seeker.pincode ?? null,
-      image: seeker.image ?? null,
-      currentSalary: seeker.CurrentSalary ?? seeker.currentSalary ?? null,
-      skills: skillsByUserId.get(String(seeker.userId)) ?? []   // ✅ always array
-    }));
+        // jobProfile is String currently, but code below also supports future ObjectId+populate
+        jobProfile:
+          typeof seeker.jobProfile === "string"
+            ? seeker.jobProfile
+            : seeker.jobProfile?.name ?? null,
+
+        panCardNumber: seeker.panCardNumber ?? null,
+        alternatePhoneNumber: seeker.alternatePhoneNumber ?? null,
+        dateOfBirth: seeker.dateOfBirth
+          ? new Date(seeker.dateOfBirth).toISOString().split("T")[0]
+          : null,
+        email: seeker.email ?? null,
+        gender: seeker.gender ?? null,
+        address: seeker.address ?? null,
+        state: seeker.state?.state ?? null,
+        city: seeker.city ?? null,
+        pincode: seeker.pincode ?? null,
+        image: seeker.image ?? null,
+        currentSalary: seeker.CurrentSalary ?? seeker.currentSalary ?? null,
+        skills
+      };
+    });
+
+    // -------- REMOVE BLANK PROFILES (just created via selectRole) --------
+    // If all main fields are null/empty and no skills, we drop that profile.
+    const filtered = shaped.filter(s => {
+      const hasAnyData = Boolean(
+        s.jobSeekerName ||
+        s.industryType ||
+        s.jobProfile ||
+        s.panCardNumber ||
+        s.alternatePhoneNumber ||
+        s.dateOfBirth ||
+        s.email ||
+        s.gender ||
+        s.address ||
+        s.state ||
+        s.city ||
+        s.pincode ||
+        s.image ||
+        s.currentSalary ||
+        (Array.isArray(s.skills) && s.skills.length > 0)
+      );
+      return hasAnyData;
+    });
+
+    const totalSeekers = filtered.length;
+    const totalPages   = totalSeekers ? Math.ceil(totalSeekers / limit) : 0;
+
+    // -------- APPLY PAGINATION AFTER FILTERING --------
+    const startIndex = (page - 1) * limit;
+    const paginated  = filtered.slice(startIndex, startIndex + limit);
 
     return res.json({
       status: true,
       message: "Job seekers profiles fetched successfully.",
       totalSeekers,
       currentPage: page,
-      totalPages: Math.ceil(totalSeekers / limit),
-      data
+      totalPages,
+      data: paginated
     });
+
   } catch (error) {
     console.error("Error fetching job seekers:", error);
     return res.status(500).json({
@@ -842,6 +879,154 @@ exports.getAllJobSeekers = async (req, res) => {
     });
   }
 };
+// exports.getAllJobSeekers = async (req, res) => {
+//   try {
+//     const page  = parseInt(req.query.page, 10)  || 1;
+//     const limit = parseInt(req.query.limit, 10) || 10;
+//     const skip  = (page - 1) * limit;
+
+//     const { city = "", jobProfile = "" } = req.query;
+
+//     // -------- base filter --------
+//     const filter = { isDeleted: false };
+
+//     // -------- city: case-insensitive exact --------
+//     if (city && city.trim()) {
+//       filter.city = { $regex: new RegExp(`^${escapeRegex(city.trim())}$`, "i") };
+//     }
+
+//     // -------- unified jobProfile filter (job profile name OR skills) --------
+//     if (jobProfile && jobProfile.trim()) {
+//       const terms = jobProfile
+//         .split(",")
+//         .map(s => s.trim())
+//         .filter(Boolean);
+
+//       if (terms.length) {
+//         const regexes = terms.map(t => new RegExp(`^${escapeRegex(t)}$`, "i"));
+//         const orClauses = [];
+
+//         // (A) JobProfile names -> JobProfile IDs -> filter by jobProfile
+//         const matchedProfiles = await JobProfile
+//           .find({ name: { $in: regexes } })
+//           .select("_id")
+//           .lean();
+//         if (matchedProfiles.length) {
+//           orClauses.push({ jobProfile: { $in: matchedProfiles.map(d => d._id) } });
+//         }
+
+//         // (B) Skill names -> JobSeekerSkill.userId -> filter by userId
+//         // JobSeekerSkill schema: { userId, skills: [String], isDeleted }
+//         const skillRows = await JobSeekerSkill
+//           .find({ isDeleted: false, skills: { $in: regexes } })
+//           .select("userId")
+//           .lean();
+
+//         const skillUserIds = [...new Set(skillRows.map(r => r.userId))];
+//         if (skillUserIds.length) {
+//           orClauses.push({ userId: { $in: skillUserIds } });
+//         }
+
+//         // If nothing matched any term, return empty page quickly
+//         if (!orClauses.length) {
+//           return res.json({
+//             status: true,
+//             message: "Job seekers profiles fetched successfully.",
+//             totalSeekers: 0,
+//             currentPage: page,
+//             totalPages: 0,
+//             data: []
+//           });
+//         }
+
+//         // Apply (jobProfile name OR has any skill)
+//         filter.$or = orClauses;
+//       }
+//     }
+
+//     // -------- count & fetch USING THE SAME FILTER --------
+//     const totalSeekers = await JobSeekerProfile.countDocuments(filter);
+
+//     const seekers = await JobSeekerProfile.find(filter)
+//       .select("userId phoneNumber name industryType jobProfile panCardNumber alternatePhoneNumber dateOfBirth email gender address state city pincode image CurrentSalary")
+//       .populate("industryType", "name")
+//       .populate("jobProfile",   "name")
+//       .populate("state",        "state")
+//       .skip(skip)
+//       .limit(limit)
+//       .sort({ createdAt: -1 })
+//       .lean();
+
+//     // Return empty page (200) if none
+//     if (!seekers.length) {
+//       return res.json({
+//         status: true,
+//         message: "Job seekers profiles fetched successfully.",
+//         totalSeekers,
+//         currentPage: page,
+//         totalPages: Math.ceil(totalSeekers / limit),
+//         data: []
+//       });
+//     }
+
+//     // -------- fetch skills for these seekers by userId (ONE query) --------
+//     const userIds = seekers.map(s => s.userId).filter(Boolean);
+//     const skillDocs = userIds.length
+//       ? await JobSeekerSkill.find({ isDeleted: false, userId: { $in: userIds } })
+//           .select("userId skills")
+//           .lean()
+//       : [];
+
+//     const skillsByUserId = new Map(
+//       skillDocs.map(d => [String(d.userId), Array.isArray(d.skills) ? d.skills.filter(Boolean) : []])
+//     );
+
+//     // -------- shape response (skills as [] if none) --------
+//     const data = seekers.map(seeker => ({
+//       id: seeker._id,
+//       userId: seeker.userId,
+//       phoneNumber: seeker.phoneNumber,
+//       jobSeekerName: seeker.name ?? null,
+//       industryType: seeker.industryType?.name ?? null,
+     
+
+//       jobProfile:
+//     typeof seeker.jobProfile === "string"
+//       ? seeker.jobProfile
+//       : seeker.jobProfile?.name ?? null,
+
+
+//       panCardNumber: seeker.panCardNumber ?? null,
+//       alternatePhoneNumber: seeker.alternatePhoneNumber ?? null,
+//       dateOfBirth: seeker.dateOfBirth ? new Date(seeker.dateOfBirth).toISOString().split("T")[0] : null,
+//       email: seeker.email ?? null,
+//       gender: seeker.gender ?? null,
+//       address: seeker.address ?? null,
+//       state: seeker.state?.state ?? null,
+//       city: seeker.city ?? null,
+//       pincode: seeker.pincode ?? null,
+//       image: seeker.image ?? null,
+//       currentSalary: seeker.CurrentSalary ?? seeker.currentSalary ?? null,
+//       skills: skillsByUserId.get(String(seeker.userId)) ?? []   // ✅ always array
+//     }));
+
+//     return res.json({
+//       status: true,
+//       message: "Job seekers profiles fetched successfully.",
+//       totalSeekers,
+//       currentPage: page,
+//       totalPages: Math.ceil(totalSeekers / limit),
+//       data
+//     });
+//   } catch (error) {
+//     console.error("Error fetching job seekers:", error);
+//     return res.status(500).json({
+//       status: false,
+//       message: "Server error.",
+//       error: error.message
+//     });
+//   }
+// };
 
 
 
@@ -859,7 +1044,7 @@ exports.getSeekerDetails = async (req, res) => {
       .select("userId name phoneNumber email state city image jobProfile dateOfBirth gender panCardNumber address alternatePhoneNumber pincode industryType isDeleted CurrentSalary currentSalary")
       .populate([
         { path: "state", select: "state" },
-        { path: "jobProfile", select: "jobProfile name" },
+      
         { path: "industryType", select: "industryType name" }
       ])
       .lean();
@@ -976,7 +1161,26 @@ exports.getSeekerDetails = async (req, res) => {
       pincode: seeker.pincode ?? null,
       state: seeker.state?.state ?? null,
       city: seeker.city ?? null,
-      jobProfile: seeker.jobProfile ? (seeker.jobProfile.jobProfile || seeker.jobProfile.name || null) : null,
+     
+     
+     jobProfile: (() => {
+  if (!seeker.jobProfile) return null;
+
+  // current schema: String
+  if (typeof seeker.jobProfile === "string") {
+    return seeker.jobProfile;
+  }
+
+  // future-safe: if you ever change to ObjectId + populate
+  return (
+    seeker.jobProfile.jobProfile ||
+    seeker.jobProfile.name ||
+    null
+  );
+})(),
+
+
+
       industryType: seeker.industryType ? (seeker.industryType.industryType || seeker.industryType.name || null) : null,
       currentSalary: seeker.CurrentSalary ?? seeker.currentSalary ?? null,
       educations,     // always []
