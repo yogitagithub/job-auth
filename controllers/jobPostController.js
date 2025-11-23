@@ -6,6 +6,8 @@ const StateCity = require("../models/StateCity");
 const SavedJob = require("../models/SavedJobSeeker");
 const JobApplication= require("../models/JobApplication");
 
+const ExperienceRange = require("../models/AdminExperienceRange");
+
 const SalaryType = require("../models/AdminSalaryType");
 const JobType = require("../models/AdminJobType");
 const Experience = require("../models/AdminExperienceRange");     
@@ -1100,7 +1102,7 @@ exports.getAllJobPostsPublic = async (req, res) => {
     const skip  = (page - 1) * limit;
 
     // -------- params (NO `skills` param anymore) --------
-    const { jobTitle, city, jobType, industryType } = req.query;
+    const { jobTitle, city, jobType, industryType, experience } = req.query;
 
     // -------- base filter --------
     const filter = { isDeleted: false, adminAprrovalJobs: "Approved" };
@@ -1173,6 +1175,41 @@ exports.getAllJobPostsPublic = async (req, res) => {
         filter.industryType = { $in: ids };
       }
     }
+
+
+    // -------- experience: comma-separated names -> ids --------
+if (experience && experience.trim()) {
+  const names = experience.split(",").map(s => s.trim()).filter(Boolean);
+
+  if (names.length) {
+    const regexes = names.map(
+      n => new RegExp(`^${escapeRegex(n)}$`, "i")
+    );
+
+    const docs = await ExperienceRange.find({
+      name: { $in: regexes },
+      isDeleted: false
+    }).select("_id");
+
+    const ids = docs.map(d => d._id);
+
+    // No matching experience → return empty response
+    if (!ids.length) {
+      return res.status(200).json({
+        status: true,
+        message: "Job posts fetched successfully.",
+        totalRecord: 0,
+        totalPage: 0,
+        currentPage: page,
+        data: []
+      });
+    }
+
+    // Add filter to JobPost query
+    filter.experience = { $in: ids };
+  }
+}
+
 
     // -------- counts for pagination --------
     const totalRecord = await JobPost.countDocuments(filter);
@@ -1991,15 +2028,16 @@ exports.getJobList = async (req, res) => {
       );
     }
 
-    let experienceDoc = null;
-    if (experience) {
-      lookups.push(
-        Experience.findOne({
-          name: { $regex: `^${escapeRegex(experience)}$`, $options: "i" },
-          isDeleted: false
-        }).then(doc => { experienceDoc = doc; })
-      );
-    }
+ let experienceDoc = null;
+if (experience) {
+  lookups.push(
+    ExperienceRange.findOne({
+      name: { $regex: `^${escapeRegex(experience)}$`, $options: "i" },
+      isDeleted: false
+    }).then(doc => { experienceDoc = doc; })
+  );
+}
+
 
     let jobTypeDoc = null;
     if (jobType) {
