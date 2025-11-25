@@ -381,7 +381,7 @@ exports.adminApproveJobPost = async (req, res) => {
     if (post.isDeleted === true) {
       return res.status(400).json({
         status: false,
-        message: "This job post has been soft deleted and cannot be approved."
+        message: "This job post has been deleted and cannot be approved."
       });
     }
 
@@ -1007,7 +1007,7 @@ exports.getJobPostById = async (req, res) => {
     }
 
     if (jobPost.isDeleted === true) {
-      return res.status(400).json({ status: false, message: "This job post has been already soft deleted." });
+      return res.status(400).json({ status: false, message: "This job post has been already deleted." });
     }
 
      // ---------- employer ownership enforcement ----------
@@ -1356,7 +1356,7 @@ exports.updateJobPostById = async (req, res) => {
     if (jobPost.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This job post has been soft deleted and cannot be updated."
+        message: "This job post has been deleted and cannot be updated."
       });
     }
 
@@ -1700,7 +1700,7 @@ exports.updateJobPostStatus = async (req, res) => {
      if (jobPost.isDeleted === true) {
       return res.status(400).json({
         status: false,
-        message: "This job post has been soft deleted and cannot be updated."
+        message: "This job post has been deleted and cannot be updated."
       });
     }
 
@@ -1829,7 +1829,7 @@ exports.deleteJobPostById = async (req, res) => {
 
     return res.status(200).json({
       status: true,
-      message: "Job post deleted successfully (soft delete).",
+      message: "Job post deleted successfully.",
     
     });
 
@@ -2287,7 +2287,7 @@ exports.updateJobListById = async (req, res) => {
     if (jobPost.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This job post has been soft deleted and cannot be updated."
+        message: "This job post has been deleted and cannot be updated."
       });
     }
 

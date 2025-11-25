@@ -163,7 +163,7 @@ exports.getMyBank = async (req, res) => {
       if (soft) {
         return res.status(410).json({
           status: false,
-          message: "Your bank details have been soft deleted and cannot be viewed."
+          message: "Your bank details have been deleted and cannot be viewed."
         });
       }
       return res.status(404).json({
@@ -227,7 +227,7 @@ exports.updateBankById = async (req, res) => {
     if (doc.isDeleted) {
       return res.status(410).json({
         status: false,
-        message: "This bank details record has been soft deleted and cannot be updated."
+        message: "This bank details record has been deleted and cannot be updated."
       });
     }
 
@@ -372,7 +372,7 @@ exports.deleteBankById = async (req, res) => {
     if (doc.isDeleted) {
       return res.status(410).json({
         status: false,
-        message: "This bank details record has already been soft deleted."
+        message: "This bank details record has already deleted."
       });
     }
 

@@ -120,7 +120,7 @@ exports.getMyResume = async (req, res) => {
     if (resume.isDeleted === true) {
       return res.status(400).json({
         status: false,
-        message: "This resume has been soft deleted and cannot be viewed.",
+        message: "This resume has been deleted and cannot be viewed.",
       });
     }
 
@@ -176,7 +176,7 @@ exports.deleteResume = async (req, res) => {
     if (resume.isDeleted === true) {
       return res.status(400).json({
         status: false,
-        message: "This resume has already been soft deleted.",
+        message: "This resume has already been deleted.",
       });
     }
 
@@ -199,7 +199,7 @@ exports.deleteResume = async (req, res) => {
 
     return res.status(200).json({
       status: true,
-      message: "Resume deleted successfully (soft delete).",
+      message: "Resume deleted successfully.",
     });
   } catch (error) {
     console.error("Error deleting resume:", error);
@@ -289,7 +289,7 @@ exports.getSeekerResumeForEmployer = async (req, res) => {
     if (resume.isDeleted === true) {
       return res.status(400).json({
         status: false,
-        message: "This resume has been soft deleted and cannot be viewed.",
+        message: "This resume has been deleted and cannot be viewed.",
       });
     }
 

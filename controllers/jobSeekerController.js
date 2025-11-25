@@ -72,7 +72,7 @@ exports.saveProfile = async (req, res) => {
     if (profile && profile.isDeleted === true) {
       return res.status(400).json({
         status: false,
-        message: "This job seeker profile is already soft deleted and cannot be updated."
+        message: "This job seeker profile is already deleted and cannot be updated."
       });
     }
 
@@ -394,7 +394,7 @@ exports.getProfile = async (req, res) => {
     if (profile.isDeleted === true) {
       return res.status(410).json({
         status: false,
-        message: "This profile has been soft deleted and cannot be viewed."
+        message: "This profile has been deleted and cannot be viewed."
       });
     }
 
@@ -669,7 +669,7 @@ exports.deleteProfile = async (req, res) => {
     if (profile.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This profile is already soft deleted."
+        message: "This profile is already deleted."
       });
     }
 
@@ -679,7 +679,7 @@ exports.deleteProfile = async (req, res) => {
 
     return res.status(200).json({
       status: true,
-      message: "Job seeker profile deleted successfully (soft delete)."
+      message: "Job seeker profile deleted successfully."
     });
   } catch (error) {
     console.error("Error deleting job seeker profile:", error);
@@ -1230,7 +1230,7 @@ exports.adminRecommendJobSeeker = async (req, res) => {
     if (profile.isDeleted === true) {
       return res.status(400).json({
         status: false,
-        message: "This job profile has been soft deleted and cannot be recommended."
+        message: "This job profile has been deleted and cannot be recommended."
       });
     }
 

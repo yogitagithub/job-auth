@@ -222,7 +222,7 @@ exports.getWorkExperienceById = async (req, res) => {
     if (experience.isDeleted === true) {
       return res.status(400).json({
         status: false,
-        message: "This work experience has been soft deleted and cannot be viewed.",
+        message: "This work experience has been deleted and cannot be viewed.",
       });
     }
 
@@ -292,7 +292,7 @@ exports.updateWorkExperienceById = async (req, res) => {
     if (experience.isDeleted === true) {
       return res.status(400).json({
         status: false,
-        message: "This work experience has been soft deleted and cannot be updated.",
+        message: "This work experience has been deleted and cannot be updated.",
       });
     }
 
@@ -433,7 +433,7 @@ exports.deleteWorkExperienceById = async (req, res) => {
     if (existing.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This work experience is already soft deleted.",
+        message: "This work experience is already deleted.",
       });
     }
 
@@ -457,7 +457,7 @@ exports.deleteWorkExperienceById = async (req, res) => {
 
     return res.status(200).json({
       status: true,
-      message: "Work experience deleted successfully (soft delete).",
+      message: "Work experience deleted successfully.",
     });
   } catch (err) {
     console.error("Error deleting work experience:", err);

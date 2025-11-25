@@ -40,7 +40,7 @@ exports.saveProfile = async (req, res) => {
     if (profile && profile.isDeleted === true) {
       return res.status(400).json({
         status: false,
-        message: "This company profile has been soft deleted and cannot be updated."
+        message: "This company profile is already deleted and cannot be updated."
       });
     }
 
@@ -280,7 +280,7 @@ exports.getProfile = async (req, res) => {
     if (profile.isDeleted === true) {
       return res.status(400).json({
         status: false,
-        message: "This company profile has been already soft deleted."
+        message: "This company profile has been already deleted."
       });
     }
 
@@ -373,7 +373,7 @@ exports.deleteCompanyProfile = async (req, res) => {
     if (profile.isDeleted === true) {
       return res.status(400).json({
         status: false,
-        message: "This company profile is already soft deleted."
+        message: "This company profile is already deleted."
       });
     }
 
@@ -384,10 +384,10 @@ exports.deleteCompanyProfile = async (req, res) => {
 
     return res.status(200).json({
       status: true,
-      message: "Company profile soft deleted successfully."
+      message: "Company profile deleted successfully."
     });
   } catch (error) {
-    console.error("Error soft deleting company profile:", error);
+    console.error("Error deleting company profile:", error);
     return res.status(500).json({
       status: false,
       message: "Server error.",

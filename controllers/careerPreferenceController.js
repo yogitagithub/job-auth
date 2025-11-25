@@ -34,7 +34,7 @@ exports.createCareer = async (req, res) => {
     if (doc && doc.isDeleted) {
       return res.status(400).json({                 
         status: false,
-        message: "Career preference is soft deleted and cannot be updated."
+        message: "Career preference is deleted and cannot be updated."
       });
     }
 
@@ -171,7 +171,7 @@ exports.getMyCareer = async (req, res) => {
     if (doc.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "Career preference is soft deleted."
+        message: "Career preference is deleted."
       });
     }
 
@@ -221,7 +221,7 @@ exports.deleteCareer = async (req, res) => {
       // already soft-deleted
       return res.status(400).json({
         status: false,
-        message: "Career preference is already soft deleted."
+        message: "Career preference is already deleted."
       });
     }
 
@@ -230,7 +230,7 @@ exports.deleteCareer = async (req, res) => {
 
     return res.status(200).json({
       status: true,
-      message: "Career preference soft deleted successfully."
+      message: "Career preference deleted successfully."
     });
   } catch (err) {
     console.error("deleteCareer error:", err);

@@ -269,7 +269,7 @@ exports.updateCategory = async (req, res) => {
     if (category.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This category is already soft deleted. Update not allowed."
+        message: "This category is already deleted. Update not allowed."
       });
     }
 
@@ -337,7 +337,7 @@ exports.deleteCategory = async (req, res) => {
     if (category.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This category is already soft deleted."
+        message: "This category is already deleted."
       });
     }
 
@@ -347,7 +347,7 @@ exports.deleteCategory = async (req, res) => {
 
     return res.json({
       status: true,
-      message: "Category soft deleted successfully",
+      message: "Category deleted successfully",
       data: {
         id: category._id,
         name: category.name,
@@ -359,7 +359,7 @@ exports.deleteCategory = async (req, res) => {
     console.error("Error soft deleting category:", err);
     return res.status(500).json({
       status: false,
-      message: "Error soft deleting category",
+      message: "Error deleting category",
       error: err.message
     });
   }
@@ -1143,7 +1143,7 @@ exports.deleteIndustry = async (req, res) => {
     if (industry.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This industry is already soft deleted."
+        message: "This industry is already deleted."
       });
     }
 
@@ -1153,7 +1153,7 @@ exports.deleteIndustry = async (req, res) => {
 
     return res.json({
       status: true,
-      message: "Industry soft deleted successfully"
+      message: "Industry deleted successfully"
     });
   } catch (err) {
     return res.status(500).json({
@@ -1319,7 +1319,7 @@ exports.updateProfile = async (req, res) => {
     if (profile.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This job profile is already soft deleted and cannot be updated."
+        message: "This job profile is already deleted and cannot be updated."
       });
     }
 
@@ -1356,7 +1356,7 @@ exports.deleteProfile = async (req, res) => {
     if (profile.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This job profile is already soft deleted."
+        message: "This job profile is already deleted."
       });
     }
 
@@ -1366,14 +1366,14 @@ exports.deleteProfile = async (req, res) => {
 
     return res.json({
       status: true,
-      message: "Job profile soft deleted successfully"
+      message: "Job profile deleted successfully"
     });
 
   } catch (err) {
-    console.error("Error soft deleting job profile:", err);
+    console.error("Error deleting job profile:", err);
     return res.status(500).json({
       status: false,
-      message: "Error soft deleting job profile",
+      message: "Error deleting job profile",
       error: err.message
     });
   }
@@ -1494,7 +1494,7 @@ exports.updateExperience = async (req, res) => {
     if (doc.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This job profile is already soft deleted and cannot be updated."
+        message: "This job profile is already deleted and cannot be updated."
       });
     }
 
@@ -1579,7 +1579,7 @@ exports.deleteExperience = async (req, res) => {
     if (doc.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This experience is already soft deleted."
+        message: "This experience is already deleted."
       });
     }
 
@@ -1750,7 +1750,7 @@ exports.updateJobType = async (req, res) => {
     if (doc.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This job type is already soft deleted and cannot be updated."
+        message: "This job type is already deleted and cannot be updated."
       });
     }
 
@@ -1828,7 +1828,7 @@ exports.deleteJobType = async (req, res) => {
     if (doc.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This job profile is already soft deleted."
+        message: "This job profile is already deleted."
       });
     }
 
@@ -1966,7 +1966,7 @@ exports.updateSalaryType = async (req, res) => {
     if (doc.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This salary type is already soft deleted and cannot be updated."
+        message: "This salary type is already deleted and cannot be updated."
       });
     }
 
@@ -2057,7 +2057,7 @@ exports.deleteSalaryType = async (req, res) => {
     if (doc.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This is already soft deleted."
+        message: "This is already deleted."
       });
     }
 
@@ -2202,7 +2202,7 @@ exports.updateOtherField = async (req, res) => {
     if (doc.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This other field is already soft deleted and cannot be updated."
+        message: "This other field is already deleted and cannot be updated."
       });
     }
 
@@ -2255,7 +2255,7 @@ exports.deleteOtherField = async (req, res) => {
     if (doc.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This is already soft deleted."
+        message: "This is already deleted."
       });
     }
 
@@ -2264,7 +2264,7 @@ exports.deleteOtherField = async (req, res) => {
 
     return res.status(200).json({
       status: true,
-      message: "Other field soft deleted successfully."
+      message: "Other field deleted successfully."
     });
   } catch (err) {
     console.error("deleteOtherField error:", err);
@@ -2944,7 +2944,7 @@ exports.deleteFeaturedCompanies = async (req, res) => {
     if (doc.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This is already soft deleted."
+        message: "This is already deleted."
       });
     }
 
@@ -2953,7 +2953,7 @@ exports.deleteFeaturedCompanies = async (req, res) => {
 
     return res.status(200).json({
       status: true,
-      message: "Featured company soft deleted successfully."
+      message: "Featured company deleted successfully."
     });
   } catch (err) {
     console.error("deleteFeaturedCompanies error:", err);
@@ -2991,7 +2991,7 @@ exports.updateFeaturedCompanies = async (req, res) => {
     if (doc.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This is already soft deleted."
+        message: "This is already deleted."
       });
     }
 
@@ -3186,7 +3186,7 @@ exports.updateCurrentSalary = async (req, res) => {
     if (doc.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This current salary is already soft deleted and cannot be updated."
+        message: "This current salary is already deleted and cannot be updated."
       });
     }
 
@@ -3239,7 +3239,7 @@ exports.deleteCurrentSalary = async (req, res) => {
     if (doc.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This is already soft deleted."
+        message: "This is already deleted."
       });
     }
 
@@ -3248,7 +3248,7 @@ exports.deleteCurrentSalary = async (req, res) => {
 
     return res.status(200).json({
       status: true,
-      message: "Current salary soft deleted successfully."
+      message: "Current salary deleted successfully."
     });
   } catch (err) {
     console.error("deleteCurrentSalary error:", err);
@@ -3373,7 +3373,7 @@ exports.updateWorkingShift = async (req, res) => {
     if (doc.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This working shift is already soft deleted and cannot be updated."
+        message: "This working shift is already deleted and cannot be updated."
       });
     }
 
@@ -3435,7 +3435,7 @@ exports.deleteWorkingShift = async (req, res) => {
     if (doc.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This is already soft deleted."
+        message: "This is already deleted."
       });
     }
 
@@ -3444,7 +3444,7 @@ exports.deleteWorkingShift = async (req, res) => {
 
     return res.status(200).json({
       status: true,
-      message: "Working shift soft deleted successfully."
+      message: "Working shift deleted successfully."
     });
   } catch (err) {
     console.error("deleteWorkingShift error:", err);
@@ -4011,7 +4011,7 @@ exports.updateAccountType = async (req, res) => {
     if (doc.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This account type is already soft deleted and cannot be updated."
+        message: "This account type is already deleted and cannot be updated."
       });
     }
 
@@ -4105,7 +4105,7 @@ exports.deleteAccountType = async (req, res) => {
     if (doc.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This is already soft deleted."
+        message: "This is already deleted."
       });
     }
 

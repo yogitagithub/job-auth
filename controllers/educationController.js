@@ -240,7 +240,7 @@ exports.getEducationById = async (req, res) => {
     if (education.isDeleted === true) {
       return res.status(400).json({
         status: false,
-        message: "This education record has been soft deleted and cannot be viewed.",
+        message: "This education record has been deleted and cannot be viewed.",
       });
       // If you prefer 400/409 instead:
       // return res.status(400).json({ status:false, message:"This education record is already soft deleted." });
@@ -320,7 +320,7 @@ exports.updateEducationById = async (req, res) => {
     if (education.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This education record is already soft deleted and cannot be updated.",
+        message: "This education record is already deleted and cannot be updated.",
       });
     }
 
@@ -452,7 +452,7 @@ exports.deleteEducationById = async (req, res) => {
     if (existing.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This education record is already soft deleted.",
+        message: "This education record is already deleted.",
       });
     }
 
@@ -478,7 +478,7 @@ exports.deleteEducationById = async (req, res) => {
 
     return res.status(200).json({
       status: true,
-      message: "Education record deleted successfully (soft delete).",
+      message: "Education record deleted successfully.",
     });
   } catch (err) {
     console.error("Error deleting education:", err);
