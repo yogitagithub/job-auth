@@ -6,7 +6,7 @@ const { createJobPost, getAllJobPosts,
     updateJobPostStatus, deleteJobPostById, 
     getAllJobPostsPublic, getJobDetailsPublic, 
     getTopCategories, getBasedOnSkillsJobs, getRecommendedJobs, toggleSavedJob, 
-    getSeekerSavedJobs, getJobPostByCompany, getJobPostsAscending, searchPublicJobs, getProfessionalKeywords } = require('../controllers/jobPostController');
+    getSeekerSavedJobs, getJobPostByCompany, getJobPostsAscending, searchPublicJobs, getKeywords } = require('../controllers/jobPostController');
     
 const { verifyToken } = require('../middleware/authMiddleware');
 
@@ -61,8 +61,10 @@ router.get("/job-list-ascending", getJobPostsAscending);
 router.get("/jobSearch", searchPublicJobs);
 
 
+
+
 //list with alphabet without token
-router.get("/list/:text", getProfessionalKeywords);
+router.get("/list/:text", getKeywords);
 
 
 

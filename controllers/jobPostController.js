@@ -667,6 +667,11 @@ exports.getAllJobPosts = async (req, res) => {
       
     }
 
+    // ⛔ EXCLUDE EXPIRED JOBS
+filter.expiredDate = { $gte: new Date() };
+
+
+
     // ----- query params -----
     const qTitle       = (req.query.q || req.query.jobTitle || "").trim();
     const stateName    = (req.query.state || "").trim();
@@ -3467,7 +3472,7 @@ exports.searchPublicJobs = async (req, res) => {
 };
 
 //list with alphabet without token
-exports.getProfessionalKeywords = async (req, res) => {
+exports.getKeywords = async (req, res) => {
   try {
     const raw = (req.params.text || "").trim();
 
@@ -3536,7 +3541,7 @@ exports.getProfessionalKeywords = async (req, res) => {
       data: uniqueSorted,  // ONLY names[]
     });
   } catch (err) {
-    console.error("Error in getProfessionalKeywords:", err);
+    console.error("Error in getKeywords :", err);
     return res.status(500).json({
       status: false,
       message: "Server error while fetching professional keywords.",
