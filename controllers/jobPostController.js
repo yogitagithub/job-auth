@@ -1216,6 +1216,23 @@ if (experience && experience.trim()) {
 }
 
 
+// -------- salary range filter --------
+const minSalaryParam = req.query.minSalary ? Number(req.query.minSalary) : null;
+const maxSalaryParam = req.query.maxSalary ? Number(req.query.maxSalary) : null;
+
+if (minSalaryParam !== null || maxSalaryParam !== null) {
+  filter.$and = filter.$and || [];
+
+  if (minSalaryParam !== null) {
+    filter.$and.push({ minSalary: { $gte: minSalaryParam } });
+  }
+
+  if (maxSalaryParam !== null) {
+    filter.$and.push({ maxSalary: { $lte: maxSalaryParam } });
+  }
+}
+
+
     // -------- counts for pagination --------
     const totalRecord = await JobPost.countDocuments(filter);
     const totalPage   = Math.ceil(totalRecord / limit);
