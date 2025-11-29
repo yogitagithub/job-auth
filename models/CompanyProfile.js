@@ -19,6 +19,12 @@ const companyProfileSchema = new mongoose.Schema({
     trim: true
   },
 
+   employerType: {
+  type: String,
+  required: false,  
+  default: null
+},
+
   industryType: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "IndustryType",

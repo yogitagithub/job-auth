@@ -3,6 +3,7 @@ const cors = require("cors");
 const path = require("path");
 const connectDB = require("./config/db");
 const cron = require("./config/cron");
+const multer = require("multer");
 
 
 const userRoutes = require('./routes/userRoutes');
@@ -60,6 +61,24 @@ app.use('/api/auth', taskRoutes);
 app.use('/api/auth', screenRoutes);
 app.use('/api/auth', bankRoutes);
 app.use('/api/auth/admin', adminRoutes);
+
+
+
+// ADD THIS RIGHT BEFORE app.listen()
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError || err.message.includes("Invalid file format")) {
+    return res.status(400).json({
+      status: false,
+      message: err.message,
+    });
+  }
+
+  return res.status(500).json({
+    status: false,
+    message: "Something went wrong",
+  });
+});
+
 
 const PORT = process.env.PORT || 8001;
 app.listen(PORT, () => {

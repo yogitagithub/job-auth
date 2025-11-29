@@ -159,6 +159,68 @@ else if (!stateInput && cityInput) {
 }
 
 
+// ================= EMPLOYER TYPE RULES ==================
+
+const employerType = req.body.employerType || profile?.employerType;
+
+// if creating profile or updating employerType
+if (!employerType) {
+  return res.status(400).json({
+    status: false,
+    message: "employerType is required (individual or company)."
+  });
+}
+
+// ---------------- INDIVIDUAL CASE ----------------
+if (employerType === "individual") {
+  
+  // If user tries to give GST details → block
+  if (req.body.gstNumber) {
+    return res.status(400).json({
+      status: false,
+      message: "GST details are not allowed for Individual employer type."
+    });
+  }
+
+  if (req.file) {
+    return res.status(400).json({
+      status: false,
+      message: "Certificate upload is not allowed for Individual employer type."
+    });
+  }
+
+  // Remove gst details safely
+  req.body.gstNumber = null;
+  req.body.gstCertificate = null;
+}
+
+
+// ---------------- COMPANY CASE ----------------
+if (employerType === "company") {
+
+  const gstInRequest = Object.prototype.hasOwnProperty.call(req.body, "gstNumber");
+
+  // GST MUST BE PRESENT (CREATE MODE)
+  if (!profile && !gstInRequest) {
+    return res.status(400).json({
+      status: false,
+      message: "GST number is required for Company employerType."
+    });
+  }
+
+  // CERTIFICATE MUST BE PRESENT (CREATE MODE)
+  if (!profile && !req.file) {
+    return res.status(400).json({
+      status: false,
+      message: "GST certificate is required for Company employerType."
+    });
+  }
+}
+
+
+
+
+
 
     // ---------- ENFORCE GST rules ----------
     const oldGst = profile?.gstNumber || null;
