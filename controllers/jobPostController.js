@@ -91,7 +91,8 @@ const asNullableNumber = (v) =>
       "city",
       "pincode",
       "image",
-      "aboutCompany"
+      "aboutCompany",
+      "employerType"
     ];
 
     let missingFields = [];
