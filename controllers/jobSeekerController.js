@@ -93,6 +93,30 @@ exports.saveProfile = async (req, res) => {
       req.body.industryType = doc._id;
     }
 
+
+        // -------- Handle "Other" industry type ----------
+if (req.body.industryType) {
+  const industryDoc = await IndustryType.findById(req.body.industryType);
+
+  if (industryDoc && industryDoc.name.toLowerCase() === "other") {
+    // user selected OTHER industry
+    const otherName = req.body.otherIndustryName?.trim();
+
+    if (!otherName) {
+      return res.status(400).json({
+        status: false,
+        message: "Please enter your industry in otherIndustryName."
+      });
+    }
+
+    req.body.otherIndustryName = otherName; // save
+  } else {
+    // clear when not OTHER
+    req.body.otherIndustryName = null;
+  }
+}
+
+
    // ---------- jobProfile (optional; free text) ----------
     if (Object.prototype.hasOwnProperty.call(req.body, "jobProfile")) {
       const jp = String(req.body.jobProfile || "").trim();
@@ -696,341 +720,95 @@ exports.deleteProfile = async (req, res) => {
 // without token
 exports.getAllJobSeekers = async (req, res) => {
   try {
-    const page  = parseInt(req.query.page, 10)  || 1;
-    const limit = parseInt(req.query.limit, 10) || 10;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
 
-    const { city = "", jobProfile = "" } = req.query;
+    // The relaxed query criteria
+    const query = {
+        phoneNumber: { $exists: true, $ne: "" },
+        image: { $exists: true, $ne: "" },
+        industryType: { $exists: true, $ne: null },
+        email: { $exists: true, $ne: "" },
+        gender: { $exists: true, $ne: "" },
+        dateOfBirth: { $exists: true, $ne: null },
+        name: { $exists: true, $ne: "" },
+        jobProfile: { $exists: true, $ne: "" },
+        alternatePhoneNumber: { $exists: true, $ne: "" },
+        pincode: { $exists: true, $ne: "" },
+        city: { $exists: true, $ne: "" },
+        isDeleted: false,
+        isExperienced: { $exists: true },
+    };
+    
+    // Count full profiles
+    const totalRecord = await JobSeekerProfile.countDocuments(query);
 
-    // -------- base filter --------
-    const filter = { isDeleted: false };
-
-    // -------- city: case-insensitive exact --------
-    if (city && city.trim()) {
-      filter.city = { $regex: new RegExp(`^${escapeRegex(city.trim())}$`, "i") };
-    }
-
-    // -------- unified jobProfile filter (job profile name OR skills) --------
-    if (jobProfile && jobProfile.trim()) {
-      const terms = jobProfile
-        .split(",")
-        .map(s => s.trim())
-        .filter(Boolean);
-
-      if (terms.length) {
-        const regexes = terms.map(t => new RegExp(`^${escapeRegex(t)}$`, "i"));
-        const orClauses = [];
-
-        // (A) JobProfile names -> JobProfile IDs -> filter by jobProfile (for future use if you switch to ObjectId)
-        const matchedProfiles = await JobProfile
-          .find({ name: { $in: regexes } })
-          .select("_id")
-          .lean();
-
-        if (matchedProfiles.length) {
-          orClauses.push({ jobProfile: { $in: matchedProfiles.map(d => d._id) } });
-        }
-
-        // (B) Skill names -> JobSeekerSkill.userId -> filter by userId
-        const skillRows = await JobSeekerSkill
-          .find({ isDeleted: false, skills: { $in: regexes } })
-          .select("userId")
-          .lean();
-
-        const skillUserIds = [...new Set(skillRows.map(r => r.userId))];
-        if (skillUserIds.length) {
-          orClauses.push({ userId: { $in: skillUserIds } });
-        }
-
-        // (C) Direct string match on jobProfile (because in your schema jobProfile is String)
-        orClauses.push({ jobProfile: { $in: terms } });
-
-        if (!orClauses.length) {
-          return res.json({
-            status: true,
-            message: "Job seekers profiles fetched successfully.",
-            totalSeekers: 0,
-            currentPage: page,
-            totalPages: 0,
-            data: []
-          });
-        }
-
-        filter.$or = orClauses;
-      }
-    }
-
-    // -------- fetch ALL seekers using filter (no pagination yet) --------
-    const seekers = await JobSeekerProfile.find(filter)
-      .select(
-        "userId phoneNumber name industryType jobProfile panCardNumber alternatePhoneNumber " +
-        "dateOfBirth email gender address state city pincode image CurrentSalary currentSalary " +
-        "isResumeAdded isEducationAdded isSkillsAdded isExperienceAdded"
-      )
-      .populate("industryType", "name")
-      .populate("state", "state")
+    // Get paginated data with required population
+    const seekers = await JobSeekerProfile.find(query)
+      .populate("industryType", "name") 
+      .populate("salaryType", "name")
+      // ⚠️ IMPORTANT: Changed selector from "stateName" to "state" 
+      // to match your StateCity schema.
+      .populate("state", "state")     
+      .skip(skip)
+      .limit(limit)
       .sort({ createdAt: -1 })
-      .lean();
+      .lean(); 
 
-    if (!seekers.length) {
-      return res.json({
-        status: true,
-        message: "Job seekers profiles fetched successfully.",
-        totalSeekers: 0,
-        currentPage: page,
-        totalPages: 0,
-        data: []
-      });
-    }
+    // --- Data Transformation: State Name and Conditional Industry Name ---
 
-    // -------- fetch skills for these seekers by userId (ONE query) --------
-    const userIds = seekers.map(s => s.userId).filter(Boolean);
-    const skillDocs = userIds.length
-      ? await JobSeekerSkill.find({ isDeleted: false, userId: { $in: userIds } })
-          .select("userId skills")
-          .lean()
-      : [];
+    const transformedSeekers = seekers.map(seeker => {
+      // 1. Handle State Name: Extract 'state' field from the populated object
+      // ⚠️ FIX APPLIED HERE: Changed .stateName to .state
+      const stateName = seeker.state ? seeker.state.state : null; 
+      
+      // 2. Handle Industry Type: Use otherIndustryName if the primary type is "Other"
+      let industryName;
+      
+      if (seeker.industryType && seeker.industryType.name.toLowerCase() === 'other' && seeker.otherIndustryName) {
+        industryName = seeker.otherIndustryName;
+      } else if (seeker.industryType) {
+        industryName = seeker.industryType.name;
+      } else {
+        industryName = null;
+      }
 
-    const skillsByUserId = new Map(
-      skillDocs.map(d => [
-        String(d.userId),
-        Array.isArray(d.skills) ? d.skills.filter(Boolean) : []
-      ])
-    );
 
-    // -------- shape response --------
-    const shaped = seekers.map(seeker => {
-      const skills = skillsByUserId.get(String(seeker.userId)) ?? [];
+     // 3. Handle Salary Type: Extract 'type' field
+      const salaryTypeName = seeker.salaryType ? seeker.salaryType.name : null;
 
+      // Return the new object structure
       return {
-        id: seeker._id,
-        userId: seeker.userId,
-        phoneNumber: seeker.phoneNumber,
-        jobSeekerName: seeker.name ?? null,
-        industryType: seeker.industryType?.name ?? null,
-
-        // jobProfile is String currently, but code below also supports future ObjectId+populate
-        jobProfile:
-          typeof seeker.jobProfile === "string"
-            ? seeker.jobProfile
-            : seeker.jobProfile?.name ?? null,
-
-        panCardNumber: seeker.panCardNumber ?? null,
-        alternatePhoneNumber: seeker.alternatePhoneNumber ?? null,
-        dateOfBirth: seeker.dateOfBirth
-          ? new Date(seeker.dateOfBirth).toISOString().split("T")[0]
-          : null,
-        email: seeker.email ?? null,
-        gender: seeker.gender ?? null,
-        address: seeker.address ?? null,
-        state: seeker.state?.state ?? null,
-        city: seeker.city ?? null,
-        pincode: seeker.pincode ?? null,
-        image: seeker.image ?? null,
-        currentSalary: seeker.CurrentSalary ?? seeker.currentSalary ?? null,
-        skills
+        ...seeker,
+        state: stateName,
+        industryType: industryName,
+       salaryType: salaryTypeName,
       };
     });
 
-    // -------- REMOVE BLANK PROFILES (just created via selectRole) --------
-    // If all main fields are null/empty and no skills, we drop that profile.
-    const filtered = shaped.filter(s => {
-      const hasAnyData = Boolean(
-        s.jobSeekerName ||
-        s.industryType ||
-        s.jobProfile ||
-        s.panCardNumber ||
-        s.alternatePhoneNumber ||
-        s.dateOfBirth ||
-        s.email ||
-        s.gender ||
-        s.address ||
-        s.state ||
-        s.city ||
-        s.pincode ||
-        s.image ||
-        s.currentSalary ||
-        (Array.isArray(s.skills) && s.skills.length > 0)
-      );
-      return hasAnyData;
-    });
+    // --- End Data Transformation ---
 
-    const totalSeekers = filtered.length;
-    const totalPages   = totalSeekers ? Math.ceil(totalSeekers / limit) : 0;
-
-    // -------- APPLY PAGINATION AFTER FILTERING --------
-    const startIndex = (page - 1) * limit;
-    const paginated  = filtered.slice(startIndex, startIndex + limit);
-
-    return res.json({
+    return res.status(200).json({
       status: true,
-      message: "Job seekers profiles fetched successfully.",
-      totalSeekers,
+      message: "Job seeker profiles fetched successfully.",
+      totalRecord,
+      totalPage: Math.ceil(totalRecord / limit),
       currentPage: page,
-      totalPages,
-      data: paginated
+      data: transformedSeekers 
     });
 
-  } catch (error) {
-    console.error("Error fetching job seekers:", error);
+  } catch (err) {
+    console.error("Error fetching job seekers:", err);
     return res.status(500).json({
       status: false,
-      message: "Server error.",
-      error: error.message
+      message: "Server error. Please try again later.",
+      error: err.message
     });
   }
 };
-// exports.getAllJobSeekers = async (req, res) => {
-//   try {
-//     const page  = parseInt(req.query.page, 10)  || 1;
-//     const limit = parseInt(req.query.limit, 10) || 10;
-//     const skip  = (page - 1) * limit;
-
-//     const { city = "", jobProfile = "" } = req.query;
-
-//     // -------- base filter --------
-//     const filter = { isDeleted: false };
-
-//     // -------- city: case-insensitive exact --------
-//     if (city && city.trim()) {
-//       filter.city = { $regex: new RegExp(`^${escapeRegex(city.trim())}$`, "i") };
-//     }
-
-//     // -------- unified jobProfile filter (job profile name OR skills) --------
-//     if (jobProfile && jobProfile.trim()) {
-//       const terms = jobProfile
-//         .split(",")
-//         .map(s => s.trim())
-//         .filter(Boolean);
-
-//       if (terms.length) {
-//         const regexes = terms.map(t => new RegExp(`^${escapeRegex(t)}$`, "i"));
-//         const orClauses = [];
-
-//         // (A) JobProfile names -> JobProfile IDs -> filter by jobProfile
-//         const matchedProfiles = await JobProfile
-//           .find({ name: { $in: regexes } })
-//           .select("_id")
-//           .lean();
-//         if (matchedProfiles.length) {
-//           orClauses.push({ jobProfile: { $in: matchedProfiles.map(d => d._id) } });
-//         }
-
-//         // (B) Skill names -> JobSeekerSkill.userId -> filter by userId
-//         // JobSeekerSkill schema: { userId, skills: [String], isDeleted }
-//         const skillRows = await JobSeekerSkill
-//           .find({ isDeleted: false, skills: { $in: regexes } })
-//           .select("userId")
-//           .lean();
-
-//         const skillUserIds = [...new Set(skillRows.map(r => r.userId))];
-//         if (skillUserIds.length) {
-//           orClauses.push({ userId: { $in: skillUserIds } });
-//         }
-
-//         // If nothing matched any term, return empty page quickly
-//         if (!orClauses.length) {
-//           return res.json({
-//             status: true,
-//             message: "Job seekers profiles fetched successfully.",
-//             totalSeekers: 0,
-//             currentPage: page,
-//             totalPages: 0,
-//             data: []
-//           });
-//         }
-
-//         // Apply (jobProfile name OR has any skill)
-//         filter.$or = orClauses;
-//       }
-//     }
-
-//     // -------- count & fetch USING THE SAME FILTER --------
-//     const totalSeekers = await JobSeekerProfile.countDocuments(filter);
-
-//     const seekers = await JobSeekerProfile.find(filter)
-//       .select("userId phoneNumber name industryType jobProfile panCardNumber alternatePhoneNumber dateOfBirth email gender address state city pincode image CurrentSalary")
-//       .populate("industryType", "name")
-//       .populate("jobProfile",   "name")
-//       .populate("state",        "state")
-//       .skip(skip)
-//       .limit(limit)
-//       .sort({ createdAt: -1 })
-//       .lean();
-
-//     // Return empty page (200) if none
-//     if (!seekers.length) {
-//       return res.json({
-//         status: true,
-//         message: "Job seekers profiles fetched successfully.",
-//         totalSeekers,
-//         currentPage: page,
-//         totalPages: Math.ceil(totalSeekers / limit),
-//         data: []
-//       });
-//     }
-
-//     // -------- fetch skills for these seekers by userId (ONE query) --------
-//     const userIds = seekers.map(s => s.userId).filter(Boolean);
-//     const skillDocs = userIds.length
-//       ? await JobSeekerSkill.find({ isDeleted: false, userId: { $in: userIds } })
-//           .select("userId skills")
-//           .lean()
-//       : [];
-
-//     const skillsByUserId = new Map(
-//       skillDocs.map(d => [String(d.userId), Array.isArray(d.skills) ? d.skills.filter(Boolean) : []])
-//     );
-
-//     // -------- shape response (skills as [] if none) --------
-//     const data = seekers.map(seeker => ({
-//       id: seeker._id,
-//       userId: seeker.userId,
-//       phoneNumber: seeker.phoneNumber,
-//       jobSeekerName: seeker.name ?? null,
-//       industryType: seeker.industryType?.name ?? null,
-     
-
-//       jobProfile:
-//     typeof seeker.jobProfile === "string"
-//       ? seeker.jobProfile
-//       : seeker.jobProfile?.name ?? null,
 
 
-//       panCardNumber: seeker.panCardNumber ?? null,
-//       alternatePhoneNumber: seeker.alternatePhoneNumber ?? null,
-//       dateOfBirth: seeker.dateOfBirth ? new Date(seeker.dateOfBirth).toISOString().split("T")[0] : null,
-//       email: seeker.email ?? null,
-//       gender: seeker.gender ?? null,
-//       address: seeker.address ?? null,
-//       state: seeker.state?.state ?? null,
-//       city: seeker.city ?? null,
-//       pincode: seeker.pincode ?? null,
-//       image: seeker.image ?? null,
-//       currentSalary: seeker.CurrentSalary ?? seeker.currentSalary ?? null,
-//       skills: skillsByUserId.get(String(seeker.userId)) ?? []   // ✅ always array
-//     }));
-
-//     return res.json({
-//       status: true,
-//       message: "Job seekers profiles fetched successfully.",
-//       totalSeekers,
-//       currentPage: page,
-//       totalPages: Math.ceil(totalSeekers / limit),
-//       data
-//     });
-//   } catch (error) {
-//     console.error("Error fetching job seekers:", error);
-//     return res.status(500).json({
-//       status: false,
-//       message: "Server error.",
-//       error: error.message
-//     });
-//   }
-// };
-
-
-
-//without token get job seeker details
 exports.getSeekerDetails = async (req, res) => {
   try {
     const { jobSeekerId } = req.params || {};

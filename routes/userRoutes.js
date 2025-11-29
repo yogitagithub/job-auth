@@ -5,7 +5,7 @@ const { getIndustryBasedOnRole, getCategoryBasedOnRole,
     getJobProfileBasedOnRole, getSalaryTypeBasedOnRole, 
     getExperienceRangeBasedOnRole, getJobTypeBasedOnRole, 
     getOtherFieldBasedOnRole, 
-    getJobPostsByCategoryPublic, getAllCategoriesPublic,
+    getJobPostsByCategoryPublic, getAllCategoriesPublic, getAllExperiencesPublic,
 getAllIndustriesPublic, getFeaturedCompaniesPublic, getJobPostsByCompanyPublic, 
 getWorkingShiftBasedOnRole, getAccountTypeBasedOnRole, getJobPostsByCategoryId, getAllJobTypesPublic } = require('../controllers/adminController');
     
@@ -31,6 +31,10 @@ router.get('/industries', verifyToken, getIndustryBasedOnRole);
 router.get('/categories', verifyToken, getCategoryBasedOnRole);
 router.get("/public-categories", getAllCategoriesPublic);
 router.get("/public-industries", getAllIndustriesPublic);
+
+
+//without token
+router.get("/public-experience-range", getAllExperiencesPublic);
 
 
 //get job list based on category id for job_seeker and employer

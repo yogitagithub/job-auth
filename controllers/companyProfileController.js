@@ -77,6 +77,36 @@ exports.saveProfile = async (req, res) => {
       req.body.industryType = industryDoc._id;
     }
 
+
+        // -------- Handle "Other" industry type ----------
+let isOtherIndustry = false;
+
+// Check if industryDoc name is OTHER
+if (req.body.industryType) {
+  const industry = await IndustryType.findById(req.body.industryType);
+  if (industry && industry.name.toLowerCase() === "other") {
+    isOtherIndustry = true;
+  }
+}
+
+// If "Other" is selected → 'otherIndustryName' MUST be provided
+if (isOtherIndustry) {
+  const otherIndustry = req.body.otherIndustryName?.trim();
+
+  if (!otherIndustry) {
+    return res.status(400).json({
+      status: false,
+      message: "Please enter your industry in otherIndustryName."
+    });
+  }
+
+  req.body.otherIndustryName = otherIndustry;
+} else {
+  // Clear when not needed
+  req.body.otherIndustryName = null;
+}
+
+
     // ---------- state & city (optional) ----------
 const hasStateKey = Object.prototype.hasOwnProperty.call(req.body, "state");
 const hasCityKey  = Object.prototype.hasOwnProperty.call(req.body, "city");

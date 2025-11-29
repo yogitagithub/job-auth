@@ -113,11 +113,11 @@ skills: {
       required: true
     },
 
-    otherField: {
-     type: mongoose.Schema.Types.ObjectId,
-      ref: "OtherField",
-      required: true
-    },
+    // otherField: {
+    //  type: mongoose.Schema.Types.ObjectId,
+    //   ref: "OtherField",
+    //   required: true
+    // },
 
      workingShift: {
      type: mongoose.Schema.Types.ObjectId,
@@ -152,10 +152,10 @@ skills: {
     //   type: Number
     // },
 
-  expiredDate: { 
-    type: Date,
-     required: true
-   },
+  // expiredDate: { 
+  //   type: Date,
+  //    required: true
+  //  },   //yyyy-mm-dd
 
     adminAprrovalJobs: {
       type: String,

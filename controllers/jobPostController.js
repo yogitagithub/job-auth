@@ -77,6 +77,46 @@ const asNullableNumber = (v) =>
       });
     }
 
+
+    // 2️⃣ Check if the company profile is fully completed
+    const requiredFields = [
+      "phoneNumber",
+      "companyName",
+      "industryType",
+      "contactPersonName",
+      "gstNumber",
+      "email",
+      "companyAddress",
+      "state",
+      "city",
+      "pincode",
+      "image",
+      "aboutCompany"
+    ];
+
+    let missingFields = [];
+
+    requiredFields.forEach((field) => {
+      if (!company[field] || company[field] === "" || company[field] === null) {
+        missingFields.push(field);
+      }
+    });
+
+    // Check GST certificate upload (if required)
+    if (!company.gstCertificate?.fileUrl) {
+      missingFields.push("gstCertificate");
+    }
+
+    // If any missing field
+    if (missingFields.length > 0) {
+      return res.status(400).json({
+        status: false,
+        message: "Please complete your company profile before creating a job post.",
+       
+      });
+    }
+
+
     
     const {
       category,
@@ -86,7 +126,7 @@ const asNullableNumber = (v) =>
       state,
        city,       
       experience,
-      otherField,
+     
 workingShift,
 
 jobProfile,
@@ -99,14 +139,14 @@ jobProfile,
       displayEmail,
 
      
-      expiredDate
+     
 
     } = req.body || {};
 
       
 
     // quick required checks
-    const required = { category, industryType, salaryType, jobType, experience, otherField, workingShift };
+    const required = { category, industryType, salaryType, jobType, experience, workingShift };
     for (const [k, v] of Object.entries(required)) {
       if (!v || !String(v).trim()) {
         return res.status(400).json({ status: false, message: `${k} is required` });
@@ -164,7 +204,7 @@ jobProfile,
    
       
       experienceDoc,
-      otherFieldDoc,
+     
       workingShiftDoc,
     
      
@@ -177,7 +217,7 @@ jobProfile,
       
     
       Experience.findOne({ name: experience, isDeleted: false }), 
-      OtherField.findOne({ name: otherField, isDeleted: false }),
+    
       WorkingShift.findOne({ name: workingShift, isDeleted: false }),
      
        
@@ -190,7 +230,6 @@ jobProfile,
    
 
     if (!experienceDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted experience name." });
-    if (!otherFieldDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted other field name." });
     if (!workingShiftDoc)   return res.status(400).json({ status: false, message: "Invalid or deleted working shift name." });
 
 
@@ -239,11 +278,6 @@ jobProfile,
 
     
 
-// expiry (+30 days default)
-    let expiry = expiredDate ? new Date(expiredDate) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-    if (isNaN(expiry.getTime())) {
-      return res.status(400).json({ status: false, message: "Invalid expiredDate." });
-    }
 
 
         // Safety: by here stateDoc must exist (either provided or inferred)
@@ -268,7 +302,7 @@ jobProfile,
       
       
       experience: experienceDoc._id,
-      otherField: otherFieldDoc._id,
+      
       workingShift: workingShiftDoc._id,
     
    
@@ -285,7 +319,7 @@ jobProfile,
 
       
 
-      expiredDate: expiry,
+     
       status: "active",
         adminAprrovalJobs: "Pending",
 
@@ -296,8 +330,7 @@ jobProfile,
       isSaved: false
     });
 
-    const formattedExpiredDate = jobPost.expiredDate.toISOString().split("T")[0];
-
+   
     return res.status(201).json({
       status: true,
       message: "Job post created successfully.",
@@ -320,7 +353,7 @@ jobProfile,
         skills: jobPost.skills,  
 
         experience: experienceDoc.name,
-        otherField: otherFieldDoc.name,
+       
         workingShift: workingShiftDoc.name,
        
         jobProfile: jobPost.jobProfile,
@@ -341,7 +374,7 @@ jobProfile,
 
  adminAprrovalJobs: jobPost.adminAprrovalJobs, 
         status: jobPost.status,
-        expiredDate: formattedExpiredDate,
+       
         jobPosted: daysAgo(jobPost.createdAt)
       }
     });
@@ -667,8 +700,6 @@ exports.getAllJobPosts = async (req, res) => {
       
     }
 
-    // ⛔ EXCLUDE EXPIRED JOBS
-filter.expiredDate = { $gte: new Date() };
 
 
 
@@ -680,7 +711,6 @@ filter.expiredDate = { $gte: new Date() };
     const categoryName = (req.query.category || "").trim();
     const industryName = (req.query.industryType || req.query.industry || "").trim();
 
-    const jobProfile   = (req.query.jobProfile || "").trim();
     const salaryType   = (req.query.salaryType || "").trim();
     const experience   = (req.query.experience || "").trim();
     const jobType      = (req.query.jobType || "").trim();
@@ -739,13 +769,7 @@ filter.expiredDate = { $gte: new Date() };
       }
     }
 
-    let jobProfileDoc = null;
-    if (jobProfile) {
-      lookups.push(
-        JobProfile.findOne({ name: { $regex: `^${escapeRegex(jobProfile)}$`, $options: "i" }, isDeleted: false })
-          .then(doc => { jobProfileDoc = doc; })
-      );
-    }
+
 
     let salaryTypeDoc = null;
     if (salaryType) {
@@ -788,7 +812,6 @@ filter.expiredDate = { $gte: new Date() };
     await Promise.all(lookups);
     if (industryName && industryDoc) filter.industryType = industryDoc._id;
     if (categoryName && categoryDoc) filter.category     = categoryDoc._id;
-    if (jobProfile && jobProfileDoc) filter.jobProfile   = jobProfileDoc._id;
     if (salaryType && salaryTypeDoc) filter.salaryType   = salaryTypeDoc._id;
     if (experience && experienceDoc) filter.experience   = experienceDoc._id;
     if (jobType && jobTypeDoc)       filter.jobType      = jobTypeDoc._id;
@@ -829,9 +852,8 @@ filter.expiredDate = { $gte: new Date() };
       .populate({ path: "salaryType",   select: "name" })
       .populate({ path: "jobType",      select: "name" })
       .populate({ path: "experience",   select: "name" })
-      .populate({ path: "otherField",   select: "name" })
+     
       .populate({ path: "workingShift", select: "name" })
-      .populate({ path: "jobProfile",   select: "name" })
       .populate({ path: "state",        select: "state" })
       // .populate({ path: "skills",       select: "skill" }) // skills are strings, not refs
       .sort({ createdAt: -1 })
@@ -900,10 +922,9 @@ filter.expiredDate = { $gte: new Date() };
         salaryType:   p.salaryType?.name ?? null,
         jobType:      p.jobType?.name ?? null,
         experience:   p.experience?.name ?? null,
-        otherField:   p.otherField?.name ?? null,
+     
         workingShift: p.workingShift?.name ?? null,
-        jobProfile:   p.jobProfile?.name ?? null,
-
+        jobProfile: p.jobProfile ?? null,
         state:        p.state?.state ?? null,
         city:         p.city ?? null,
 
@@ -934,7 +955,6 @@ filter.expiredDate = { $gte: new Date() };
           ? seekerAppliedSet.has(idStr)               // per-user
           : employerHasActiveAppSet.has(idStr),       // any active app on that post
 
-        expiredDate: p.expiredDate ? new Date(p.expiredDate).toISOString().split("T")[0] : null,
         createdAt:  p.createdAt,
         jobPosted:  daysAgo(p.createdAt)
       };
@@ -1098,7 +1118,6 @@ city:         jobPost.city ?? null,
 
 
 
-
 exports.getAllJobPostsPublic = async (req, res) => {
   try {
     // -------- pagination --------
@@ -1232,7 +1251,6 @@ if (minSalaryParam !== null || maxSalaryParam !== null) {
   }
 }
 
-
     // -------- counts for pagination --------
     const totalRecord = await JobPost.countDocuments(filter);
     const totalPage   = Math.ceil(totalRecord / limit);
@@ -1246,9 +1264,9 @@ if (minSalaryParam !== null || maxSalaryParam !== null) {
       .populate({ path: "salaryType",   select: "name" })
       .populate({ path: "jobType",      select: "name" })
       .populate({ path: "experience",   select: "name" })
-      .populate({ path: "otherField",   select: "name" })
+     
       .populate({ path: "workingShift", select: "name" })
-      .populate({ path: "jobProfile",   select: "name" })
+     
       .populate({ path: "state",        select: "state" })
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -1267,9 +1285,9 @@ if (minSalaryParam !== null || maxSalaryParam !== null) {
       salaryType:   j.salaryType?.name ?? null,
       jobType:      j.jobType?.name ?? null,
       experience:   j.experience?.name ?? null,
-      otherField:   j.otherField?.name ?? null,
+    
       workingShift: j.workingShift?.name ?? null,
-      jobProfile:   j.jobProfile?.name ?? null,
+    jobProfile: j.jobProfile ?? null,
       state:        j.state?.state ?? null,
       city:         j.city ?? null,
 
@@ -1284,7 +1302,6 @@ if (minSalaryParam !== null || maxSalaryParam !== null) {
       hourlyRate:         j.hourlyRate ?? null,
 
       status: j.status,
-      expiredDate: j.expiredDate ? new Date(j.expiredDate).toISOString().split("T")[0] : null,
       jobPosted: daysAgo(j.createdAt),
       adminAprrovalJobs: j.adminAprrovalJobs ?? "Pending",
     }));

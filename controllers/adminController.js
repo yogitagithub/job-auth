@@ -1226,6 +1226,56 @@ exports.getAllIndustriesPublic = async (req, res) => {
 };
 
 
+//without token get all experience range 
+exports.getAllExperiencesPublic = async (req, res) => {
+  try {
+    // pagination
+    const page  = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const skip  = (page - 1) * limit;
+
+    const filter = { isDeleted: false };
+
+    // total for pagination (only non-deleted industries)
+    const totalRecord = await Experience.countDocuments(filter);
+    const totalPage   = Math.max(1, Math.ceil(totalRecord / limit));
+
+    // current page of industries (A→Z)
+    const experiences = await Experience.find(filter)
+      .select("_id name isDeleted")
+      .sort({ name: 1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+   
+   
+    const data = experiences.map(ind => ({
+      id: ind._id,
+      name: ind.name,
+      isDeleted: !!ind.isDeleted,
+     
+    }));
+
+    return res.status(200).json({
+      status: true,
+      message: "Experience range fetched successfully.",
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data,
+    });
+  } catch (error) {
+    console.error("Error fetching public experience range:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to fetch experience range.",
+      error: error.message,
+    });
+  }
+};
+
+
 //Job profile
 exports.createProfile = async (req, res) => {
   try {
