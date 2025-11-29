@@ -521,7 +521,7 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
       adminAprrovalJobs: "Approved",
     };
 
-    const { industryType, jobType, jobTitle, city } = req.query;
+  const { industryType, jobType, jobTitle, city, experience, minSalary, maxSalary } = req.query;
 
   if (industryType && industryType.trim()) {
   if (Types.ObjectId.isValid(industryType)) {
@@ -548,6 +548,35 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
       filter.city = { $regex: `^${escapeRegex(city.trim())}$`, $options: "i" };
     }
 
+
+    // --- experience: accept id OR label
+if (experience && experience.trim()) {
+  if (Types.ObjectId.isValid(experience)) {
+    filter.experience = experience;
+  } else {
+    const ids = await findIdsByDisplay(Experience, experience);
+    filter.experience = ids.length ? { $in: ids } : { $in: [] };
+  }
+}
+
+
+// --- Salary Range Filter
+if (minSalary || maxSalary) {
+  filter.$and = [];
+
+  if (minSalary) {
+    filter.$and.push({ minSalary: { $gte: Number(minSalary) } });
+  }
+
+  if (maxSalary) {
+    filter.$and.push({ maxSalary: { $lte: Number(maxSalary) } });
+  }
+
+  if (filter.$and.length === 0) delete filter.$and;
+}
+
+
+
     // Unified search: jobTitle param matches jobTitle OR any skill (contains, case-insensitive)
     if (jobTitle && jobTitle.trim()) {
       const q = escapeRegex(jobTitle.trim());
@@ -569,7 +598,6 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
       .populate({ path: "salaryType",   select: "name label title value" })
       .populate({ path: "jobType",      select: "name label title value" })
       .populate({ path: "experience",   select: "name range label" })
-      .populate({ path: "otherField",   select: "name label title" })
       .populate({ path: "workingShift", select: "name label title" })
       .populate({ path: "jobProfile",   select: "name label title" })
       .sort({ createdAt: -1 })
@@ -579,14 +607,7 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
 
     const pickDisplay = (doc) => (doc ? (doc.name ?? doc.label ?? doc.title ?? doc.range ?? doc.value ?? null) : null);
 
-    const formatDateDDMMYYYY = (d) => {
-      if (!d) return null;
-      const dt = new Date(d);
-      const dd = String(dt.getUTCDate()).padStart(2, "0");
-      const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
-      const yyyy = dt.getUTCFullYear();
-      return `${dd}-${mm}-${yyyy}`;
-    };
+    
 
     const data = jobPosts.map((j) => ({
       _id: j._id,
@@ -608,7 +629,6 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
       city: j.city,
       state: j.state?.state ?? null,
       experience: pickDisplay(j.experience),
-      otherField: pickDisplay(j.otherField),
       workingShift: pickDisplay(j.workingShift),
       jobProfile: pickDisplay(j.jobProfile),
       status: j.status,
@@ -619,8 +639,7 @@ exports.getJobPostsByCategoryPublic = async (req, res) => {
       isSaved: !!j.isSaved,
       isLatest: !!j.isLatest,
       isApplied: !!j.isApplied,
-      expiredDate: formatDateDDMMYYYY(j.expiredDate),
-    }));
+      }));
 
     return res.status(200).json({
       status: true,
@@ -4740,6 +4759,271 @@ exports.getAllJobTypesPublic = async (req, res) => {
     });
   }
 };
+
+
+
+// admin city crud
+
+exports.createCity = async (req, res) => {
+  try {
+    const { state, city } = req.body;
+
+    if (!state || !city) {
+      return res.status(400).json({ 
+        status: false,
+        message: "State and city are required in the request body." 
+      });
+    }
+
+    // Convert city to proper case for consistency
+    const cityProperCase = city.trim().charAt(0).toUpperCase() + city.trim().slice(1).toLowerCase();
+    const stateTrimmed = state.trim();
+
+    // 1. Check if the state exists
+    let stateCityDoc = await StateCity.findOne({ state: stateTrimmed });
+
+    if (!stateCityDoc) {
+      return res.status(404).json({ 
+        status: false,
+        message: `State '${state}' not found. Cannot add city.` 
+      });
+    }
+
+    // 2. Check if the city already exists in the array
+    const cityAlreadyExists = stateCityDoc.cities.includes(cityProperCase);
+
+    let message;
+    let updatedStateCity;
+
+    if (cityAlreadyExists) {
+        // City already exists, update message only
+        message = `City '${cityProperCase}' already exists in '${stateTrimmed}'.`;
+        updatedStateCity = stateCityDoc; // Use the fetched document
+    } else {
+        // City does not exist, use $addToSet (or $push) to add it
+        updatedStateCity = await StateCity.findOneAndUpdate(
+            { state: stateTrimmed },
+            { $addToSet: { cities: cityProperCase } }, 
+            { new: true } // Return the updated document
+        );
+        // Set the success message for new addition
+        message = `City '${cityProperCase}' is added in '${stateTrimmed}' successfully.`;
+    }
+
+    // The update might fail if the state was somehow deleted between the findOne and findOneAndUpdate, 
+    // but the initial check handles the main case.
+    if (!updatedStateCity) {
+         return res.status(404).json({ 
+            status: false,
+            message: `State '${state}' not found after update attempt.` 
+        });
+    }
+
+    return res.status(200).json({ 
+      status: true,
+      message: message, // Use the dynamically set message
+      data: {
+        stateCity: updatedStateCity
+      }
+    });
+
+  } catch (error) {
+    console.error("createCity error:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Unable to create/add city right now.",
+    });
+  }
+};
+
+
+
+exports.getCities = async (req, res) => {
+  try {
+    // 1. Get state name from the query parameters
+    const stateName = req.query.state; 
+
+    if (!stateName) {
+      return res.status(400).json({ 
+        status: false,
+        message: "The 'state' query parameter is required." 
+      });
+    }
+
+    // 2. Find the document for the specified state
+    // We use .select() to only retrieve the 'cities' array and 'state', and exclude '_id'.
+    const stateCityDocument = await StateCity.findOne(
+      { state: stateName.trim() }
+    ).select("state cities -_id") // Project only 'state' and 'cities', exclude default '_id'
+     .lean(); // Use .lean() for faster query performance
+
+    if (!stateCityDocument) {
+      return res.status(404).json({ 
+        status: false,
+        message: `State '${stateName}' not found.` 
+      });
+    }
+
+    // 3. Return the sorted list of cities
+    // Note: The cities array is typically sorted client-side or before insertion, 
+    // but sorting it here ensures the output is always clean.
+    const sortedCities = stateCityDocument.cities.sort();
+
+    return res.status(200).json({ 
+      status: true,
+      message: `Cities for '${stateName}' retrieved successfully.`,
+      data: {
+        state: stateCityDocument.state,
+        citiesList: sortedCities
+      }
+    });
+
+  } catch (error) {
+    console.error("getCities error:", error);
+    return res.status(500).json({ 
+      status: false,
+      message: "Unable to retrieve cities right now.",
+    });
+  }
+};
+
+
+exports.updateCity = async (req, res) => {
+  try {
+    // 1. Get state, old city name, and new city name from the request body
+    const { state, oldCity, newCity } = req.body;
+
+    if (!state || !oldCity || !newCity) {
+      return res.status(400).json({ 
+        status: false,
+        message: "State, oldCity, and newCity are all required in the request body." 
+      });
+    }
+
+    // Convert new city to proper case for consistency
+    const newCityProperCase = newCity.trim().charAt(0).toUpperCase() + newCity.trim().slice(1).toLowerCase();
+    const oldCityTrimmed = oldCity.trim();
+    const stateTrimmed = state.trim();
+
+    // 2. Check if the new city name already exists in the target state
+    // This prevents adding duplicate city names through an update operation.
+    const stateCityDoc = await StateCity.findOne({ state: stateTrimmed });
+
+    if (!stateCityDoc) {
+         return res.status(404).json({ 
+            status: false,
+            message: `State '${state}' not found.` 
+        });
+    }
+
+    if (stateCityDoc.cities.includes(newCityProperCase)) {
+        return res.status(400).json({
+            status: false,
+            message: `City name '${newCityProperCase}' already exists in '${state}'. Cannot update.`
+        });
+    }
+
+    // 3. Update the city name using the positional operator ($)
+    // Find the document where the state matches AND the cities array contains the oldCity.
+    // Then, replace that found element (referred to by "$") with the newCityProperCase.
+    const updatedStateCity = await StateCity.findOneAndUpdate(
+      { 
+        state: stateTrimmed, 
+        cities: oldCityTrimmed 
+      },
+      { $set: { "cities.$": newCityProperCase } }, 
+      { new: true } // Return the updated document
+    );
+
+    if (!updatedStateCity) {
+      // This means either the state wasn't found (though checked above), or the oldCity was not found in the array.
+      return res.status(404).json({ 
+        status: false,
+        message: `City '${oldCity}' not found in state '${state}'.` 
+      });
+    }
+
+    return res.status(200).json({ 
+      status: true,
+      message: `City name successfully updated from '${oldCityTrimmed}' to '${newCityProperCase}' in '${stateTrimmed}'.`,
+      data: {
+        stateCity: updatedStateCity
+      }
+    });
+
+  } catch (error) {
+    console.error("updateCity error:", error);
+    return res.status(500).json({ 
+      status: false,
+      message: "Unable to update city name right now.",
+    });
+  }
+};
+
+
+
+exports.deleteCity = async (req, res) => {
+  try {
+    // 1. Get state and city name to delete from the request body
+    const { state, city } = req.body;
+
+    if (!state || !city) {
+      return res.status(400).json({ 
+        status: false,
+        message: "State and city are required in the request body for deletion." 
+      });
+    }
+
+    const cityTrimmed = city.trim();
+    const stateTrimmed = state.trim();
+
+    // 2. Use the $pull operator to remove the specified city from the array
+    const updatedStateCity = await StateCity.findOneAndUpdate(
+      { state: stateTrimmed }, // Find the document by state
+      { $pull: { cities: cityTrimmed } }, // Remove the city from the 'cities' array
+      { new: true } // Return the updated document
+    );
+
+    if (!updatedStateCity) {
+      // This means the state itself was not found.
+      return res.status(404).json({ 
+        status: false,
+        message: `State '${state}' not found. Cannot proceed with deletion.` 
+      });
+    }
+
+    // Optional: Check if the city was actually removed
+    const wasCityRemoved = !updatedStateCity.cities.includes(cityTrimmed);
+
+    if (wasCityRemoved) {
+        return res.status(200).json({ 
+            status: true,
+            message: `City '${cityTrimmed}' successfully deleted from '${stateTrimmed}'.`,
+            data: {
+                stateCity: updatedStateCity
+            } 
+        });
+    } else {
+        // This case occurs if the state exists, but the city was not in the array initially.
+        return res.status(200).json({ 
+            status: true,
+            message: `City '${cityTrimmed}' was not found in '${stateTrimmed}', no action taken.`,
+            data: {
+                stateCity: updatedStateCity
+            } 
+        });
+    }
+
+
+  } catch (error) {
+    console.error("deleteCity error:", error);
+    return res.status(500).json({ 
+      status: false,
+      message: "Unable to delete city right now.",
+    });
+  }
+};
+
 
 
 

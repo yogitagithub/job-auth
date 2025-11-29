@@ -17,7 +17,7 @@ getCurrentSalary, deleteCurrentSalary, updateCurrentSalary, createWorkingShift,
 updateWorkingShift, deleteWorkingShift, getWorkingShift, getJobSeekerProfilesbyId, 
 createSkill, getSkill, updateSkill, deleteSkill, getJobPostsByCategoryPublic,
 createAccountType, updateAccountType, deleteAccountType, getAccountTypes
-, adminApprovalGiven, jobList } = require('../controllers/adminController');
+, adminApprovalGiven, jobList, createCity, getCities, updateCity, deleteCity } = require('../controllers/adminController');
 
 const { verifyToken, verifyAdmin, verifyEmployerOnly, verifyJobSeekerOnly } = require('../middleware/authMiddleware');
 const { adminApproveJobPost, getJobList, updateJobListById, adminRecommendJobPost } = require('../controllers/jobPostController');
@@ -33,6 +33,14 @@ router.post("/create-categories", verifyToken, verifyAdmin, uploadImage.single("
 router.get('/categories', verifyToken, verifyAdmin, getCategory);
 router.put("/update-categories/:id", uploadImage.single("image"), verifyToken, verifyAdmin, updateCategory);
 router.delete("/delete-categories/:id", verifyToken, verifyAdmin, deleteCategory);
+
+
+
+// admin city crud
+router.post("/create-city", verifyToken, verifyAdmin, createCity);
+router.get("/get-city", verifyToken, verifyAdmin, getCities);
+router.put("/update-city", verifyToken, verifyAdmin, updateCity);
+router.delete("/delete-city", verifyToken, verifyAdmin, deleteCity);
 
 
 //industry crud
