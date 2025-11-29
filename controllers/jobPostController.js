@@ -1899,7 +1899,6 @@ exports.getJobDetailsPublic = async (req, res) => {
       .populate({ path: "salaryType",   select: "name" })
       .populate({ path: "jobType",      select: "name" })
       .populate({ path: "experience",   select: "name" })
-      .populate({ path: "otherField",   select: "name" })
        .populate({ path: "workingShift",   select: "name" })
         .populate({ path: "jobProfile",   select: "name" })
          .populate({ path: "skills",       select: "skill" })
@@ -1930,7 +1929,6 @@ exports.getJobDetailsPublic = async (req, res) => {
       salaryType:     jobPost.salaryType?.name ?? null,
       jobType:        jobPost.jobType?.name ?? null,
       experience:     jobPost.experience?.name ?? null,
-      otherField:     jobPost.otherField?.name ?? null,
        workingShift:     jobPost.workingShift?.name ?? null,
        jobProfile:     jobPost.jobProfile?.name ?? null, 
       state:          jobPost.state?.state ?? null,
@@ -1952,8 +1950,7 @@ exports.getJobDetailsPublic = async (req, res) => {
 
       status:      jobPost.status,
       isApplied:   !!jobPost.isApplied,
-      expiredDate: jobPost.expiredDate ? jobPost.expiredDate.toISOString().split("T")[0] : null,
-
+    
       createdAt: jobPost.createdAt,
       jobPosted: daysAgo(jobPost.createdAt)
     };

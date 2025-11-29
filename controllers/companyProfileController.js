@@ -403,7 +403,8 @@ exports.getProfile = async (req, res) => {
       city: p.city,
       pincode: p.pincode,
       image: p.image || null,
-       aboutCompany: p.aboutCompany ?? null
+       aboutCompany: p.aboutCompany ?? null,
+        employerType: p.employerType || null
     };
 
     return res.status(200).json({
