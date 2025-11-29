@@ -837,7 +837,7 @@ exports.getJobPostsByCompanyPublic = async (req, res) => {
       jobType,
       jobTitle,
       city,
-      skills
+      skills, experience, minSalary, maxSalary
     } = req.query;
 
 
@@ -866,6 +866,36 @@ exports.getJobPostsByCompanyPublic = async (req, res) => {
     if (city && city.trim()) {
       filter.city = { $regex: `^${escapeRegex(city.trim())}$`, $options: "i" };
     }
+
+
+    // EXPERIENCE FILTER (supports ID or label)
+// -------------------------------------------------------
+if (experience && experience.trim()) {
+  if (Types.ObjectId.isValid(experience)) {
+    filter.experience = experience;
+  } else {
+    const ids = await findIdsByDisplay(Experience, experience);
+    filter.experience = ids.length ? { $in: ids } : { $in: [] };
+  }
+}
+
+
+// SALARY RANGE FILTER (minSalary & maxSalary)
+// -------------------------------------------------------
+if (minSalary || maxSalary) {
+  filter.$and = [];
+
+  if (minSalary) {
+    filter.$and.push({ minSalary: { $gte: Number(minSalary) } });
+  }
+
+  if (maxSalary) {
+    filter.$and.push({ maxSalary: { $lte: Number(maxSalary) } });
+  }
+
+  if (filter.$and.length === 0) delete filter.$and;
+}
+
 
     // skills: accept csv / array / repeated params; case-insensitive exact for each; require ALL
     const parseSkills = (raw) => {
@@ -907,7 +937,6 @@ exports.getJobPostsByCompanyPublic = async (req, res) => {
       .populate({ path: "salaryType",   select: "name label title value" })
       .populate({ path: "jobType",      select: "name label title value" })
       .populate({ path: "experience",   select: "name range label" })
-      .populate({ path: "otherField",   select: "name label title" }) 
       .populate({ path: "workingShift", select: "name label title" })  
       .populate({ path: "jobProfile",   select: "name label title" })
       .sort({ createdAt: -1 })
@@ -945,11 +974,9 @@ exports.getJobPostsByCompanyPublic = async (req, res) => {
       city: j.city,
       state: j.state?.state ?? null,
       experience: pickDisplay(j.experience),
-      otherField: pickDisplay(j.otherField),
       workingShift: pickDisplay(j.workingShift),
       jobProfile: pickDisplay(j.jobProfile),
       status: j.status,
-      expiredDate: j.expiredDate,
       isDeleted: j.isDeleted, // always false due to filter
     }));
 
