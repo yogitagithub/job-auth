@@ -78,44 +78,53 @@ const asNullableNumber = (v) =>
     }
 
 
-    // 2️⃣ Check if the company profile is fully completed
-    const requiredFields = [
-      "phoneNumber",
-      "companyName",
-      "industryType",
-      "contactPersonName",
-      "gstNumber",
-      "email",
-      "companyAddress",
-      "state",
-      "city",
-      "pincode",
-      "image",
-      "aboutCompany",
-      "employerType"
-    ];
+  // 2️⃣ Check if the company profile is fully completed
+const requiredFields = [
+  "phoneNumber",
+  "companyName",
+  "industryType",
+  "contactPersonName",
+  "email",
+  "companyAddress",
+  "state",
+  "city",
+  "pincode",
+  "image",
+  "aboutCompany",
+  "employerType"
+];
 
-    let missingFields = [];
+let missingFields = [];
 
-    requiredFields.forEach((field) => {
-      if (!company[field] || company[field] === "" || company[field] === null) {
-        missingFields.push(field);
-      }
-    });
+// Push missing basic fields
+requiredFields.forEach((field) => {
+  if (!company[field] || company[field] === "" || company[field] === null) {
+    missingFields.push(field);
+  }
+});
 
-    // Check GST certificate upload (if required)
-    if (!company.gstCertificate?.fileUrl) {
-      missingFields.push("gstCertificate");
-    }
+// 3️⃣ Apply employerType-based GST validation
+// 🔥 GST check ONLY IF employerType = company
+if (company.employerType === "company") {
+  if (!company.gstNumber || company.gstNumber === "") {
+    missingFields.push("gstNumber");
+  }
+  if (!company.gstCertificate?.fileUrl) {
+    missingFields.push("gstCertificate");
+  }
+}
 
-    // If any missing field
-    if (missingFields.length > 0) {
-      return res.status(400).json({
-        status: false,
-        message: "Please complete your company profile before creating a job post.",
-       
-      });
-    }
+// 4️⃣ If anything missing → reject
+if (missingFields.length > 0) {
+  return res.status(400).json({
+    status: false,
+    message:
+      company.employerType === "individual"
+        ? "Please complete your profile before creating a job post."
+        : "Please complete company GST details before creating a job post.",
+    missingFields,
+  });
+}
 
 
     
@@ -1021,19 +1030,17 @@ exports.getJobPostById = async (req, res) => {
       .populate({ path: "salaryType",   select: "name" })
       .populate({ path: "jobType",      select: "name" })
       .populate({ path: "experience",   select: "name" })
-      .populate({ path: "otherField",   select: "name" })
       .populate({ path: "workingShift", select: "name" })
       
          .populate({ path: "skills",       select: "skill" })
-         .populate({ path: "jobProfile", select: "name" })
-      .populate({ path: "state",        select: "state" });
+        .populate({ path: "state",        select: "state" });
 
     if (!jobPost) {
       return res.status(404).json({ status: false, message: "Job post not found." });
     }
 
     if (jobPost.isDeleted === true) {
-      return res.status(400).json({ status: false, message: "This job post has been already deleted." });
+      return res.status(400).json({ status: false, message: "This job post has been already soft deleted." });
     }
 
      // ---------- employer ownership enforcement ----------
@@ -1066,10 +1073,9 @@ exports.getJobPostById = async (req, res) => {
       salaryType:   jobPost.salaryType?.name ?? null,
       jobType:      jobPost.jobType?.name ?? null,
       experience:   jobPost.experience?.name ?? null,
-      otherField:   jobPost.otherField?.name ?? null,
       workingShift: jobPost.workingShift?.name ?? null,
-      
-      jobProfile: jobPost.jobProfile?.name ?? null,
+    jobProfile: jobPost.jobProfile ?? null,
+  
       state:        jobPost.state?.state ?? null,
 city:         jobPost.city ?? null,
 
@@ -1090,13 +1096,15 @@ city:         jobPost.city ?? null,
       hourlyRate:         jobPost.hourlyRate ?? null,
        appliedCandidates: jobPost.appliedCandidates ?? null,
 
+        adminApprovalJobs: jobPost.adminAprrovalJobs ?? null,
+
+
       status:    jobPost.status,
       isApplied: !!jobPost.isApplied,
       isActive:  !!jobPost.isActive,
       isSaved:   !!jobPost.isSaved,
       isLatest:  !!jobPost.isLatest,
 
-      expiredDate: jobPost.expiredDate ? jobPost.expiredDate.toISOString().split("T")[0] : null,
       createdAt: jobPost.createdAt,
 
       // ✅ use your top-level helper that returns "0 days ago", "2 days ago", etc.
@@ -1341,7 +1349,7 @@ exports.updateJobPostById = async (req, res) => {
       salaryType,
       jobType,
       experience,
-      otherField,
+      
       workingShift,
       jobProfile,
 
@@ -1396,7 +1404,7 @@ exports.updateJobPostById = async (req, res) => {
     if (jobPost.isDeleted) {
       return res.status(400).json({
         status: false,
-        message: "This job post has been deleted and cannot be updated."
+        message: "This job post has been soft deleted and cannot be updated."
       });
     }
 
@@ -1412,7 +1420,7 @@ exports.updateJobPostById = async (req, res) => {
     const restricted = [
       "_id","userId","companyId","__v","isDeleted","deletedAt",
       "category","industryType","state","salaryType","jobType","city",
-      "experience","otherField","workingShift","jobProfile","expiredDate","status",
+      "experience","workingShift","status",
       "isAdminApproved","isActive","isLatest","isSaved"
     ];
     Object.keys(updateData).forEach((k) => {
@@ -1455,23 +1463,13 @@ exports.updateJobPostById = async (req, res) => {
       jobPost.experience = doc._id;
     }
 
-    if (otherField) {
-      const doc = await findByName(OtherField, "name", otherField, { isDeleted: false });
-      if (!doc) return res.status(400).json({ status: false, message: "Invalid or deleted other field name." });
-      jobPost.otherField = doc._id;
-    }
-
+  
     if (workingShift) {
       const doc = await findByName(WorkingShift, "name", workingShift, { isDeleted: false });
       if (!doc) return res.status(400).json({ status: false, message: "Invalid or deleted working shift name." });
       jobPost.workingShift = doc._id;
     }
 
-    if (jobProfile) {
-      const doc = await findByName(JobProfile, "name", jobProfile, { isDeleted: false });
-      if (!doc) return res.status(400).json({ status: false, message: "Invalid or deleted job profile name." });
-      jobPost.jobProfile = doc._id;
-    }
 
     // ---------- State/City update logic ----------
     const hasState = Object.prototype.hasOwnProperty.call(req.body, "state");
@@ -1597,32 +1595,14 @@ exports.updateJobPostById = async (req, res) => {
       jobPost.skills = normalized; // store as plain strings
     }
 
-    // ---------- Expired Date update (active only; >= today; ignore if invalid) ----------
-    let warningMsg = null; // collect non-fatal warnings
-    const hasExpiredDate = Object.prototype.hasOwnProperty.call(req.body, "expiredDate");
-    if (hasExpiredDate) {
-      if (jobPost.status !== "active") {
-        warningMsg = "Ignored expiredDate: can be updated only when job status is 'active'.";
-      } else {
-        const newExp = parseDateOnlyToUTC(req.body.expiredDate);
-        if (!newExp) {
-          warningMsg = "Ignored expiredDate: invalid format. Use 'YYYY-MM-DD' (e.g., 2025-09-10).";
-        } else {
-          const todayUTC = todayDateOnlyUTC();
-          if (newExp.getTime() < todayUTC.getTime()) {
-            warningMsg = `Ignored expiredDate: cannot be earlier than today (${formatDateOnlyUTC(todayUTC)}).`;
-          } else {
-            jobPost.expiredDate = newExp;
-          }
-        }
-      }
-    }
-
     // ---------- Flags: allowed only if admin approved AND active ----------
     const wantsFlagChange =
       typeof isActive !== "undefined" ||
       typeof isLatest !== "undefined" ||
       typeof isSaved  !== "undefined";
+
+
+      let warningMsg = null; // collect non-fatal warnings
 
     const pending = {};
     if (wantsFlagChange) {
@@ -1662,9 +1642,7 @@ exports.updateJobPostById = async (req, res) => {
       .populate("salaryType", "name")
       .populate("jobType", "name")
       .populate("experience", "name")
-      .populate("otherField", "name")
       .populate("workingShift", "name")
-      .populate("jobProfile", "name")
       // .populate("skills", "skill")   // ⛔️ NOT a ref; keep skills as strings
       .lean();
 
@@ -1677,9 +1655,13 @@ exports.updateJobPostById = async (req, res) => {
       salaryType:    populated.salaryType?.name ?? null,
       jobType:       populated.jobType?.name ?? null,
       experience:    populated.experience?.name ?? null,
-      otherField:    populated.otherField?.name ?? null,
       workingShift:  populated.workingShift?.name ?? null,
-      jobProfile:    populated.jobProfile?.name ?? null,
+     
+
+      jobProfile:
+  typeof populated.jobProfile === "string"
+    ? populated.jobProfile                      // already a string
+    : populated.jobProfile?.name ?? null,       // populated ref (object)
 
       // skills are stored as strings
       skills: Array.isArray(populated.skills) ? populated.skills : [],
@@ -1690,9 +1672,6 @@ exports.updateJobPostById = async (req, res) => {
       isSaved:         !!populated.isSaved,
     };
 
-    if (out.expiredDate) {
-      out.expiredDate = formatDateOnlyUTC(new Date(out.expiredDate)); // UTC-safe
-    }
     out.jobPosted = daysAgo(out.createdAt);
 
     return res.status(200).json({
