@@ -711,6 +711,7 @@ exports.getAllJobPosts = async (req, res) => {
     }
 
 
+   
 
 
     // ----- query params -----
@@ -721,6 +722,7 @@ exports.getAllJobPosts = async (req, res) => {
     const categoryName = (req.query.category || "").trim();
     const industryName = (req.query.industryType || req.query.industry || "").trim();
 
+    
     const salaryType   = (req.query.salaryType || "").trim();
     const experience   = (req.query.experience || "").trim();
     const jobType      = (req.query.jobType || "").trim();
@@ -780,7 +782,6 @@ exports.getAllJobPosts = async (req, res) => {
     }
 
 
-
     let salaryTypeDoc = null;
     if (salaryType) {
       lookups.push(
@@ -789,13 +790,17 @@ exports.getAllJobPosts = async (req, res) => {
       );
     }
 
-    let experienceDoc = null;
-    if (experience) {
-      lookups.push(
-        Experience.findOne({ name: { $regex: `^${escapeRegex(experience)}$`, $options: "i" }, isDeleted: false })
-          .then(doc => { experienceDoc = doc; })
-      );
-    }
+   let experienceDoc = null;
+if (experience) {
+  lookups.push(
+    ExperienceRange.findOne({
+      name: { $regex: `^${escapeRegex(experience)}$`, $options: "i" },
+      isDeleted: false
+    }).then(doc => { experienceDoc = doc; })
+  );
+}
+
+
 
     let jobTypeDoc = null;
     if (jobType) {
@@ -862,8 +867,9 @@ exports.getAllJobPosts = async (req, res) => {
       .populate({ path: "salaryType",   select: "name" })
       .populate({ path: "jobType",      select: "name" })
       .populate({ path: "experience",   select: "name" })
-     
+    
       .populate({ path: "workingShift", select: "name" })
+   
       .populate({ path: "state",        select: "state" })
       // .populate({ path: "skills",       select: "skill" }) // skills are strings, not refs
       .sort({ createdAt: -1 })
@@ -932,9 +938,9 @@ exports.getAllJobPosts = async (req, res) => {
         salaryType:   p.salaryType?.name ?? null,
         jobType:      p.jobType?.name ?? null,
         experience:   p.experience?.name ?? null,
-     
+      
         workingShift: p.workingShift?.name ?? null,
-        jobProfile: p.jobProfile ?? null,
+       jobProfile: p.jobProfile ?? null,
         state:        p.state?.state ?? null,
         city:         p.city ?? null,
 
@@ -953,6 +959,9 @@ exports.getAllJobPosts = async (req, res) => {
         // ✅ live-calculated counts
         appliedCandidates:  appCountByPost.get(idStr) || 0,
         applicationsPending: pendingByPost.get(idStr) || 0,
+
+        // 2. MAPPING: Add adminAprrovalJobs to the response object
+adminAprrovalJobs: p.adminAprrovalJobs ?? null,
 
         status:          p.status,
         isAdminApproved: !!p.isAdminApproved,
