@@ -18,7 +18,7 @@ const SalaryType       = require("../models/AdminSalaryType");
 const JobType          = require("../models/AdminJobType");
 const ExperienceRange  = require("../models/AdminExperienceRange");
 const WorkingShift     = require("../models/AdminWorkingShift");
-
+const Payment = require("../models/payment");
 
 
 const fs = require("fs");
@@ -2180,4 +2180,98 @@ exports.getTopIndustryTypes = async (req, res) => {
     });
   }
 };
+
+
+//job-seeker analytics
+
+
+exports.getAnalytics = async (req, res) => {
+  try {
+    const userId = req.user.userId;  // job seeker ID
+
+    // 1️⃣ Get all job applications made by this job seeker
+    const applications = await JobApplication.find({ userId }).select("_id");
+
+    if (applications.length === 0) {
+      return res.status(200).json({
+        status: true,
+        message: "Analytics fetched successfully",
+        data: {
+          totalCompletedJobs: 0,
+          totalHoursWorked: 0,
+          totalEarnings: 0,
+          jobCompletion: "0%",
+        },
+      });
+    }
+
+    const jobApplicationIds = applications.map(app => app._id);
+
+    // 2️⃣ Get all APPROVED tasks for user’s job applications
+    const approvedTasks = await Task.find({
+      employerApprovedTask: "Approved",
+      jobApplicationId: { $in: jobApplicationIds }
+    });
+
+    const totalCompletedJobs = approvedTasks.length;
+
+    // 3️⃣ Total Hours Worked
+    let totalHoursWorked = 0;
+
+    approvedTasks.forEach(task => {
+      if (task.hoursWorked && task.hoursWorked > 0) {
+        totalHoursWorked += task.hoursWorked;
+      } else if (task.startTime && task.endTime) {
+        const diffMs = new Date(task.endTime) - new Date(task.startTime);
+        totalHoursWorked += diffMs / (1000 * 60 * 60);
+      }
+    });
+
+    // 4️⃣ Earnings from Payment Model
+    const payments = await Payment.find({
+      jobApplicationId: { $in: jobApplicationIds },
+      isDeleted: false
+    });
+
+    let totalEarnings = 0;
+    payments.forEach(payment => {
+      totalEarnings += payment.totalAmount || 0;
+    });
+
+    // 5️⃣ Job Completion % (Paid Tasks / Completed Tasks)
+    const paidTasks = approvedTasks.filter(t => t.isPaid);
+    let jobCompletion = 0;
+
+    if (totalCompletedJobs > 0) {
+      jobCompletion = Math.round((paidTasks.length / totalCompletedJobs) * 100);
+    }
+
+    // 6️⃣ Response
+    return res.status(200).json({
+      status: true,
+      message: "Analytics fetched successfully",
+      data: {
+        totalCompletedJobs,
+        totalHoursWorked,
+        totalEarnings,
+        jobCompletion: `${jobCompletion}%`,
+      },
+    });
+
+  } catch (error) {
+    console.error("Analytics error:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to fetch analytics",
+      error: error.message,
+    });
+  }
+};
+
+
+
+
+
+
+
 

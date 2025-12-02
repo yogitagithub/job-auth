@@ -1072,15 +1072,6 @@ exports.getSeekerApplicantDetails = async (req, res) => {
 
 
 
-const formatDateUTC = (date) => {
-  if (!date) return null;
-  const d = new Date(date);
-  return `${String(d.getUTCDate()).padStart(2,"0")}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${d.getUTCFullYear()}`;
-};
-
-
-
-
 
 
 
@@ -1138,7 +1129,7 @@ exports.getMyApplications = async (req, res) => {
            select: [
          "jobTitle","state","city","category","industryType","jobDescription","salaryType",
           "displayPhoneNumber","displayEmail","jobType","minSalary","maxSalary","companyId",
-          "experience","otherField","workingShift","jobProfile", "hourlyRate","expiredDate",
+          "experience","workingShift","jobProfile", "hourlyRate",
           "createdAt"
         ].join(" "),
         // select: "jobTitle state companyId createdAt",
@@ -1154,7 +1145,6 @@ exports.getMyApplications = async (req, res) => {
 
 
             { path: "experience",   select: "range label name" },
-          { path: "otherField",   select: "name label otherField" },
           { path: "workingShift", select: "name shift workingShift" },
           { path: "jobProfile",   select: "name jobProfile" },
           
@@ -1178,7 +1168,6 @@ exports.getMyApplications = async (req, res) => {
 
     
       const experienceName   = jp?.experience?.range ?? jp?.experience?.label ?? jp?.experience?.name ?? null;
-      const otherFieldName   = jp?.otherField?.name ?? jp?.otherField?.label ?? jp?.otherField?.otherField ?? null;
       const workingShiftName = jp?.workingShift?.name ?? jp?.workingShift?.shift ?? jp?.workingShift?.workingShift ?? null;
       const jobProfileName   = jp?.jobProfile?.name ?? jp?.jobProfile?.jobProfile ?? null;
 
@@ -1213,12 +1202,9 @@ exports.getMyApplications = async (req, res) => {
 
 
           experience:   experienceName,
-        otherField:   otherFieldName,
         workingShift: workingShiftName,
         jobProfile:   jobProfileName,
         hourlyRate:   jp?.hourlyRate ?? null,
-       expiredDate:  formatDateUTC(jp?.expiredDate),
-        
        
        
       };
