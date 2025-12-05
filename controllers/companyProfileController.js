@@ -1115,6 +1115,75 @@ exports.getCompanyDashboard = async (req, res) => {
 };
 
 
+//company analytics
+exports.getCompanyAnalytics = async (req, res) => {
+  try {
+    const { userId, role } = req.user || {};
+
+    // Allow only employer
+    if (role !== "employer") {
+      return res.status(403).json({
+        status: false,
+        message: "Access denied. Only employers can view analytics.",
+      });
+    }
+
+    // ----- 1) Posted jobs -----
+    const basePostFilter = { userId, isDeleted: false };
+
+    const [postedJobsCount, employerPosts] = await Promise.all([
+      JobPost.countDocuments(basePostFilter),
+      JobPost.find(basePostFilter).select("_id").lean(),
+    ]);
+
+    // ----- 2) Candidates applied -----
+    let candidatesAppliedCount = 0;
+
+    if (employerPosts.length) {
+      const jobPostIds = employerPosts.map((p) => p._id);
+
+      candidatesAppliedCount = await JobApplication.countDocuments({
+        jobPostId: { $in: jobPostIds },
+        status: "Applied",
+      });
+    }
+
+    // ----- 3) Profile views (length only) -----
+    const company = await CompanyProfile.findOne({
+      userId,
+      isDeleted: false,
+    })
+      .select("profileViews")
+      .lean();
+
+    let profileViewsTotal = 0;
+
+    if (company && Array.isArray(company.profileViews)) {
+      profileViewsTotal = company.profileViews.length;
+    }
+
+    // ---- Final JSON response ----
+    return res.status(200).json({
+      status: true,
+      message: "Analytics fetched successfully",
+      data: {
+        postedJobs: postedJobsCount,
+        candidatesApplied: candidatesAppliedCount,
+        profileViews: profileViewsTotal,
+      },
+    });
+
+  } catch (err) {
+    console.error("getCompanyAnalytics error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Server error while fetching analytics.",
+    });
+  }
+};
+
+
+
 
 
 
