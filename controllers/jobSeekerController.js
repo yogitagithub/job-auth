@@ -2197,8 +2197,8 @@ exports.getAnalytics = async (req, res) => {
         status: true,
         message: "Analytics fetched successfully",
         data: {
-          totalCompletedJobs: 0,
-          totalHoursWorked: 0,
+          CompletedJobs: 0,
+          HoursWorked: 0,
           totalEarnings: 0,
           jobCompletion: "0%",
         },
@@ -2213,17 +2213,17 @@ exports.getAnalytics = async (req, res) => {
       jobApplicationId: { $in: jobApplicationIds }
     });
 
-    const totalCompletedJobs = approvedTasks.length;
+    const CompletedJobs = approvedTasks.length;
 
     // 3️⃣ Total Hours Worked
-    let totalHoursWorked = 0;
+    let HoursWorked = 0;
 
     approvedTasks.forEach(task => {
       if (task.hoursWorked && task.hoursWorked > 0) {
-        totalHoursWorked += task.hoursWorked;
+        HoursWorked += task.hoursWorked;
       } else if (task.startTime && task.endTime) {
         const diffMs = new Date(task.endTime) - new Date(task.startTime);
-        totalHoursWorked += diffMs / (1000 * 60 * 60);
+        HoursWorked += diffMs / (1000 * 60 * 60);
       }
     });
 
@@ -2242,8 +2242,8 @@ exports.getAnalytics = async (req, res) => {
     const paidTasks = approvedTasks.filter(t => t.isPaid);
     let jobCompletion = 0;
 
-    if (totalCompletedJobs > 0) {
-      jobCompletion = Math.round((paidTasks.length / totalCompletedJobs) * 100);
+    if (CompletedJobs > 0) {
+      jobCompletion = Math.round((paidTasks.length / CompletedJobs) * 100);
     }
 
     // 6️⃣ Response
@@ -2251,8 +2251,8 @@ exports.getAnalytics = async (req, res) => {
       status: true,
       message: "Analytics fetched successfully",
       data: {
-        totalCompletedJobs,
-        totalHoursWorked,
+        CompletedJobs,
+       HoursWorked,
         totalEarnings,
         jobCompletion: `${jobCompletion}%`,
       },
