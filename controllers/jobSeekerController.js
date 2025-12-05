@@ -1816,69 +1816,79 @@ exports.getJobSeekerDashboard = async (req, res) => {
       });
     }
 
-    // Aggregate approved tasks for this job seeker
-    const pipeline = [
-      { $match: { employerApprovedTask: "Approved" } },
+    // 1️⃣ Get all job applications of seeker
+    const applications = await JobApplication.find({ userId }).select("_id");
 
-      // Join -> JobApplication (to find tasks belonging to this seeker)
-      {
-        $lookup: {
-          from: "jobapplications",
-          let: { jaId: "$jobApplicationId" },
-          pipeline: [
-            { $match: { $expr: { $eq: ["$_id", "$$jaId"] } } },
-            { $project: { _id: 1, userId: 1, jobPostId: 1 } },
-          ],
-          as: "jobApp",
-        },
-      },
-      { $unwind: "$jobApp" },
-      { $match: { "jobApp.userId": new mongoose.Types.ObjectId(userId) } },
+    if (applications.length === 0) {
+      const dashBoard = [
+        { id: "hoursWorked",   label: "Hours worked",   value: "0", icon: "timer" },
+        { id: "totalEarnings", label: "Total Earnings", value: "0", icon: "rupee" },
+        { id: "completedJobs", label: "Completed jobs", value: "0", icon: "briefcase" },
+      ];
 
-      // Join -> JobPost (to get hourlyRate)
-      {
-        $lookup: {
-          from: "jobposts",
-          localField: "jobApp.jobPostId",
-          foreignField: "_id",
-          as: "jobPost",
-        },
-      },
-      { $unwind: "$jobPost" },
+      return res.status(200).json({
+        status: true,
+        message: "Dashboard data fetched successfully",
+        data: { dashBoard },
+      });
+    }
 
-      // Compute earning per task
-      {
-        $addFields: {
-          earning: {
-            $multiply: [
-              { $ifNull: ["$workedHours", 0] },
-              { $ifNull: ["$jobPost.hourlyRate", 0] },
-            ],
-          },
-        },
-      },
+    const jobApplicationIds = applications.map(app => app._id);
 
-      // Totals
-      {
-        $group: {
-          _id: null,
-          totalHours: { $sum: { $ifNull: ["$workedHours", 0] } },
-          totalEarnings: { $sum: "$earning" },
-          completedJobs: { $sum: 1 }, // or use $addToSet of jobPostId if you want distinct jobs
-        },
-      },
-    ];
+    // 2️⃣ Approved tasks
+    const approvedTasks = await Task.find({
+      employerApprovedTask: "Approved",
+      jobApplicationId: { $in: jobApplicationIds }
+    });
 
-    const agg = await Task.aggregate(pipeline);
-    const totals = agg[0] || { totalHours: 0, totalEarnings: 0, completedJobs: 0 };
+    const CompletedJobs = approvedTasks.length;
 
-    // round to 2 decimals, send as strings (no units)
+    // 3️⃣ Calculate Hours Worked
+    let HoursWorked = 0;
+
+    approvedTasks.forEach(task => {
+      if (task.hoursWorked && task.hoursWorked > 0) {
+        HoursWorked += task.hoursWorked;
+      } else if (task.startTime && task.endTime) {
+        const diffMs = new Date(task.endTime) - new Date(task.startTime);
+        HoursWorked += diffMs / (1000 * 60 * 60);
+      }
+    });
+
+    // 4️⃣ Calculate Earnings
+    const payments = await Payment.find({
+      jobApplicationId: { $in: jobApplicationIds },
+      isDeleted: false
+    });
+
+    let totalEarnings = 0;
+    payments.forEach(payment => {
+      totalEarnings += payment.totalAmount || 0;
+    });
+
+    // Round values
     const round2 = (n) => (Math.round((n || 0) * 100) / 100).toString();
 
+    // 5️⃣ Build dashboard response EXACT FORMAT
     const dashBoard = [
-      { id: "hoursWorked",   label: "Hours worked",   value: round2(totals.totalHours),   icon: "timer" },
-      { id: "totalEarnings", label: "Total Earnings", value: round2(totals.totalEarnings), icon: "rupee" },
-      { id: "completedJobs", label: "Completed jobs", value: "0",                         icon: "briefcase" },
+      {
+        id: "hoursWorked",
+        label: "Hours worked",
+        value: round2(HoursWorked),
+        icon: "timer",
+      },
+      {
+        id: "totalEarnings",
+        label: "Total Earnings",
+        value: round2(totalEarnings),
+        icon: "rupee",
+      },
+      {
+        id: "completedJobs",
+        label: "Completed jobs",
+        value: CompletedJobs.toString(),
+        icon: "briefcase",
+      }
     ];
 
     return res.status(200).json({
@@ -1886,10 +1896,15 @@ exports.getJobSeekerDashboard = async (req, res) => {
       message: "Dashboard data fetched successfully",
       data: { dashBoard },
     });
+
   } catch (err) {
-    return res.status(500).json({ status: false, message: err?.message || "Server error." });
+    return res.status(500).json({
+      status: false,
+      message: err?.message || "Server error."
+    });
   }
 };
+
 
 
 //dashboard of job seeker (website)
@@ -1903,76 +1918,72 @@ exports.getSeekerDashboardWeb = async (req, res) => {
       });
     }
 
-    const pipeline = [
-      { $match: { employerApprovedTask: "Approved" } },
+    // 1️⃣ Get all job applications of seeker
+    const applications = await JobApplication.find({ userId }).select("_id");
 
-      // Link to the job application, then filter for this seeker
-      {
-        $lookup: {
-          from: "jobapplications",
-          let: { jaId: "$jobApplicationId" },
-          pipeline: [
-            { $match: { $expr: { $eq: ["$_id", "$$jaId"] } } },
-            { $project: { _id: 1, userId: 1, jobPostId: 1 } },
-          ],
-          as: "jobApp",
+    if (applications.length === 0) {
+      return res.status(200).json({
+        status: true,
+        message: "Dashboard data fetched successfully",
+        data: {
+          HoursWorked: 0,
+          totalEarnings: 0,
+          CompletedJobs: 0
         },
-      },
-      { $unwind: "$jobApp" },
-      { $match: { "jobApp.userId": new mongoose.Types.ObjectId(userId) } },
+      });
+    }
 
-      // Get hourlyRate from job post
-      {
-        $lookup: {
-          from: "jobposts",
-          localField: "jobApp.jobPostId",
-          foreignField: "_id",
-          as: "jobPost",
-        },
-      },
-      { $unwind: "$jobPost" },
+    const jobApplicationIds = applications.map(app => app._id);
 
-      // earning = workedHours * hourlyRate
-      {
-        $addFields: {
-          earning: {
-            $multiply: [
-              { $ifNull: ["$workedHours", 0] },
-              { $ifNull: ["$jobPost.hourlyRate", 0] },
-            ],
-          },
-        },
-      },
+    // 2️⃣ Get all approved tasks for this seeker
+    const approvedTasks = await Task.find({
+      employerApprovedTask: "Approved",
+      jobApplicationId: { $in: jobApplicationIds }
+    });
 
-      // Totals for this seeker
-      {
-        $group: {
-          _id: null,
-          totalHours: { $sum: { $ifNull: ["$workedHours", 0] } },
-          totalEarnings: { $sum: "$earning" },
-          completedJobs: { $sum: 1 }, // change to {$addToSet: "$jobApp.jobPostId"} & use {$size:"$completedJobs"} if you want distinct jobs
-        },
-      },
-    ];
+    const CompletedJobs = approvedTasks.length;
 
-    const agg = await Task.aggregate(pipeline);
-    const totals = agg[0] || { totalHours: 0, totalEarnings: 0, completedJobs: 0 };
+    // 3️⃣ Calculate Hours Worked
+    let HoursWorked = 0;
 
-    const round2 = (n) => Math.round((n || 0) * 100) / 100;
+    approvedTasks.forEach(task => {
+      if (task.hoursWorked && task.hoursWorked > 0) {
+        HoursWorked += task.hoursWorked;
+      } else if (task.startTime && task.endTime) {
+        const diffMs = new Date(task.endTime) - new Date(task.startTime);
+        HoursWorked += diffMs / (1000 * 60 * 60);
+      }
+    });
+
+    // 4️⃣ Calculate total earnings from payments
+    const payments = await Payment.find({
+      jobApplicationId: { $in: jobApplicationIds },
+      isDeleted: false
+    });
+
+    let totalEarnings = 0;
+    payments.forEach(payment => {
+      totalEarnings += payment.totalAmount || 0;
+    });
 
     return res.status(200).json({
       status: true,
       message: "Dashboard data fetched successfully",
       data: {
-        hoursWorked: round2(totals.totalHours),
-        totalEarnings: round2(totals.totalEarnings),
-        completedJobs: 0,
+        HoursWorked,
+        totalEarnings,
+        CompletedJobs
       },
     });
+
   } catch (err) {
-    return res.status(500).json({ status: false, message: err?.message || "Server error." });
+    return res.status(500).json({
+      status: false,
+      message: err?.message || "Server error."
+    });
   }
 };
+
 
 
 
@@ -2183,8 +2194,6 @@ exports.getTopIndustryTypes = async (req, res) => {
 
 
 //job-seeker analytics
-
-
 exports.getAnalytics = async (req, res) => {
   try {
     const userId = req.user.userId;  // job seeker ID
