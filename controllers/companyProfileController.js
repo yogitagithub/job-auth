@@ -969,7 +969,6 @@ exports.getCompanyDashboardWeb = async (req, res) => {
   try {
     const { userId, role } = req.user || {};
 
-    // ACL — only employer can access
     if (role !== "employer") {
       return res.status(403).json({
         status: false,
@@ -977,51 +976,47 @@ exports.getCompanyDashboardWeb = async (req, res) => {
       });
     }
 
-    // ----- 1) Posted jobs (exclude soft-deleted) -----
+    // 1) Posted Jobs
     const basePostFilter = { userId, isDeleted: false };
 
-    // Get count and ids in parallel
     const [postedJobsCount, employerPosts] = await Promise.all([
       JobPost.countDocuments(basePostFilter),
       JobPost.find(basePostFilter).select("_id").lean(),
     ]);
 
-    // ----- 2) Candidates applied (only for NON-deleted posts) -----
+    // 2) Candidates Applied
     let candidatesAppliedCount = 0;
     if (employerPosts.length) {
       const jobPostIds = employerPosts.map((p) => p._id);
+
       candidatesAppliedCount = await JobApplication.countDocuments({
         jobPostId: { $in: jobPostIds },
-        status: "Applied", // exclude Withdrawn
+        status: "Applied",
       });
     }
 
-    // ----- 3) Profile views -----
-    // Prefer the counter; fall back to summing viewCount if needed.
-    const company = await CompanyProfile.findOne({ userId, isDeleted: false })
-      .select("totalViews profileViews")
+    // 3) Profile Views (your required logic)
+    const company = await CompanyProfile.findOne({
+      userId,
+      isDeleted: false,
+    })
+      .select("profileViews")
       .lean();
 
     let profileViewsTotal = 0;
-    if (company) {
-      if (typeof company.totalViews === "number") {
-        profileViewsTotal = company.totalViews;
-      } else if (Array.isArray(company.profileViews)) {
-        profileViewsTotal = company.profileViews.reduce(
-          (sum, v) => sum + (v.viewCount || 0),
-          0
-        );
-      }
+
+    if (company && Array.isArray(company.profileViews)) {
+      profileViewsTotal = company.profileViews.length; // <<< FIXED
     }
 
-    // ----- Response (flattened) -----
+    // Response
     return res.status(200).json({
       status: true,
       message: "Employer dashboard metrics fetched successfully.",
       data: {
-        postedJobs: postedJobsCount,                 // only non-deleted
-        candidatesApplied: candidatesAppliedCount,   // only from non-deleted posts
-        profileViews: profileViewsTotal,             // total view events
+        postedJobs: postedJobsCount,
+        candidatesApplied: candidatesAppliedCount,
+        profileViews: profileViewsTotal, // <<< NOW CORRECT
       },
     });
   } catch (err) {
@@ -1032,6 +1027,7 @@ exports.getCompanyDashboardWeb = async (req, res) => {
     });
   }
 };
+
 
 
 //company dashboard for mobile
@@ -1056,38 +1052,51 @@ exports.getCompanyDashboard = async (req, res) => {
       JobPost.find(basePostFilter).select("_id").lean(),
     ]);
 
-    // ----- 2) Candidates applied (only for NON-deleted posts) -----
+    // ----- 2) Candidates applied -----
     let candidatesAppliedCount = 0;
     if (employerPosts.length) {
       const jobPostIds = employerPosts.map((p) => p._id);
+
       candidatesAppliedCount = await JobApplication.countDocuments({
         jobPostId: { $in: jobPostIds },
-        status: "Applied", // exclude Withdrawn
+        status: "Applied",
       });
     }
 
-    // ----- 3) Profile views -----
-    const company = await CompanyProfile.findOne({ userId, isDeleted: false })
-      .select("totalViews profileViews")
+    // ----- 3) Profile views (FIXED — Return only profileViews.length) -----
+    const company = await CompanyProfile.findOne({
+      userId,
+      isDeleted: false,
+    })
+      .select("profileViews")
       .lean();
 
     let profileViewsTotal = 0;
-    if (company) {
-      if (typeof company.totalViews === "number") {
-        profileViewsTotal = company.totalViews;
-      } else if (Array.isArray(company.profileViews)) {
-        profileViewsTotal = company.profileViews.reduce(
-          (sum, v) => sum + (v.viewCount || 0),
-          0
-        );
-      }
+
+    if (company && Array.isArray(company.profileViews)) {
+      profileViewsTotal = company.profileViews.length;
     }
 
-    // ---- Shape the response same as job seeker dashboard ----
+    // ---- Final dashboard response ----
     const dashBoard = [
-      { id: "postedJobs", label: "Posted Jobs", value: postedJobsCount.toString(), icon: "briefcase" },
-      { id: "candidatesApplied", label: "Candidates Applied", value: candidatesAppliedCount.toString(), icon: "users" },
-      { id: "profileViews", label: "Profile Views", value: profileViewsTotal.toString(), icon: "eye" },
+      {
+        id: "postedJobs",
+        label: "Posted Jobs",
+        value: postedJobsCount.toString(),
+        icon: "briefcase",
+      },
+      {
+        id: "candidatesApplied",
+        label: "Candidates Applied",
+        value: candidatesAppliedCount.toString(),
+        icon: "users",
+      },
+      {
+        id: "profileViews",
+        label: "Profile Views",
+        value: profileViewsTotal.toString(),
+        icon: "eye",
+      },
     ];
 
     return res.status(200).json({
@@ -1104,6 +1113,7 @@ exports.getCompanyDashboard = async (req, res) => {
     });
   }
 };
+
 
 
 
