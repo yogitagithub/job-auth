@@ -65,5 +65,4 @@ router.get("/jobSeekerIndustry/:industryId", getJobSeekersByIndustry);
 
 
 
-
 module.exports = router;

@@ -14,6 +14,8 @@ const JobApplication = require("../models/JobApplication");
 const JobPost = require("../models/JobPost");
 const CompanyProfile = require("../models/CompanyProfile");
 
+const createNotification = require("../config/createNotification");
+
 const SalaryType       = require("../models/AdminSalaryType");
 const JobType          = require("../models/AdminJobType");
 const ExperienceRange  = require("../models/AdminExperienceRange");
@@ -778,13 +780,17 @@ exports.getAllJobSeekers = async (req, res) => {
      // 3. Handle Salary Type: Extract 'type' field
       const salaryTypeName = seeker.salaryType ? seeker.salaryType.name : null;
 
+
+
+
       // Return the new object structure
       return {
         ...seeker,
         state: stateName,
         industryType: industryName,
        salaryType: salaryTypeName,
-      };
+       CurrentSalary: seeker.CurrentSalary ? seeker.CurrentSalary : 0,
+           };
     });
 
     // --- End Data Transformation ---
@@ -2276,7 +2282,6 @@ exports.getAnalytics = async (req, res) => {
     });
   }
 };
-
 
 
 

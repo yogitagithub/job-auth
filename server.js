@@ -14,6 +14,8 @@ const companyProfileRoutes = require("./routes/companyProfileRoutes");
 const jobSeekerProfileRoutes = require("./routes/jobSeekerProfileRoutes");
 const jobPostRoutes = require("./routes/jobPostRoutes");
 
+const notificationRoutes = require("./routes/notificationRoutes");
+
 const educationRoutes = require("./routes/educationRoutes");
 const workRoutes = require("./routes/workExpRoutes");
 const resumeRoutes = require("./routes/resumeRoutes");
@@ -49,6 +51,9 @@ app.use('/api/auth', userRoutes);
 app.use('/api/auth', companyProfileRoutes);
 app.use('/api/auth', jobSeekerProfileRoutes);
 app.use('/api/auth', jobPostRoutes);
+
+
+app.use('/api/auth', notificationRoutes);
 
 app.use('/api/auth', educationRoutes);
 app.use('/api/auth', workRoutes);

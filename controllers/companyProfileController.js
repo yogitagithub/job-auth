@@ -2,6 +2,9 @@ const CompanyProfile = require("../models/CompanyProfile");
 const IndustryType = require("../models/AdminIndustry");
 const JobSeekerProfile  = require("../models/JobSeekerProfile");
 const StateCity = require("../models/StateCity");
+const Notification = require("../models/Notification");
+
+const createNotification = require("../config/createNotification");
 
 
 const JobPost = require("../models/JobPost");
@@ -774,10 +777,11 @@ exports.recordCompanyProfileView = async (req, res) => {
       return res.status(400).json({ status: false, message: "Invalid companyId." });
     }
 
-    // NEW: pull the caller's JobSeekerProfile _id and name
+    // Fetch job seeker profile
     const seeker = await JobSeekerProfile.findOne({ userId })
       .select("_id name")
       .lean();
+
     if (!seeker) {
       return res.status(404).json({
         status: false,
@@ -785,23 +789,23 @@ exports.recordCompanyProfileView = async (req, res) => {
       });
     }
 
-    // NEW: get company name + isDeleted up front (and reuse for response)
+    // Fetch company with its owner userId
     const company = await CompanyProfile.findById(companyId)
-      .select("_id companyName isDeleted")
+      .select("_id companyName isDeleted userId")
       .lean();
 
     if (!company) {
       return res.status(404).json({ status: false, message: "Company profile not found." });
     }
+
     if (company.isDeleted) {
       return res.status(410).json({ status: false, message: "This company profile has been deleted." });
     }
 
     const now = new Date();
 
-    // helper to format dd-mm-yyyy (UTC; switch to 'Asia/Kolkata' if you prefer IST)
+    // Format date
     const formatDDMMYYYY = (d) => {
-      // Using en-GB gives dd/mm/yyyy; convert slashes to dashes
       return new Intl.DateTimeFormat("en-GB", {
         day: "2-digit",
         month: "2-digit",
@@ -812,7 +816,7 @@ exports.recordCompanyProfileView = async (req, res) => {
         .replace(/\//g, "-");
     };
 
-    // 1) try to update existing subdoc (positional $)
+    // Try to update existing record
     const updExisting = await CompanyProfile.updateOne(
       { _id: companyId, isDeleted: false, "profileViews.jobSeekerId": seeker._id },
       {
@@ -823,12 +827,23 @@ exports.recordCompanyProfileView = async (req, res) => {
 
     const responseData = {
       companyId,
-      companyName: company.companyName,             // NEW
+      companyName: company.companyName,
       jobSeekerProfileId: seeker._id,
-      jobSeekerName: seeker.name || null,           // NEW
-      lastViewedAt: formatDDMMYYYY(now),            // NEW (formatted)
+      jobSeekerName: seeker.name || null,
+      lastViewedAt: formatDDMMYYYY(now),
     };
 
+    // ------------------------------------------
+    // 🚀 SEND NOTIFICATION TO EMPLOYER
+    // ------------------------------------------
+    await createNotification(
+      company.userId, // employer's userId
+      "Your company profile was viewed",
+      `${seeker.name || "A job seeker"} viewed your company profile.`,
+      "PROFILE_VIEW"
+    );
+
+    // If already viewed before
     if (updExisting.modifiedCount === 1) {
       return res.status(200).json({
         status: true,
@@ -837,7 +852,7 @@ exports.recordCompanyProfileView = async (req, res) => {
       });
     }
 
-    // 2) not present -> push new viewer entry
+    // Add new viewer entry
     const pushNew = await CompanyProfile.updateOne(
       { _id: companyId, isDeleted: false },
       {
@@ -863,10 +878,12 @@ exports.recordCompanyProfileView = async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ status: false, message: "Server error while recording profile view." });
+    return res.status(500).json({
+      status: false,
+      message: "Server error while recording profile view.",
+    });
   }
 };
-
 
 
 
@@ -1181,6 +1198,10 @@ exports.getCompanyAnalytics = async (req, res) => {
     });
   }
 };
+
+
+
+
 
 
 
