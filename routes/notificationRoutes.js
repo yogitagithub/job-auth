@@ -14,4 +14,6 @@ router.put("/markRead/:notificationId", verifyToken, markAsRead);
 router.put("/markAllRead", verifyToken, markAllRead);
 
 
+
+
 module.exports = router;

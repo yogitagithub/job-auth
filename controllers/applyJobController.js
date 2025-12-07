@@ -9,6 +9,10 @@ const JobProfile = require("../models/AdminJobProfile");
 const IndustryType = require("../models/AdminIndustry");
 const StateCity = require("../models/StateCity");
 
+const CompanyProfile = require("../models/CompanyProfile");
+const Notification = require("../models/Notification");
+
+
 
 const mongoose = require("mongoose");
 
@@ -976,7 +980,7 @@ exports.getSeekerApplicantDetails = async (req, res) => {
 
     // ---- seeker profile (must be active) ----
     const seeker = await JobSeekerProfile.findById(jobSeekerId)
-      .select("name phoneNumber email state city image jobProfile dateOfBirth gender panCardNumber address alternatePhoneNumber pincode industryType isDeleted")
+      .select("userId name phoneNumber email state city image jobProfile dateOfBirth gender panCardNumber address alternatePhoneNumber pincode industryType isDeleted")
       .populate([
         { path: "state", select: "state" },
         { path: "jobProfile", select: "jobProfile name" },
@@ -988,6 +992,48 @@ exports.getSeekerApplicantDetails = async (req, res) => {
     if (seeker.isDeleted) {
       return res.status(409).json({ status: false, message: "This job seeker profile is disabled." });
     }
+
+
+     // ---- EMPLOYER VIEW TRACKING (profileViews update) ----
+    const employerProfile = await CompanyProfile.findOne({ userId });
+
+    if (employerProfile) {
+      const profileViewEntry = employerProfile.profileViews.find(
+        (pv) => pv.jobSeekerId.toString() === jobSeekerId
+      );
+
+      if (profileViewEntry) {
+        profileViewEntry.viewCount += 1;
+        profileViewEntry.lastViewedAt = new Date();
+      } else {
+        employerProfile.profileViews.push({
+          jobSeekerId,
+          viewCount: 1,
+          lastViewedAt: new Date()
+        });
+      }
+
+      if (!employerProfile.totalViews) employerProfile.totalViews = 0;
+      employerProfile.totalViews += 1;
+
+      await employerProfile.save();
+    }
+
+   // ---- NOTIFICATION: Employer viewed Job Seeker profile ----
+if (role === "employer" && employerProfile) {
+  await Notification.create({
+    userId: seeker.userId,  // sending notification TO job seeker
+    type: "PROFILE_VIEW",
+    title: "Your profile was viewed",
+    message: `${employerProfile.contactPersonName} from ${employerProfile.companyName} viewed your profile.`,
+    meta: {
+      employerId: userId,
+      employerName: employerProfile.contactPersonName,
+      companyName: employerProfile.companyName,
+    }
+  });
+}
+
 
     // ---- related sections ----
     const [educations, experiences, jsSkills, resumes] = await Promise.all([
@@ -1040,6 +1086,9 @@ exports.getSeekerApplicantDetails = async (req, res) => {
     }, []);
     const normalizeResume = (r) => ({ fileName: r.fileName ?? null });
 
+
+
+    
     // ---- response (no latestApplication / appliedToJobPostIds) ----
     const data = {
       jobSeekerId: jobSeekerId.toString(),
