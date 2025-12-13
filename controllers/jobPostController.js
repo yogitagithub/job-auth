@@ -66,7 +66,7 @@ const asNullableNumber = (v) =>
   v === undefined || v === null || String(v).trim() === "" ? null : Number(v);
 
 
- exports.createJobPost = async (req, res) => {
+exports.createJobPost = async (req, res) => {
   try {
     const userId = req.user.userId;
 
@@ -76,6 +76,23 @@ const asNullableNumber = (v) =>
       return res.status(400).json({
         status: false,
         message: "Company profile not found for this user. Please create a company profile first."
+      });
+    }
+
+
+     // 2️⃣ CHECK FREE JOB POST LIMIT
+    const FREE_JOB_LIMIT = 10;
+
+    const jobPostCount = await JobPost.countDocuments({
+      userId,
+      isDeleted: { $ne: true },
+    });
+
+    if (jobPostCount >= FREE_JOB_LIMIT) {
+      return res.status(200).json({
+        status: true,
+        message:
+          "You have reached your free job post limit. Please take a subscription plan. Contact: 1234569878",
       });
     }
 
