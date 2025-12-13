@@ -17,7 +17,8 @@ getCurrentSalary, deleteCurrentSalary, updateCurrentSalary, createWorkingShift,
 updateWorkingShift, deleteWorkingShift, getWorkingShift, getJobSeekerProfilesbyId, 
 createSkill, getSkill, updateSkill, deleteSkill, getJobPostsByCategoryPublic,
 createAccountType, updateAccountType, deleteAccountType, getAccountTypes
-, adminApprovalGiven, jobList, createCity, getCities, updateCity, deleteCity } = require('../controllers/adminController');
+, adminApprovalGiven, jobList, createCity, getCities, updateCity, deleteCity,
+createSubscription, getSubscription, updateSubscription, deleteSubscription } = require('../controllers/adminController');
 
 const { verifyToken, verifyAdmin, verifyEmployerOnly, verifyJobSeekerOnly } = require('../middleware/authMiddleware');
 const { adminApproveJobPost, getJobList, updateJobListById, adminRecommendJobPost } = require('../controllers/jobPostController');
@@ -148,6 +149,12 @@ router.put('/job-seeker-top', verifyToken, verifyAdmin, adminTopJobSeeker);
 //admin will give approval to job post which are approved or not
 router.put('/approvalGiven', verifyToken, verifyAdmin, adminApprovalGiven);
 
+
+//subscription routes
+router.post('/createSubscription', verifyToken, verifyAdmin, createSubscription);
+router.get('/getSubscription', verifyToken, verifyAdmin, getSubscription);
+router.put('/updateSubscription/:id', verifyToken, verifyAdmin, updateSubscription);
+router.delete('/deleteSubscription/:id', verifyToken, verifyAdmin, deleteSubscription);
 
 
 

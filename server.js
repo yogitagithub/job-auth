@@ -5,7 +5,7 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const connectDB = require("./config/db");
-const cron = require("./config/cron");
+// const cron = require("./config/cron");
 const multer = require("multer");
 
 
@@ -34,7 +34,7 @@ const adminRoutes = require("./routes/adminRoutes");
 
 
 
-connectDB();
+// connectDB();
 
 const app = express();
 app.use(cors());
@@ -87,9 +87,28 @@ app.use((err, req, res, next) => {
 });
 
 
-const PORT = process.env.PORT || 8001;
-app.listen(PORT, () => {
-  console.log(
-    `Server Running on port no ${PORT}`
-  );
-});
+// const PORT = process.env.PORT || 8001;
+// app.listen(PORT, () => {
+//   console.log(
+//     `Server Running on port no ${PORT}`
+//   );
+// });
+
+
+// ---- START SERVER SAFELY ----
+const startServer = async () => {
+  try {
+    await connectDB();
+    console.log("MongoDB connected");
+
+    const PORT = process.env.PORT || 8001;
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error("Server startup failed:", error);
+    process.exit(1);
+  }
+};
+
+startServer();

@@ -13,6 +13,7 @@ const AccountType = require("../models/AdminAccountType");
 const OtherField = require("../models/AdminOtherField");
 const CurrentSalary = require("../models/AdminCurrentSalary");
 const WorkingShift = require("../models/AdminWorkingShift");
+const Subscription = require("../models/Subscription");
 
 const Skill = require("../models/Skills");
 
@@ -5090,6 +5091,257 @@ exports.deleteCity = async (req, res) => {
     });
   }
 };
+
+
+//subscription part
+
+exports.createSubscription = async (req, res) => {
+  try {
+    const { amount, subscriptionMonth, numberOfJobPost } = req.body;
+
+    // 🔒 Basic validations
+    if (
+      amount === undefined ||
+      subscriptionMonth === undefined ||
+      numberOfJobPost === undefined
+    ) {
+      return res.status(400).json({
+        status: false,
+        message: "amount, subscriptionMonth and numberOfJobPost are required.",
+      });
+    }
+
+    if (amount < 0 || subscriptionMonth < 1 || numberOfJobPost < 0) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid values provided.",
+      });
+    }
+
+    // ✅ Create subscription
+    const subscription = await Subscription.create({
+      amount,
+      subscriptionMonth,
+      numberOfJobPost,
+    });
+
+    return res.status(201).json({
+      status: true,
+      message: "Subscription created successfully.",
+      data: {
+        id: subscription._id,
+        amount: subscription.amount,
+        subscriptionMonth: subscription.subscriptionMonth,
+        numberOfJobPost: subscription.numberOfJobPost,
+        createdAt: subscription.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error("Create subscription error:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Internal server error.",
+    });
+  }
+};
+
+
+exports.getSubscription = async (req, res) => {
+  try {
+    let { page = 1, limit = 10 } = req.query;
+
+    page = parseInt(page);
+    limit = parseInt(limit);
+
+    if (page < 1 || limit < 1) {
+      return res.status(400).json({
+        status: false,
+        message: "page and limit must be greater than 0.",
+      });
+    }
+
+    const skip = (page - 1) * limit;
+
+    const filter = { isDeleted: false };
+
+    const [subscriptions, totalRecord] = await Promise.all([
+      Subscription.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .select("-__v -isDeleted"),
+
+      Subscription.countDocuments(filter),
+    ]);
+
+    const totalPages = Math.ceil(totalRecord / limit);
+
+    return res.status(200).json({
+      status: true,
+      message: "Subscriptions fetched successfully.",
+      totalRecord,
+      currentPage: page,
+      totalPages,
+      data: subscriptions,
+    });
+  } catch (error) {
+    console.error("getSubscription error:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Server error.",
+    });
+  }
+};
+
+
+
+exports.updateSubscription = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount, subscriptionMonth, numberOfJobPost } = req.body;
+
+    // 1️⃣ Validate ID
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid subscription id.",
+      });
+    }
+
+    // 2️⃣ Build update object (only provided fields)
+    const updateData = {};
+
+    if (amount !== undefined) {
+      if (typeof amount !== "number" || amount < 0) {
+        return res.status(400).json({
+          status: false,
+          message: "amount must be a positive number.",
+        });
+      }
+      updateData.amount = amount;
+    }
+
+    if (subscriptionMonth !== undefined) {
+      if (
+        typeof subscriptionMonth !== "number" ||
+        subscriptionMonth < 1
+      ) {
+        return res.status(400).json({
+          status: false,
+          message: "subscriptionMonth must be at least 1.",
+        });
+      }
+      updateData.subscriptionMonth = subscriptionMonth;
+    }
+
+    if (numberOfJobPost !== undefined) {
+      if (
+        typeof numberOfJobPost !== "number" ||
+        numberOfJobPost < 0
+      ) {
+        return res.status(400).json({
+          status: false,
+          message: "numberOfJobPost must be 0 or more.",
+        });
+      }
+      updateData.numberOfJobPost = numberOfJobPost;
+    }
+
+    // 3️⃣ Prevent empty update
+    if (!Object.keys(updateData).length) {
+      return res.status(400).json({
+        status: false,
+        message: "At least one field is required to update.",
+      });
+    }
+
+    // 4️⃣ Update only if isDeleted = false
+    const updatedSubscription = await Subscription.findOneAndUpdate(
+      { _id: id, isDeleted: false },
+      { $set: updateData },
+      { new: true, projection: "-__v -isDeleted" }
+    );
+
+    if (!updatedSubscription) {
+      return res.status(404).json({
+        status: false,
+        message:
+          "Subscription not found or has been deleted.",
+      });
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "Subscription updated successfully.",
+      data: updatedSubscription,
+    });
+  } catch (error) {
+    console.error("updateSubscription error:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Server error.",
+    });
+  }
+};
+
+
+
+exports.deleteSubscription = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // 1️⃣ Validate ID
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid subscription id.",
+      });
+    }
+
+    // 2️⃣ Find subscription
+    const subscription = await Subscription.findById(id);
+
+    if (!subscription) {
+      return res.status(404).json({
+        status: false,
+        message: "Subscription not found.",
+      });
+    }
+
+    // 3️⃣ If already deleted → idempotent response
+    if (subscription.isDeleted === true) {
+      return res.status(200).json({
+        status: true,
+        message: "Subscription is already deleted.",
+      });
+    }
+
+    // 4️⃣ Soft delete
+    subscription.isDeleted = true;
+    await subscription.save();
+
+    return res.status(200).json({
+      status: true,
+      message: "Subscription deleted successfully.",
+      data: {
+        id: subscription._id,
+        isDeleted: true,
+      },
+    });
+  } catch (error) {
+    console.error("deleteSubscription error:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Server error.",
+    });
+  }
+};
+
+
+
+
+
+
 
 
 
