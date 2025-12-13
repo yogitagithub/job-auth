@@ -20,6 +20,8 @@ const Skill = require("../models/Skills");
 const CompanyProfile = require("../models/CompanyProfile");
 const JobSeekerProfile = require("../models/JobSeekerProfile");
 const FeaturedCompany = require("../models/FeaturedCompany");
+const createNotification = require("../config/createNotification");
+
 
 const User = require('../models/User');
 const JobPost = require("../models/JobPost");
@@ -4289,49 +4291,85 @@ exports.getAccountTypeBasedOnRole = async (req, res) => {
 exports.adminApprovalGiven = async (req, res) => {
   try {
     // 1) Only admins
-    const { role, userId } = req.user || {};
+    const { role } = req.user || {};
     if (role !== "admin") {
-      return res.status(403).json({ status: false, message: "Only admin can approve/reject job posts." });
+      return res.status(403).json({
+        status: false,
+        message: "Only admin can approve/reject job posts.",
+      });
     }
 
     // 2) Validate input
     const { jobPostId, adminAprrovalJobs } = req.body || {};
     if (!mongoose.isValidObjectId(jobPostId)) {
-      return res.status(400).json({ status: false, message: "Invalid jobPostId." });
-    }
-
-    const allowed = ["Approved", "Rejected"]; // matches your enum spelling
-    if (!allowed.includes(adminAprrovalJobs)) {
       return res.status(400).json({
         status: false,
-        message: `adminAprrovalJobs must be one of: ${allowed.join(", ")}`
+        message: "Invalid jobPostId.",
       });
     }
 
-    // 3) Compute booleans/side-effects
+    const allowed = ["Approved", "Rejected"];
+    if (!allowed.includes(adminAprrovalJobs)) {
+      return res.status(400).json({
+        status: false,
+        message: `adminAprrovalJobs must be one of: ${allowed.join(", ")}`,
+      });
+    }
+
     const isAdminApproved = adminAprrovalJobs === "Approved";
+
+    // 3) Fetch existing post (for idempotency + userId)
+    const existingPost = await JobPost.findById(jobPostId).select(
+      "_id userId adminAprrovalJobs isDeleted"
+    );
+
+    if (!existingPost || existingPost.isDeleted) {
+      return res.status(404).json({
+        status: false,
+        message: "Job post not found.",
+      });
+    }
+
+    // 🛑 If already same status → no-op
+    if (existingPost.adminAprrovalJobs === adminAprrovalJobs) {
+      return res.status(200).json({
+        status: true,
+        message: `Job post already ${adminAprrovalJobs.toLowerCase()}.`,
+      });
+    }
 
     // 4) Update
     const updated = await JobPost.findOneAndUpdate(
-      { _id: jobPostId, isDeleted: false },
+      { _id: jobPostId },
       {
         $set: {
-          adminAprrovalJobs,           // <-- value from body
-          isAdminApproved,             // keep in sync
-          // Optionally couple status with approval:
-          // status: isAdminApproved ? "active" : "inactive",
-          // approvedBy: userId,
-          // approvedAt: new Date(),
-        }
+          adminAprrovalJobs,
+          isAdminApproved,
+        },
       },
-      { new: true, projection: "-__v -updatedAt" }
+      { new: true }
     )
-      .populate({ path: "companyId",    select: "companyName" })
-      .populate({ path: "state",        select: "state" })
+      .populate({ path: "companyId", select: "companyName" })
       .lean();
 
-    if (!updated) {
-      return res.status(404).json({ status: false, message: "Job post not found." });
+    // 🔔 SEND NOTIFICATION TO EMPLOYER
+    if (updated?.userId) {
+      const title =
+        adminAprrovalJobs === "Approved"
+          ? "Job Post Approved"
+          : "Job Post Rejected";
+
+      const message =
+        adminAprrovalJobs === "Approved"
+          ? "Your job post has been approved by the admin and is now live."
+          : "Your job post has been rejected by the admin. Please review and resubmit.";
+
+      await createNotification(
+        updated.userId,        // ✅ Employer User._id
+        title,
+        message,
+        "JOB_POST_APPROVAL"
+      );
     }
 
     return res.status(200).json({
@@ -4341,18 +4379,20 @@ exports.adminApprovalGiven = async (req, res) => {
         _id: updated._id,
         jobTitle: updated.jobTitle,
         company: updated.companyId?.companyName ?? null,
-        state: updated.state?.state ?? null,
-        city: updated.city ?? null,
         adminAprrovalJobs: updated.adminAprrovalJobs,
         isAdminApproved: updated.isAdminApproved,
-        status: updated.status
-      }
+      },
     });
   } catch (err) {
     console.error("Admin approval error:", err);
-    return res.status(500).json({ status: false, message: "Failed to update approval.", error: err.message });
+    return res.status(500).json({
+      status: false,
+      message: "Failed to update approval.",
+      error: err.message,
+    });
   }
 };
+
 
 
 
