@@ -13,6 +13,13 @@ const { verifyToken, verifyJobSeekerOnly, verifyEmployerOnly } = require('../mid
 
 const router = express.Router();
 
+
+//for testing purpose
+router.get('/test', (req, res) => {
+    res.json({ message: "API is working fine" });
+});
+
+
 //for mobile
 router.post('/sendOtp', sendOtp);
 router.post('/verify-otp', verifyOtp);
