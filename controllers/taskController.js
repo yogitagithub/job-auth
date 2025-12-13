@@ -496,7 +496,6 @@ exports.updatedTaskDetails = async (req, res) => {
 
 
 
-
 exports.updateTaskPayment = async (req, res) => {
   try {
     const { jobApplicationId } = req.params;
@@ -511,7 +510,7 @@ exports.updateTaskPayment = async (req, res) => {
       });
     }
 
-    // 🔎 Validate id
+    // 🔎 Validate ID
     if (!mongoose.isValidObjectId(jobApplicationId)) {
       return res.status(400).json({
         status: false,
@@ -527,7 +526,7 @@ exports.updateTaskPayment = async (req, res) => {
       });
     }
 
-    // 🔍 Get JobApplication + JobPost for ownership + hourlyRate
+    // 🔍 Get JobApplication
     const jobApp = await JobApplication.findById(jobApplicationId)
       .select("jobPostId jobSeekerId hourlyRate")
       .populate({
@@ -544,14 +543,8 @@ exports.updateTaskPayment = async (req, res) => {
     }
 
     const jobPost = jobApp.jobPostId;
-    if (!jobPost) {
-      return res.status(400).json({
-        status: false,
-        message: "Broken link: JobApplication → JobPost.",
-      });
-    }
 
-    // 🛡️ Ownership check (employer restriction)
+    // 🛡️ Ownership check
     if (role !== "admin") {
       const owns =
         jobPost.userId instanceof mongoose.Types.ObjectId
@@ -567,11 +560,10 @@ exports.updateTaskPayment = async (req, res) => {
       }
     }
 
-    // ---------------- Get tasks to update ----------------
+    // ---------------- Get tasks ----------------
     const taskFilter = {
       jobApplicationId,
       employerApprovedTask: "Approved",
-      // flip based on target isPaid
       isPaid: !isPaid,
     };
 
@@ -581,73 +573,62 @@ exports.updateTaskPayment = async (req, res) => {
       return res.status(404).json({
         status: false,
         message: isPaid
-          ? "No unpaid approved tasks found for this job application."
-          : "No paid approved tasks found to mark as unpaid.",
+          ? "No unpaid approved tasks found."
+          : "No paid approved tasks found.",
       });
     }
 
-    // ⏱ total hours of all affected tasks
+    // ⏱ Total hours
     const totalHours = tasks.reduce(
       (sum, t) => sum + (t.hoursWorked || 0),
       0
     );
 
-    // 💸 compute amount using hourlyRate from JobApplication
+    // 💸 Amount
     const hourlyRate = Number(jobApp.hourlyRate || 0);
     const totalAmount = Number((totalHours * hourlyRate).toFixed(2));
 
-    // ✅ Bulk update all tasks' isPaid
-    await Task.updateMany(
-      {
+    // ✅ Update tasks
+    await Task.updateMany(taskFilter, { $set: { isPaid } });
+
+    // 💰 Create payment record
+    if (isPaid) {
+      await Payment.create({
         jobApplicationId,
-        employerApprovedTask: "Approved",
-        isPaid: !isPaid,
-      },
-      { $set: { isPaid } }
-    );
-
-    // 💰 Only create payment record when marking asPaid = true
-    let paymentDoc = null;
-    if (isPaid === true) {
-      const companyId = jobPost.companyId;
-      const jobSeekerId = jobApp.jobSeekerId;
-
-      const [company, seeker] = await Promise.all([
-        CompanyProfile.findById(companyId).select("companyName name"),
-        JobSeekerProfile.findById(jobSeekerId).select(
-          "fullName firstName lastName name"
-        ),
-      ]);
-
-      const employerName =
-        company?.companyName || company?.name || "Employer";
-
-      const jobSeekerName =
-        seeker?.fullName ||
-        [seeker?.firstName, seeker?.lastName].filter(Boolean).join(" ") ||
-        seeker?.name ||
-        "Job Seeker";
-
-      paymentDoc = await Payment.create({
-        jobApplicationId,
-        employerId: companyId,
-        employerName,
-        jobSeekerId,
-        jobSeekerName,
+        employerId: jobPost.companyId,
+        jobSeekerId: jobApp.jobSeekerId,
         totalHours,
         totalAmount,
-        taskIds: tasks.map((t) => t._id), // optional: keep mapping
-        isDeleted: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
       });
+    }
+
+    // 🔔 SEND NOTIFICATION (FIXED)
+    const jobSeekerProfile = await JobSeekerProfile.findById(
+      jobApp.jobSeekerId
+    ).select("userId");
+
+    if (jobSeekerProfile?.userId) {
+      const title = isPaid
+        ? "Payment Received"
+        : "Payment Status Updated";
+
+      const message = isPaid
+        ? `Your task payment of ₹${totalAmount} has been credited successfully.`
+        : "Your task payment has been marked as unpaid by the employer.";
+
+      await createNotification(
+        jobSeekerProfile.userId, // ✅ CORRECT USER ID
+        title,
+        message,
+        "TASK_PAYMENT"
+      );
     }
 
     return res.json({
       status: true,
-      message: paymentDoc
+      message: isPaid
         ? "Task payment done successfully."
-        : "Task Payment Status Updated",
+        : "Task payment status updated.",
       data: {
         jobApplicationId,
         updatedTaskCount: tasks.length,
@@ -657,13 +638,14 @@ exports.updateTaskPayment = async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("❌ Error in updateTaskPayment (by jobApplicationId):", err);
+    console.error("❌ Error in updateTaskPayment:", err);
     return res.status(500).json({
       status: false,
-      message: err?.message || "Server error while updating task payment.",
+      message: err?.message || "Server error.",
     });
   }
 };
+
 
 
 const toInt = (v, d) => {
