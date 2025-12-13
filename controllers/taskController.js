@@ -5,6 +5,8 @@ const JobPost = require("../models/JobPost");
 const JobSeekerProfile = require("../models/JobSeekerProfile");
 const CompanyProfile = require("../models/CompanyProfile");
 const Payment = require("../models/payment");
+const createNotification = require("../config/createNotification");
+
 
 
 
@@ -228,43 +230,72 @@ if (jobApp.employerApprovalStatus !== "Approved") {
 const ALLOWED_APPROVAL = ["Pending", "Approved", "Rejected"];
 
 //update task by employer
+
 exports.updateTask = async (req, res) => {
   try {
     const { role, userId } = req.user || {};
+
+    // 🔐 Only employer or admin
     if (!(role === "employer" || role === "admin")) {
-      return res.status(403).json({ status: false, message: "Only employers can update tasks." });
+      return res.status(403).json({
+        status: false,
+        message: "Only employers can update tasks.",
+      });
     }
 
     const { taskId, employerApprovedTask } = req.body || {};
     const hasRemarks = Object.prototype.hasOwnProperty.call(req.body, "remarks");
     const remarksFromReq = hasRemarks ? String(req.body.remarks ?? "").trim() : undefined;
 
+    // ✅ Validate taskId
     if (!taskId || !mongoose.isValidObjectId(taskId)) {
-      return res.status(400).json({ status: false, message: "Valid taskId is required." });
+      return res.status(400).json({
+        status: false,
+        message: "Valid taskId is required.",
+      });
     }
-    if (typeof employerApprovedTask !== "undefined" && !ALLOWED_APPROVAL.includes(employerApprovedTask)) {
+
+    // ✅ Validate approval value
+    if (
+      typeof employerApprovedTask !== "undefined" &&
+      !ALLOWED_APPROVAL.includes(employerApprovedTask)
+    ) {
       return res.status(400).json({
         status: false,
         message: `employerApprovedTask must be one of ${ALLOWED_APPROVAL.join(", ")}.`,
       });
     }
 
+    // 🔍 Fetch task with job application
     const task = await Task.findById(taskId).populate({
       path: "jobApplicationId",
       select: "userId jobPostId employerApprovalStatus",
       model: JobApplication,
     });
-    if (!task) return res.status(404).json({ status: false, message: "Task not found." });
 
-    // Ownership (admin bypass)
+    if (!task) {
+      return res.status(404).json({
+        status: false,
+        message: "Task not found.",
+      });
+    }
+
+    // 🔒 Ownership check (admin bypass)
     if (role !== "admin") {
-      const jobPost = await JobPost.findOne({ _id: task.jobApplicationId.jobPostId, userId }).select("_id");
+      const jobPost = await JobPost.findOne({
+        _id: task.jobApplicationId.jobPostId,
+        userId,
+      }).select("_id");
+
       if (!jobPost) {
-        return res.status(403).json({ status: false, message: "You are not authorized for this task." });
+        return res.status(403).json({
+          status: false,
+          message: "You are not authorized for this task.",
+        });
       }
     }
 
-    // Application must already be employer-approved
+    // ⚠️ Application must be employer-approved
     if (task.jobApplicationId.employerApprovalStatus !== "Approved") {
       return res.status(409).json({
         status: false,
@@ -272,19 +303,19 @@ exports.updateTask = async (req, res) => {
       });
     }
 
-    // Apply approval if present
+    // 🔄 Update approval
     if (typeof employerApprovedTask !== "undefined") {
       task.employerApprovedTask = employerApprovedTask;
     }
 
-    // What will approval be after this call?
     const finalApproval =
-      typeof employerApprovedTask !== "undefined" ? employerApprovedTask : task.employerApprovedTask;
+      typeof employerApprovedTask !== "undefined"
+        ? employerApprovedTask
+        : task.employerApprovedTask;
 
-    // Remarks rules
+    // 📝 Remarks logic
     if (hasRemarks) {
       if (finalApproval !== "Approved") {
-        // Sending remarks when NOT Approved is forbidden
         return res.status(409).json({
           status: false,
           message:
@@ -294,56 +325,75 @@ exports.updateTask = async (req, res) => {
         });
       }
 
-      // finalApproval === "Approved"
       if (remarksFromReq.length > 2000) {
-        return res.status(400).json({ status: false, message: "remarks must be ≤ 2000 characters." });
+        return res.status(400).json({
+          status: false,
+          message: "remarks must be ≤ 2000 characters.",
+        });
       }
 
-      // remarks are optional: set only if provided (including empty string to clear if you want)
-      task.remarks = remarksFromReq;                 // allow empty "" to clear, or remove this line if you never want to clear
+      task.remarks = remarksFromReq;
       task.remarksAddedAt = new Date();
       task.remarksAddedBy = userId;
     }
 
-    // Prevent "no-op" updates
+    // ❌ Prevent no-op
     if (typeof employerApprovedTask === "undefined" && !hasRemarks) {
       return res.status(400).json({
         status: false,
-        message: "Nothing to update. Send employerApprovedTask and/or remarks.",
+        message: "Nothing to update.",
       });
     }
 
+    // 💾 Save task
     await task.save();
 
-    const data = {
-      _id: task._id,
-      jobApplicationId: task.jobApplicationId?._id || task.jobApplicationId,
-      title: task.title,
-      description: task.description,
-      startTime: task.startTime ? formatTimeHHMMSS(task.startTime) : null,
-      endTime: task.endTime ? formatTimeHHMMSS(task.endTime) : null,
-      hoursWorked: formatHours(task.hoursWorked),
-      progressPercent: `${Number(task.progressPercent)}%`,
-      status: task.status,
-      employerApprovedTask: task.employerApprovedTask,
-      remarks: task.employerApprovedTask === "Approved" && task.remarks ? task.remarks : null,
-      submittedAt: formatDateDDMMYYYY(task.submittedAt),
-    };
+    // 🔔 SEND NOTIFICATION TO JOB SEEKER
+    if (typeof employerApprovedTask !== "undefined") {
+      const jobSeekerUserId = task.jobApplicationId?.userId;
 
-    let msg = "Task updated.";
-    if (typeof employerApprovedTask !== "undefined" && hasRemarks) {
-      msg = "Task approval and remarks updated.";
-    } else if (typeof employerApprovedTask !== "undefined") {
-      msg = "Task status updated.";
-    } else if (hasRemarks) {
-      msg = "Remarks updated.";
+      if (jobSeekerUserId) {
+        let message = "";
+        let type = "TASK_UPDATE";
+
+        if (employerApprovedTask === "Approved") {
+          message = "Your task has been approved by the employer.";
+        } else if (employerApprovedTask === "Rejected") {
+          message = "Your task has been rejected by the employer.";
+        } else {
+          message = "Your task status has been set to pending by the employer.";
+        }
+
+        await createNotification(
+          jobSeekerUserId,
+          "Task Status Updated",
+          message,
+          type
+        );
+      }
     }
 
-    return res.json({ status: true, message: msg, data });
+    // 📤 Response
+    return res.json({
+      status: true,
+      message: "Task updated successfully.",
+      data: {
+        _id: task._id,
+        employerApprovedTask: task.employerApprovedTask,
+        remarks: task.remarks || null,
+      },
+    });
+
   } catch (err) {
-    return res.status(500).json({ status: false, message: err?.message || "Server error." });
+    console.error(err);
+    return res.status(500).json({
+      status: false,
+      message: err?.message || "Server error.",
+    });
   }
 };
+
+
 
 exports.updatedTaskDetails = async (req, res) => {
   try {
