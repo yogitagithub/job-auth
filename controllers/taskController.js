@@ -1047,8 +1047,8 @@ exports.getSeekerPaymentHistory = async (req, res) => {
           isPaid: true,
 
           totalHours: p.totalHours || 0,
-          totalAmount: p.totalAmount || 0,
-        };
+           amountReceived: totalPayableAmount,
+         };
       })
     );
 
@@ -1063,9 +1063,12 @@ exports.getSeekerPaymentHistory = async (req, res) => {
         totalPage,
         currentPage,
         paymentHistoryList,
-        totalPayableHours,
-        totalPayableAmount,
-      },
+
+         totalHours: totalPayableHours,
+        totalAmount: totalPayableAmount,
+
+
+        },
     });
   } catch (err) {
     console.error("getSeekerPaymentHistory error:", err);
