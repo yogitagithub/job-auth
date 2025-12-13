@@ -512,70 +512,112 @@ exports.adminApproveJobPost = async (req, res) => {
   }
 };
 
+
+
 exports.adminRecommendJobPost = async (req, res) => {
   try {
     const { role } = req.user || {};
+
     if (role !== "admin") {
-      return res.status(403).json({ status: false, message: "Only admin can recommend job posts." });
-    }
-
-    const { id, adminRecommended } = req.body || {};
-    if (!id || !mongoose.isValidObjectId(id)) {
-      return res.status(400).json({ status: false, message: "Valid job post id is required." });
-    }
-
-    // default to approving (true) if omitted
-    const nextVal = (typeof adminRecommended === "boolean") ? adminRecommended : true;
-
-    // First fetch to (a) validate guards and (b) support idempotent messaging
-    const post = await JobPost.findById(id).lean();
-    if (!post) {
-      return res.status(404).json({ status: false, message: "Job post not found." });
-    }
-
-    // Soft-deleted cannot be recommended or modified (you can relax this for revoke if you want)
-    if (post.isDeleted) {
-      return res.status(400).json({ status: false, message: "Cannot modify a soft-deleted job post." });
-    }
-
-    // If approving, must be active
-    if (nextVal === true && post.status !== "active") {
-      return res.status(400).json({ status: false, message: `Cannot recommend job post while status is '${post.status}'.` });
-    }
-
-    // Idempotent: if value is already the same, don't write—just inform
-    if (post.adminRecommended === nextVal) {
-      return res.status(200).json({
-        status: true,
-        message: nextVal ? "Job post is already recommended." : "Job post recommendation is already revoked.",
-        
+      return res.status(403).json({
+        status: false,
+        message: "Only admin can recommend job posts.",
       });
     }
 
-    // Perform the update
-    const updated = await JobPost.findOneAndUpdate(
-      { _id: id },                        // guards already checked above
-      { $set: { adminRecommended: nextVal } },
-      { new: true, projection: { _id: 1, adminRecommended: 1 } }
+    const { id, adminRecommended } = req.body || {};
+
+    if (!id || !mongoose.isValidObjectId(id)) {
+      return res.status(400).json({
+        status: false,
+        message: "Valid job post id is required.",
+      });
+    }
+
+    // Default to true if omitted
+    const nextVal =
+      typeof adminRecommended === "boolean" ? adminRecommended : true;
+
+    // Fetch for validation + idempotency
+    const post = await JobPost.findById(id).select(
+      "_id userId adminRecommended status isDeleted"
     );
+
+    if (!post) {
+      return res.status(404).json({
+        status: false,
+        message: "Job post not found.",
+      });
+    }
+
+    if (post.isDeleted) {
+      return res.status(400).json({
+        status: false,
+        message: "Cannot modify a soft-deleted job post.",
+      });
+    }
+
+    // If recommending, must be active
+    if (nextVal === true && post.status !== "active") {
+      return res.status(400).json({
+        status: false,
+        message: `Cannot recommend job post while status is '${post.status}'.`,
+      });
+    }
+
+    // Idempotent response
+    if (post.adminRecommended === nextVal) {
+      return res.status(200).json({
+        status: true,
+        message: nextVal
+          ? "Job post is already recommended."
+          : "Job post recommendation is already revoked.",
+      });
+    }
+
+    // Update
+    post.adminRecommended = nextVal;
+    await post.save();
+
+    // 🔔 SEND NOTIFICATION TO EMPLOYER
+    if (post.userId) {
+      const title = nextVal
+        ? "Job Post Recommended"
+        : "Job Post Recommendation Revoked";
+
+      const message = nextVal
+        ? "Your job post has been recommended by the admin and may receive higher visibility."
+        : "Admin has revoked the recommendation for your job post.";
+
+      await createNotification(
+        post.userId,          // ✅ Employer's User._id
+        title,
+        message,
+        "JOB_POST_RECOMMENDED"
+      );
+    }
 
     return res.status(200).json({
       status: true,
-      message: nextVal ? "Job post recommended." : "Job post recommendation revoked.",
-      data: { id: updated._id, adminRecommended: updated.adminRecommended }
+      message: nextVal
+        ? "Job post recommended."
+        : "Job post recommendation revoked.",
+      data: {
+        id: post._id,
+        adminRecommended: post.adminRecommended,
+      },
     });
   } catch (err) {
     console.error("adminRecommendJobPost error:", err);
-    return res.status(500).json({ status: false, message: "Server error", error: err.message });
+    return res.status(500).json({
+      status: false,
+      message: "Server error",
+      error: err.message,
+    });
   }
 };
 
 
-
-
-
-
-//get recommended job list for job seekers only
 exports.getRecommendedJobs = async (req, res) => {
   try {
     const { role } = req.user || {};
