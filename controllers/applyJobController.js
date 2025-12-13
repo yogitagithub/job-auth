@@ -9,6 +9,8 @@ const JobProfile = require("../models/AdminJobProfile");
 const IndustryType = require("../models/AdminIndustry");
 const StateCity = require("../models/StateCity");
 
+const createNotification = require("../config/createNotification");
+
 const CompanyProfile = require("../models/CompanyProfile");
 const Notification = require("../models/Notification");
 
@@ -1278,6 +1280,7 @@ exports.getMyApplications = async (req, res) => {
 };
 
 
+
 exports.updateEmployerApprovalStatus = async (req, res) => {
   try {
     const { role, userId } = req.user;
@@ -1311,7 +1314,6 @@ exports.updateEmployerApprovalStatus = async (req, res) => {
     let numericHourlyRate = null;
 
     if (employerApprovalStatus === "Approved") {
-      // hourlyRate is REQUIRED and must be a positive number
       if (
         hourlyRate === undefined ||
         hourlyRate === null ||
@@ -1331,7 +1333,6 @@ exports.updateEmployerApprovalStatus = async (req, res) => {
         });
       }
     } else {
-      // For Rejected / Disconnected / Pending — employer must NOT send hourlyRate
       if (hourlyRate !== undefined) {
         return res.status(400).json({
           status: false,
@@ -1341,10 +1342,11 @@ exports.updateEmployerApprovalStatus = async (req, res) => {
       }
     }
 
-    // 3) load application
+    // 3) load application (⚠️ INCLUDE userId)
     const application = await JobApplication.findById(applicationId).select(
-      "_id jobPostId employerApprovalStatus hourlyRate"
+      "_id userId jobPostId employerApprovalStatus hourlyRate"
     );
+
     if (!application) {
       return res.status(404).json({
         status: false,
@@ -1384,15 +1386,46 @@ exports.updateEmployerApprovalStatus = async (req, res) => {
     // 5) perform update
     application.employerApprovalStatus = employerApprovalStatus;
 
-    // set hourlyRate only when Approved
     if (employerApprovalStatus === "Approved") {
       application.hourlyRate = numericHourlyRate;
     } else {
-      // optional: clear any previous rate when it becomes Rejected/Disconnected/Pending
       application.hourlyRate = null;
     }
 
     await application.save();
+
+    // 🔔 SEND NOTIFICATION TO JOB SEEKER
+    if (application.userId) {
+      let title = "Job Application Update";
+      let message = "";
+      let type = "APPLICATION_STATUS";
+
+      switch (employerApprovalStatus) {
+        case "Approved":
+          message = `Your job application has been approved. Hourly rate: ₹${numericHourlyRate}.`;
+          break;
+        case "Rejected":
+          message = "Your job application has been rejected by the employer.";
+          break;
+        case "Disconnected":
+          message =
+            "Your job application has been disconnected by the employer.";
+          break;
+        case "Pending":
+          message =
+            "Your job application status has been changed to pending.";
+          break;
+        default:
+          message = "Your job application status has been updated.";
+      }
+
+      await createNotification(
+        application.userId,
+        title,
+        message,
+        type
+      );
+    }
 
     return res.status(200).json({
       status: true,
@@ -1404,6 +1437,7 @@ exports.updateEmployerApprovalStatus = async (req, res) => {
         hourlyRate: application.hourlyRate,
       },
     });
+
   } catch (err) {
     console.error("updateEmployerApprovalStatus error:", err);
     return res.status(500).json({
@@ -1413,6 +1447,144 @@ exports.updateEmployerApprovalStatus = async (req, res) => {
     });
   }
 };
+
+
+
+// exports.updateEmployerApprovalStatus = async (req, res) => {
+//   try {
+//     const { role, userId } = req.user;
+//     const { applicationId, employerApprovalStatus, hourlyRate } = req.body;
+
+//     // 1) auth: only employer or admin
+//     if (role !== "employer" && role !== "admin") {
+//       return res.status(403).json({
+//         status: false,
+//         message: "Only employers or admins can update approval status.",
+//       });
+//     }
+
+//     // 2) validate inputs
+//     if (!applicationId || !mongoose.isValidObjectId(applicationId)) {
+//       return res.status(400).json({
+//         status: false,
+//         message: "Valid Job Application ID is required.",
+//       });
+//     }
+
+//     const allowed = ["Pending", "Approved", "Rejected", "Disconnected"];
+//     if (!employerApprovalStatus || !allowed.includes(employerApprovalStatus)) {
+//       return res.status(400).json({
+//         status: false,
+//         message: `Invalid approval status. Allowed values: ${allowed.join(", ")}`,
+//       });
+//     }
+
+//     // ✅ Extra validation based on status
+//     let numericHourlyRate = null;
+
+//     if (employerApprovalStatus === "Approved") {
+//       // hourlyRate is REQUIRED and must be a positive number
+//       if (
+//         hourlyRate === undefined ||
+//         hourlyRate === null ||
+//         String(hourlyRate).trim() === ""
+//       ) {
+//         return res.status(400).json({
+//           status: false,
+//           message: "hourlyRate is required when approval status is Approved.",
+//         });
+//       }
+
+//       numericHourlyRate = Number(hourlyRate);
+//       if (!Number.isFinite(numericHourlyRate) || numericHourlyRate <= 0) {
+//         return res.status(400).json({
+//           status: false,
+//           message: "hourlyRate must be a positive number.",
+//         });
+//       }
+//     } else {
+//       // For Rejected / Disconnected / Pending — employer must NOT send hourlyRate
+//       if (hourlyRate !== undefined) {
+//         return res.status(400).json({
+//           status: false,
+//           message:
+//             "hourlyRate should not be sent unless approval status is Approved.",
+//         });
+//       }
+//     }
+
+//     // 3) load application
+//     const application = await JobApplication.findById(applicationId).select(
+//       "_id jobPostId employerApprovalStatus hourlyRate"
+//     );
+//     if (!application) {
+//       return res.status(404).json({
+//         status: false,
+//         message: "Job application not found.",
+//       });
+//     }
+
+//     const prev = application.employerApprovalStatus;
+
+//     // ✅ Rule: can disconnect only if currently Approved
+//     if (employerApprovalStatus === "Disconnected" && prev !== "Approved") {
+//       return res.status(400).json({
+//         status: false,
+//         message:
+//           "You can disconnect only those applications whose status is currently Approved.",
+//       });
+//     }
+
+//     // 4) if employer, verify ownership
+//     if (role === "employer") {
+//       const post = await JobPost.findById(application.jobPostId).select("userId");
+//       if (!post) {
+//         return res.status(404).json({
+//           status: false,
+//           message: "Job post not found.",
+//         });
+//       }
+//       if (!post.userId.equals(userId)) {
+//         return res.status(403).json({
+//           status: false,
+//           message:
+//             "You are not allowed to update approval status for this application.",
+//         });
+//       }
+//     }
+
+//     // 5) perform update
+//     application.employerApprovalStatus = employerApprovalStatus;
+
+//     // set hourlyRate only when Approved
+//     if (employerApprovalStatus === "Approved") {
+//       application.hourlyRate = numericHourlyRate;
+//     } else {
+//       // optional: clear any previous rate when it becomes Rejected/Disconnected/Pending
+//       application.hourlyRate = null;
+//     }
+
+//     await application.save();
+
+//     return res.status(200).json({
+//       status: true,
+//       message: "Employer approval status updated successfully.",
+//       data: {
+//         applicationId: application._id,
+//         previousStatus: prev,
+//         currentStatus: application.employerApprovalStatus,
+//         hourlyRate: application.hourlyRate,
+//       },
+//     });
+//   } catch (err) {
+//     console.error("updateEmployerApprovalStatus error:", err);
+//     return res.status(500).json({
+//       status: false,
+//       message: "Server error.",
+//       error: err.message,
+//     });
+//   }
+// };
 
 exports.getApprovedApplicants = async (req, res) => {
   try {

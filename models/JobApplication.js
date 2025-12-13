@@ -56,11 +56,7 @@ const jobApplicationSchema = new mongoose.Schema(
     },
 
 
-     hourlyRate: {
-      type: Number,
-      default: null,
-    },
-
+   
     
 
     appliedAt: {
