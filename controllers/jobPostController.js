@@ -16,6 +16,8 @@ const WorkingShift   = require("../models/AdminWorkingShift");
 const JobProfile   = require("../models/AdminJobProfile"); 
 const JobSeekerSkill = require("../models/JobSeekerSkill");
 const List = require("../models/ProfessionalKeyword");
+const createNotification = require("../config/createNotification");
+
  
 const Skill = require("../models/Skills");
 
@@ -401,71 +403,115 @@ jobProfile,
 
 
 //admin can only approve job post
+
 exports.adminApproveJobPost = async (req, res) => {
   try {
     const { role } = req.user || {};
+
     if (role !== "admin") {
-      return res.status(403).json({ status: false, message: "Only admin can approve job posts." });
+      return res.status(403).json({
+        status: false,
+        message: "Only admin can approve job posts.",
+      });
     }
 
     const { id, isAdminApproved } = req.body || {};
+
     if (!id || !mongoose.isValidObjectId(id)) {
-      return res.status(400).json({ status: false, message: "Valid job post id is required." });
+      return res.status(400).json({
+        status: false,
+        message: "Valid job post id is required.",
+      });
     }
 
     const post = await JobPost.findById(id);
 
     // 1) Not found
     if (!post) {
-      return res.status(404).json({ status: false, message: "Job post not found." });
+      return res.status(404).json({
+        status: false,
+        message: "Job post not found.",
+      });
     }
 
-    // 2) Found but already soft-deleted
+    // 2) Soft deleted
     if (post.isDeleted === true) {
       return res.status(400).json({
         status: false,
-        message: "This job post has been deleted and cannot be approved."
+        message: "This job post has been deleted and cannot be approved.",
       });
     }
 
-    // Default to true (approve) if omitted
-    const nextVal = (typeof isAdminApproved === "boolean") ? isAdminApproved : true;
+    // Default to true if omitted
+    const nextVal =
+      typeof isAdminApproved === "boolean" ? isAdminApproved : true;
 
-    // Can only APPROVE when status is ACTIVE
+    // Can only approve when status is active
     if (nextVal === true && post.status !== "active") {
       return res.status(400).json({
         status: false,
-        message: `Cannot approve job post while status is '${post.status}'.`
+        message: `Cannot approve job post while status is '${post.status}'.`,
       });
     }
 
-    // Idempotent response if no actual change
+    // Idempotent
     if (post.isAdminApproved === nextVal) {
       return res.status(200).json({
         status: true,
-        message: nextVal ? "Job post is already approved." : "Job post approval is already revoked.",
-        data: { id: post._id, isAdminApproved: post.isAdminApproved, status: post.status }
+        message: nextVal
+          ? "Job post is already approved."
+          : "Job post approval is already revoked.",
+        data: {
+          id: post._id,
+          isAdminApproved: post.isAdminApproved,
+          status: post.status,
+        },
       });
     }
 
+    // ✅ Update
     post.isAdminApproved = nextVal;
     await post.save();
 
+    // 🔔 SEND NOTIFICATION TO EMPLOYER
+    if (post.userId) {
+      const title = nextVal
+        ? "Job Post Approved"
+        : "Job Post Approval Revoked";
+
+      const message = nextVal
+        ? "Your job post has been approved by the admin. You can now access all the flags."
+        : "Admin has revoked approval for your job post.";
+
+      await createNotification(
+        post.userId,        // ✅ Employer's User._id
+        title,
+        message,
+        "JOB_POST_APPROVAL"
+      );
+    }
+
     return res.status(200).json({
       status: true,
-      message: nextVal ? "Job post approved." : "Job post approval revoked.",
-      data: { id: post._id, isAdminApproved: post.isAdminApproved, status: post.status }
+      message: nextVal
+        ? "Job post approved."
+        : "Job post approval revoked.",
+      data: {
+        id: post._id,
+        isAdminApproved: post.isAdminApproved,
+        status: post.status,
+      },
     });
   } catch (err) {
     console.error("adminApproveJobPost error:", err);
-    return res.status(500).json({ status: false, message: "Server error", error: err.message });
+    return res.status(500).json({
+      status: false,
+      message: "Server error",
+      error: err.message,
+    });
   }
 };
 
-
-
-
-//admin can only recommend job post
 exports.adminRecommendJobPost = async (req, res) => {
   try {
     const { role } = req.user || {};
