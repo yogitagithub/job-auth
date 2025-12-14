@@ -30,6 +30,13 @@ const companyProfileSchema = new mongoose.Schema({
     ref: "IndustryType",
   },
 
+  otherIndustryName: {
+  type: String,
+  trim: true,
+  default: null
+},
+
+
   contactPersonName: { type: String, trim: true },
   // panCardNumber: { type: String, trim: true },
   gstNumber: { type: String, trim: true },

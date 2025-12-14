@@ -17,6 +17,7 @@ const path = require("path");
 const mongoose = require("mongoose");
 
 
+
 exports.saveProfile = async (req, res) => {
   try {
     const { userId, role, phoneNumber } = req.user;
@@ -28,7 +29,7 @@ exports.saveProfile = async (req, res) => {
       });
     }
 
-    // Compute a reliable BASE URL (uses env, falls back to request host)
+    // ---------- BASE URL ----------
     const baseUrl =
       (process.env.BASE_URL && process.env.BASE_URL.replace(/\/$/, "")) ||
       `${req.protocol}://${req.get("host")}`;
@@ -36,255 +37,229 @@ exports.saveProfile = async (req, res) => {
     const hasAnyBody = req.body && Object.keys(req.body).length > 0;
     const hasFile = !!req.file;
 
-    // Load existing profile early
+    // ---------- Load profile ----------
     let profile = await CompanyProfile.findOne({ userId });
 
-    // Soft-deleted guard
-    if (profile && profile.isDeleted === true) {
+    if (profile && profile.isDeleted) {
       return res.status(400).json({
         status: false,
         message: "This company profile is already deleted and cannot be updated."
       });
     }
 
-    // Normalize aboutCompany if present
-    if (Object.prototype.hasOwnProperty.call(req.body, "aboutCompany")) {
+    // ---------- Normalize aboutCompany ----------
+    if ("aboutCompany" in req.body) {
       const v = req.body.aboutCompany;
       req.body.aboutCompany = v && String(v).trim() ? String(v).trim() : null;
     }
 
-    // ---- Normalize gstNumber if present (treat empty as null) ----
-    const gstProvidedThisRequest = Object.prototype.hasOwnProperty.call(req.body, "gstNumber");
+    // ---------- Normalize GST ----------
+    const gstProvidedThisRequest = "gstNumber" in req.body;
     if (gstProvidedThisRequest) {
       const v = req.body.gstNumber;
       req.body.gstNumber = v && String(v).trim() ? String(v).trim() : null;
     }
 
-    // ---------- industryType (optional) ----------
-    if (Object.prototype.hasOwnProperty.call(req.body, "industryType")) {
+    // ---------- Resolve industryType ----------
+    if ("industryType" in req.body) {
       const val = req.body.industryType;
       let industryDoc = null;
 
       if (mongoose.Types.ObjectId.isValid(val)) {
         industryDoc = await IndustryType.findById(val);
       }
+
       if (!industryDoc && typeof val === "string") {
-        industryDoc = await IndustryType.findOne({ name: val.trim() });
+        industryDoc = await IndustryType.findOne({
+          name: val.trim()
+        });
       }
+
       if (!industryDoc) {
         return res.status(400).json({
           status: false,
-          message: "Invalid industry type (use valid name or id)."
+          message: "Invalid industry type."
         });
       }
+
       req.body.industryType = industryDoc._id;
     }
 
+    // ================== OTHER INDUSTRY LOGIC (FIXED) ==================
 
-        // -------- Handle "Other" industry type ----------
-let isOtherIndustry = false;
+    const effectiveIndustryId =
+      req.body.industryType || profile?.industryType || null;
 
-// Check if industryDoc name is OTHER
-if (req.body.industryType) {
-  const industry = await IndustryType.findById(req.body.industryType);
-  if (industry && industry.name.toLowerCase() === "other") {
-    isOtherIndustry = true;
-  }
-}
+    let isOtherIndustry = false;
 
-// If "Other" is selected → 'otherIndustryName' MUST be provided
-if (isOtherIndustry) {
-  const otherIndustry = req.body.otherIndustryName?.trim();
-
-  if (!otherIndustry) {
-    return res.status(400).json({
-      status: false,
-      message: "Please enter your industry in otherIndustryName."
-    });
-  }
-
-  req.body.otherIndustryName = otherIndustry;
-} else {
-  // Clear when not needed
-  req.body.otherIndustryName = null;
-}
-
-
-    // ---------- state & city (optional) ----------
-const hasStateKey = Object.prototype.hasOwnProperty.call(req.body, "state");
-const hasCityKey  = Object.prototype.hasOwnProperty.call(req.body, "city");
-
-const stateInput = hasStateKey ? String(req.body.state || "").trim() : "";
-const cityInput  = hasCityKey  ? String(req.body.city  || "").trim()  : "";
-
-const resolveState = async (input) => {
-  if (mongoose.Types.ObjectId.isValid(input)) return StateCity.findById(input);
-  if (!input) return null;
-  // exact, case-insensitive name match
-  return StateCity.findOne({ state: { $regex: `^${input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" } });
-};
-
-let stateDoc = null;
-
-// Case 1: non-empty state provided
-if (stateInput) {
-  stateDoc = await resolveState(stateInput);
-  if (!stateDoc) {
-    return res.status(400).json({ status: false, message: "Invalid state." });
-  }
-
-  // validate city (if provided) against this state (case-insensitive)
-  if (cityInput) {
-    const ok = (stateDoc.cities || []).some(c => c.toLowerCase() === cityInput.toLowerCase());
-    if (!ok) {
-      return res.status(400).json({ status: false, message: "Invalid city for the selected state." });
+    if (effectiveIndustryId) {
+      const industryDoc = await IndustryType.findById(effectiveIndustryId);
+      if (industryDoc && industryDoc.name.toLowerCase() === "other") {
+        isOtherIndustry = true;
+      }
     }
-  }
 
-  // store state ObjectId
-  req.body.state = stateDoc._id;
-}
-// Case 2: no state but city provided — auto-detect the state
-else if (!stateInput && cityInput) {
-  stateDoc = await StateCity.findOne({
-    cities: { $elemMatch: { $regex: `^${cityInput.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" } }
-  });
+    if (isOtherIndustry) {
+      const otherName = req.body.otherIndustryName?.trim();
 
-  if (!stateDoc) {
-    return res.status(400).json({
-      status: false,
-      message: "Invalid city, no matching state found."
-    });
-  }
+      if (!otherName) {
+        return res.status(400).json({
+          status: false,
+          message: "Please specify other industry name."
+        });
+      }
 
-  // set detected state id
-  req.body.state = stateDoc._id;
-}
+      req.body.otherIndustryName = otherName;
+    } else {
+      req.body.otherIndustryName = null;
+    }
 
+    // ================== STATE & CITY ==================
 
-// ================= EMPLOYER TYPE RULES ==================
+    const hasStateKey = "state" in req.body;
+    const hasCityKey = "city" in req.body;
 
-const employerType = req.body.employerType || profile?.employerType;
+    const stateInput = hasStateKey ? String(req.body.state || "").trim() : "";
+    const cityInput = hasCityKey ? String(req.body.city || "").trim() : "";
 
-// if creating profile or updating employerType
-if (!employerType) {
-  return res.status(400).json({
-    status: false,
-    message: "employerType is required (individual or company)."
-  });
-}
+    const resolveState = async (input) => {
+      if (mongoose.Types.ObjectId.isValid(input)) {
+        return StateCity.findById(input);
+      }
+      if (!input) return null;
 
-// ---------------- INDIVIDUAL CASE ----------------
-if (employerType === "individual") {
-  
-  // If user tries to give GST details → block
-  if (req.body.gstNumber) {
-    return res.status(400).json({
-      status: false,
-      message: "GST details are not allowed for Individual employer type."
-    });
-  }
+      return StateCity.findOne({
+        state: { $regex: `^${input}$`, $options: "i" }
+      });
+    };
 
-  if (req.file) {
-    return res.status(400).json({
-      status: false,
-      message: "Certificate upload is not allowed for Individual employer type."
-    });
-  }
+    let stateDoc = null;
 
-  // Remove gst details safely
-  req.body.gstNumber = null;
-  req.body.gstCertificate = null;
-}
+    if (stateInput) {
+      stateDoc = await resolveState(stateInput);
+      if (!stateDoc) {
+        return res.status(400).json({ status: false, message: "Invalid state." });
+      }
 
+      if (cityInput) {
+        const ok = (stateDoc.cities || []).some(
+          c => c.toLowerCase() === cityInput.toLowerCase()
+        );
+        if (!ok) {
+          return res.status(400).json({
+            status: false,
+            message: "Invalid city for the selected state."
+          });
+        }
+      }
 
-// ---------------- COMPANY CASE ----------------
-if (employerType === "company") {
+      req.body.state = stateDoc._id;
+    } else if (!stateInput && cityInput) {
+      stateDoc = await StateCity.findOne({
+        cities: { $elemMatch: { $regex: `^${cityInput}$`, $options: "i" } }
+      });
 
-  const gstInRequest = Object.prototype.hasOwnProperty.call(req.body, "gstNumber");
+      if (!stateDoc) {
+        return res.status(400).json({
+          status: false,
+          message: "Invalid city, no matching state found."
+        });
+      }
 
-  // GST MUST BE PRESENT (CREATE MODE)
-  if (!profile && !gstInRequest) {
-    return res.status(400).json({
-      status: false,
-      message: "GST number is required for Company employerType."
-    });
-  }
+      req.body.state = stateDoc._id;
+    }
 
-  // CERTIFICATE MUST BE PRESENT (CREATE MODE)
-  if (!profile && !req.file) {
-    return res.status(400).json({
-      status: false,
-      message: "GST certificate is required for Company employerType."
-    });
-  }
-}
+    // ================== EMPLOYER TYPE RULES ==================
 
+    const employerType = req.body.employerType || profile?.employerType;
 
+    if (!employerType) {
+      return res.status(400).json({
+        status: false,
+        message: "employerType is required."
+      });
+    }
 
+    if (employerType === "individual") {
+      if (req.body.gstNumber || req.file) {
+        return res.status(400).json({
+          status: false,
+          message: "GST details are not allowed for individual employers."
+        });
+      }
 
+      req.body.gstNumber = null;
+      req.body.gstCertificate = null;
+    }
 
+    if (employerType === "company") {
+      if (!profile && !gstProvidedThisRequest) {
+        return res.status(400).json({
+          status: false,
+          message: "GST number is required for company employer type."
+        });
+      }
 
-    // ---------- ENFORCE GST rules ----------
+      if (!profile && !req.file) {
+        return res.status(400).json({
+          status: false,
+          message: "GST certificate is required for company employer type."
+        });
+      }
+    }
+
+    // ================== GST RULES ==================
+
     const oldGst = profile?.gstNumber || null;
     const newGst = gstProvidedThisRequest ? req.body.gstNumber : oldGst;
     const clearingGst = gstProvidedThisRequest && !req.body.gstNumber;
     const gstChanged = gstProvidedThisRequest && newGst !== oldGst;
 
-    // Rule C: If a certificate file is uploaded in this request, a *gstNumber must be provided in this request*.
-    // (Blocks "certificate only" uploads.)
     if (hasFile && !gstProvidedThisRequest) {
       return res.status(400).json({
         status: false,
-        message: "Please provide 'gstNumber' along with the certificate upload."
+        message: "Please provide GST number with certificate upload."
       });
     }
 
-    // Rule A: If GST is present after this request (not cleared), a certificate must exist
     if ((newGst || oldGst) && !clearingGst) {
       const hasExistingCert = !!profile?.gstCertificate?.fileUrl;
       if (!hasFile && !hasExistingCert) {
         return res.status(400).json({
           status: false,
-          message: "GST certificate is required when GST number is set. Upload the file."
+          message: "GST certificate is required when GST number is set."
         });
       }
     }
 
-    // Rule B: If GST number is UPDATED in this request, a NEW certificate upload is mandatory
     if (gstChanged && !hasFile) {
       return res.status(400).json({
         status: false,
-        message: "You are updating GST number. Please upload the NEW GST certificate also."
+        message: "New GST certificate required when updating GST number."
       });
     }
 
-    // ---------- Build updates ----------
-    const restricted = ["_id", "userId", "phoneNumber", "__v", "image", "isDeleted", "deletedAt"];
-    const bodyUpdates = Object.keys(req.body || {}).reduce((acc, k) => {
+    // ================== BUILD UPDATE ==================
+
+    const restricted = ["_id", "userId", "phoneNumber", "__v", "image", "isDeleted"];
+    const bodyUpdates = Object.keys(req.body).reduce((acc, k) => {
       if (!restricted.includes(k)) acc[k] = req.body[k];
       return acc;
     }, {});
 
-    // Prepare new certificate subdoc if file uploaded (store ABSOLUTE URL)
     let newCertificate = null;
     if (hasFile) {
       newCertificate = {
         fileUrl: `${baseUrl}/uploads/certificates/${req.file.filename}`,
         fileName: req.file.originalname,
         fileType: req.file.mimetype,
-        fileSize: req.file.size,
-        uploadedAt: new Date()
+        fileSize: req.file.size
       };
     }
 
     const isCreate = !profile;
 
     if (isCreate) {
-      if (!hasAnyBody && !newCertificate) {
-        return res.status(400).json({ status: false, message: "No data provided to create profile." });
-      }
-
       profile = new CompanyProfile({
         userId,
         phoneNumber,
@@ -293,18 +268,12 @@ if (employerType === "company") {
       });
       await profile.save();
     } else {
-      // If replacing file, delete old file from disk (best-effort)
       if (newCertificate && profile.gstCertificate?.fileUrl) {
         try {
-          // old fileUrl may be absolute; get its pathname to find local file
-          let pathname;
-          try { pathname = new URL(profile.gstCertificate.fileUrl).pathname; }
-          catch { pathname = profile.gstCertificate.fileUrl; } // fallback if relative
-          if (pathname.startsWith("/uploads/certificates/")) {
-            const absolute = path.join(process.cwd(), pathname.replace(/^\//, ""));
-            await fsp.unlink(absolute).catch(() => {});
-          }
-        } catch (_) { /* ignore fs issues */ }
+          const pathname = new URL(profile.gstCertificate.fileUrl).pathname;
+          const absolute = path.join(process.cwd(), pathname.slice(1));
+          await fsp.unlink(absolute).catch(() => {});
+        } catch {}
       }
 
       Object.assign(profile, bodyUpdates);
@@ -312,31 +281,23 @@ if (employerType === "company") {
       await profile.save();
     }
 
-    // --------- Fetch, shape, and respond (hide meta; flatten gstCertificate) ----------
     const populated = await CompanyProfile.findById(profile._id)
-      .select("-__v -createdAt -updatedAt -isDeleted")
-      .populate("state", "state")
       .populate("industryType", "name")
+      .populate("state", "state")
       .lean();
-
-    const data = {
-      ...populated,
-      gstCertificate: populated.gstCertificate
-        ? (populated.gstCertificate.fileUrl?.startsWith("http")
-            ? populated.gstCertificate.fileUrl
-            : `${baseUrl}${populated.gstCertificate.fileUrl}`)
-        : null,
-      state: populated.state?.state || null,
-      industryType: populated.industryType?.name || null
-    };
 
     return res.status(200).json({
       status: true,
       message: `Company profile ${isCreate ? "created" : "updated"} successfully.`,
-      data
+      data: {
+        ...populated,
+        industryType: populated.industryType?.name || null,
+        state: populated.state?.state || null
+      }
     });
+
   } catch (error) {
-    console.error("Error creating/updating company profile:", error);
+    console.error("saveProfile error:", error);
     return res.status(500).json({
       status: false,
       message: "Server error.",
@@ -359,7 +320,12 @@ exports.getProfile = async (req, res) => {
       });
     }
 
-    // Fetch without filtering isDeleted so we can detect soft-deleted state
+    // ---------- BASE URL ----------
+    const baseUrl =
+      (process.env.BASE_URL && process.env.BASE_URL.replace(/\/$/, "")) ||
+      `${req.protocol}://${req.get("host")}`;
+
+    // ---------- Fetch profile ----------
     const profile = await CompanyProfile.findOne({ userId })
       .populate("industryType", "name")
       .populate("state", "state");
@@ -371,7 +337,6 @@ exports.getProfile = async (req, res) => {
       });
     }
 
-    // If soft-deleted, send 400 with explicit message
     if (profile.isDeleted === true) {
       return res.status(400).json({
         status: false,
@@ -381,33 +346,48 @@ exports.getProfile = async (req, res) => {
 
     const p = profile.toObject();
 
-     // Flatten to a single string URL (or null)
+    // ---------- Flatten GST certificate ----------
     const certUrl = p.gstCertificate?.fileUrl
       ? (p.gstCertificate.fileUrl.startsWith("http")
           ? p.gstCertificate.fileUrl
           : `${baseUrl}${p.gstCertificate.fileUrl}`)
       : null;
 
-
+    // ---------- RESPONSE (ALL SAVED FIELDS) ----------
     const responseData = {
       id: p._id,
       userId: p.userId,
       phoneNumber: p.phoneNumber,
-      companyName: p.companyName,
+      alternatePhoneNumber: p.alternatePhoneNumber ?? null,
+
+      companyName: p.companyName ?? null,
+      contactPersonName: p.contactPersonName ?? null,
+      employerType: p.employerType ?? null,
+
       industryType: p.industryType?.name || null,
-      contactPersonName: p.contactPersonName,
-      panCardNumber: p.panCardNumber,
-      gstNumber: p.gstNumber,
+      otherIndustryName:
+        p.industryType?.name === "Other"
+          ? p.otherIndustryName
+          : null,
+
+      gstNumber: p.gstNumber ?? null,
       gstCertificate: certUrl,
-      alternatePhoneNumber: p.alternatePhoneNumber,
-      email: p.email,
-      companyAddress: p.companyAddress,
+
+      email: p.email ?? null,
+      companyAddress: p.companyAddress ?? null,
+
       state: p.state?.state || null,
-      city: p.city,
-      pincode: p.pincode,
-      image: p.image || null,
-       aboutCompany: p.aboutCompany ?? null,
-        employerType: p.employerType || null
+      city: p.city ?? null,
+      pincode: p.pincode ?? null,
+
+      image: p.image ?? null,
+      aboutCompany: p.aboutCompany ?? null,
+
+      totalViews: p.totalViews ?? 0,
+      profileViews: p.profileViews ?? [],
+
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt
     };
 
     return res.status(200).json({
@@ -415,8 +395,9 @@ exports.getProfile = async (req, res) => {
       message: "Company profile fetched successfully.",
       data: responseData
     });
+
   } catch (error) {
-    console.error(error);
+    console.error("getProfile error:", error);
     return res.status(500).json({
       status: false,
       message: "Server error.",
@@ -424,6 +405,83 @@ exports.getProfile = async (req, res) => {
     });
   }
 };
+
+// exports.getProfile = async (req, res) => {
+//   try {
+//     const { userId, role } = req.user;
+
+//     if (role !== "employer") {
+//       return res.status(403).json({
+//         status: false,
+//         message: "Only employers can view company profiles."
+//       });
+//     }
+
+//     // Fetch without filtering isDeleted so we can detect soft-deleted state
+//     const profile = await CompanyProfile.findOne({ userId })
+//       .populate("industryType", "name")
+//       .populate("state", "state");
+
+//     if (!profile) {
+//       return res.status(404).json({
+//         status: false,
+//         message: "Company profile not found."
+//       });
+//     }
+
+//     // If soft-deleted, send 400 with explicit message
+//     if (profile.isDeleted === true) {
+//       return res.status(400).json({
+//         status: false,
+//         message: "This company profile has been already deleted."
+//       });
+//     }
+
+//     const p = profile.toObject();
+
+//      // Flatten to a single string URL (or null)
+//     const certUrl = p.gstCertificate?.fileUrl
+//       ? (p.gstCertificate.fileUrl.startsWith("http")
+//           ? p.gstCertificate.fileUrl
+//           : `${baseUrl}${p.gstCertificate.fileUrl}`)
+//       : null;
+
+
+//     const responseData = {
+//       id: p._id,
+//       userId: p.userId,
+//       phoneNumber: p.phoneNumber,
+//       companyName: p.companyName,
+//       industryType: p.industryType?.name || null,
+//       contactPersonName: p.contactPersonName,
+//       panCardNumber: p.panCardNumber,
+//       gstNumber: p.gstNumber,
+//       gstCertificate: certUrl,
+//       alternatePhoneNumber: p.alternatePhoneNumber,
+//       email: p.email,
+//       companyAddress: p.companyAddress,
+//       state: p.state?.state || null,
+//       city: p.city,
+//       pincode: p.pincode,
+//       image: p.image || null,
+//        aboutCompany: p.aboutCompany ?? null,
+//         employerType: p.employerType || null
+//     };
+
+//     return res.status(200).json({
+//       status: true,
+//       message: "Company profile fetched successfully.",
+//       data: responseData
+//     });
+//   } catch (error) {
+//     console.error(error);
+//     return res.status(500).json({
+//       status: false,
+//       message: "Server error.",
+//       error: error.message
+//     });
+//   }
+// };
 
 
 
