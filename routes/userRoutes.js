@@ -9,6 +9,8 @@ const { getIndustryBasedOnRole, getCategoryBasedOnRole,
 getAllIndustriesPublic, getFeaturedCompaniesPublic, getJobPostsByCompanyPublic, 
 getWorkingShiftBasedOnRole, getAccountTypeBasedOnRole, getJobPostsByCategoryId, getAllJobTypesPublic } = require('../controllers/adminController');
     
+const { saveEmail } = require("../controllers/emailController");
+
 const { verifyToken, verifyJobSeekerOnly, verifyEmployerOnly } = require('../middleware/authMiddleware');
 
 const router = express.Router();
@@ -88,7 +90,8 @@ router.post('/logout', verifyToken, logout);
 router.get("/publicJobtypes", getAllJobTypesPublic);
 
 
-
+//newsletter
+router.post("/saveEmail", verifyToken, saveEmail);
 
 
 

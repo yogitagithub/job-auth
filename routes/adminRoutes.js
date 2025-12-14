@@ -23,6 +23,7 @@ createSubscription, getSubscription, updateSubscription, deleteSubscription } = 
 const { verifyToken, verifyAdmin, verifyEmployerOnly, verifyJobSeekerOnly } = require('../middleware/authMiddleware');
 const { adminApproveJobPost, getJobList, updateJobListById, adminRecommendJobPost } = require('../controllers/jobPostController');
 const { adminRecommendJobSeeker, adminTopJobSeeker } = require('../controllers/jobSeekerController');
+const { getAllSavedEmails, sendEmailToAllSavedUsers } = require('../controllers/emailController');
 
 
 router.post('/send-otp', sendAdminOtp);
@@ -157,7 +158,9 @@ router.put('/updateSubscription/:id', verifyToken, verifyAdmin, updateSubscripti
 router.delete('/deleteSubscription/:id', verifyToken, verifyAdmin, deleteSubscription);
 
 
-
+//newsletter
+router.get("/savedEmails", verifyToken, verifyAdmin, getAllSavedEmails);
+router.post("/sendEmail", verifyToken, verifyAdmin, sendEmailToAllSavedUsers);
 
 
 
