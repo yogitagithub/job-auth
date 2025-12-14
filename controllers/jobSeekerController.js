@@ -49,6 +49,7 @@ const pickCanonicalCity = (stateDoc, city) => {
 };
 
 
+
 exports.saveProfile = async (req, res) => {
   try {
     const { userId, role, phoneNumber } = req.user;
@@ -67,10 +68,9 @@ exports.saveProfile = async (req, res) => {
       });
     }
 
-    // Fetch existing profile early (needed for soft-delete check & city-only updates)
+    // Fetch existing profile
     let profile = await JobSeekerProfile.findOne({ userId });
 
-    // ⛔ Block updates if profile exists but is soft-deleted
     if (profile && profile.isDeleted === true) {
       return res.status(400).json({
         status: false,
@@ -78,120 +78,81 @@ exports.saveProfile = async (req, res) => {
       });
     }
 
-    // ---------- industryType (optional; accept name or ObjectId) ----------
+    /* ---------------- INDUSTRY TYPE ---------------- */
     if (Object.prototype.hasOwnProperty.call(req.body, "industryType")) {
       const val = req.body.industryType;
-      let doc = null;
+      let industryDoc = null;
 
-      if (mongoose.Types.ObjectId.isValid(val)) doc = await IndustryType.findById(val);
-      if (!doc && typeof val === "string") doc = await IndustryType.findOne({ name: val.trim() });
+      if (mongoose.Types.ObjectId.isValid(val)) {
+        industryDoc = await IndustryType.findById(val);
+      }
 
-      if (!doc) {
+      if (!industryDoc && typeof val === "string") {
+        industryDoc = await IndustryType.findOne({ name: val.trim() });
+      }
+
+      if (!industryDoc) {
         return res.status(400).json({
           status: false,
-          message: "Invalid industry type (use valid name or id)."
+          message: "Invalid industry type."
         });
       }
-      req.body.industryType = doc._id;
+
+      req.body.industryType = industryDoc._id;
+
+      if (industryDoc.name.toLowerCase() === "other") {
+        const otherName = String(req.body.otherIndustryName || "").trim();
+        if (!otherName) {
+          return res.status(400).json({
+            status: false,
+            message: "otherIndustryName is required when industryType is Other."
+          });
+        }
+        req.body.otherIndustryName = otherName;
+      } else {
+        req.body.otherIndustryName = null;
+      }
     }
 
-
-        // -------- Handle "Other" industry type ----------
-if (req.body.industryType) {
-  const industryDoc = await IndustryType.findById(req.body.industryType);
-
-  if (industryDoc && industryDoc.name.toLowerCase() === "other") {
-    // user selected OTHER industry
-    const otherName = req.body.otherIndustryName?.trim();
-
-    if (!otherName) {
-      return res.status(400).json({
-        status: false,
-        message: "Please enter your industry in otherIndustryName."
-      });
-    }
-
-    req.body.otherIndustryName = otherName; // save
-  } else {
-    // clear when not OTHER
-    req.body.otherIndustryName = null;
-  }
-}
-
-
-   // ---------- jobProfile (optional; free text) ----------
+    /* ---------------- JOB PROFILE ---------------- */
     if (Object.prototype.hasOwnProperty.call(req.body, "jobProfile")) {
       const jp = String(req.body.jobProfile || "").trim();
-      req.body.jobProfile = jp.length ? jp : null; // store null if empty
+      req.body.jobProfile = jp || null;
     }
 
-      // ---------- salaryType (REQUIRED on create; accept name or ObjectId) ----------
-    // allow alias "SalaryType"
-    if (!req.body.salaryType && req.body.SalaryType) {
-      req.body.salaryType = req.body.SalaryType;
-      delete req.body.SalaryType;
-    }
-    // treat ""/null as not provided
-    if (req.body.salaryType === "" || req.body.salaryType == null) delete req.body.salaryType;
-
-    if (Object.prototype.hasOwnProperty.call(req.body, "salaryType")) {
-      const raw = String(req.body.salaryType).trim();
-      let doc = null;
-      if (mongoose.Types.ObjectId.isValid(raw)) doc = await SalaryType.findById(raw);
-      if (!doc) doc = await SalaryType.findOne({ name: new RegExp(`^${escapeRegex(raw)}$`, "i") });
-      if (!doc) return res.status(400).json({ status: false, message: "Invalid salary type (use valid name or id)." });
-      req.body.salaryType = doc._id; // store ObjectId
-    }
-
-
-    // ---------- dateOfBirth (optional; accept DD-MM-YYYY, YYYY-MM-DD, ISO) ----------
+    /* ---------------- DATE OF BIRTH ---------------- */
     if (Object.prototype.hasOwnProperty.call(req.body, "dateOfBirth")) {
       const raw = String(req.body.dateOfBirth).trim();
-
       let parsed = null;
+
       if (/^\d{2}-\d{2}-\d{4}$/.test(raw)) {
         const [dd, mm, yyyy] = raw.split("-");
         parsed = new Date(`${yyyy}-${mm}-${dd}T00:00:00.000Z`);
       } else if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
         parsed = new Date(`${raw}T00:00:00.000Z`);
-      } else if (!Number.isNaN(Date.parse(raw))) {
-        parsed = new Date(raw);
       }
 
-      if (!parsed || Number.isNaN(parsed.getTime())) {
+      if (!parsed || isNaN(parsed.getTime())) {
         return res.status(400).json({
           status: false,
-          message: "Invalid dateOfBirth. Use DD-MM-YYYY or YYYY-MM-DD."
+          message: "Invalid dateOfBirth format."
         });
       }
+
       req.body.dateOfBirth = parsed;
     }
 
- // ---------- state & city (optional, flexible) ----------
-    // treat "" / null as not provided so "state": "" won't trigger invalid-state branch
+    /* ---------------- STATE & CITY ---------------- */
     if (req.body.state === "" || req.body.state == null) delete req.body.state;
     if (req.body.city === "" || req.body.city == null) delete req.body.city;
 
-    let hasState = Object.prototype.hasOwnProperty.call(req.body, "state");
-    let hasCity = Object.prototype.hasOwnProperty.call(req.body, "city");
+    if (!req.body.state && req.body.city) {
+      const cityInput = String(req.body.city).trim();
 
-    const resolveState = async (input) => {
-      if (mongoose.Types.ObjectId.isValid(input)) return StateCity.findById(input);
-      if (typeof input === "string") {
-        // case-insensitive lookup by state name
-        return StateCity.findOne({ state: new RegExp(`^${escapeRegex(input)}$`, "i") });
-      }
-      return null;
-    };
+      const stateDoc = await StateCity.findOne({
+        cities: { $regex: new RegExp(`^${cityInput}$`, "i") }
+      });
 
-    // If ONLY city provided, infer state from city
-    if (!hasState && hasCity) {
-      const inputCity = String(req.body.city || "").trim();
-      if (!inputCity) {
-        return res.status(400).json({ status: false, message: "City is empty." });
-      }
-
-      const stateDoc = await findStateByCity(inputCity);
       if (!stateDoc) {
         return res.status(400).json({
           status: false,
@@ -199,190 +160,131 @@ if (req.body.industryType) {
         });
       }
 
-      // canonicalize city & inject state id
-      req.body.city = pickCanonicalCity(stateDoc, inputCity);
       req.body.state = stateDoc._id;
-      hasState = true;
+      req.body.city = stateDoc.cities.find(
+        c => c.toLowerCase() === cityInput.toLowerCase()
+      );
     }
 
-    // If state provided (with/without city), validate & standardize
-    if (hasState) {
-      const stateDoc = await resolveState(req.body.state);
-      if (!stateDoc) {
-        return res.status(400).json({ status: false, message: "Invalid state." });
+    /* ---------------- EXPERIENCE & SALARY RULES ---------------- */
+    const hasIsExperienced = Object.prototype.hasOwnProperty.call(req.body, "isExperienced");
+    const hasSalary = Object.prototype.hasOwnProperty.call(req.body, "CurrentSalary");
+    const hasSalaryType = Object.prototype.hasOwnProperty.call(req.body, "salaryType");
+
+    if (hasIsExperienced) {
+      req.body.isExperienced =
+        ["true", "1", "yes"].includes(String(req.body.isExperienced).toLowerCase());
+    }
+
+    const nextIsExperienced =
+      hasIsExperienced ? req.body.isExperienced : profile?.isExperienced ?? false;
+
+    /* ---------- FRESHER (SAVE NULLS) ---------- */
+    if (nextIsExperienced === false) {
+      req.body.CurrentSalary = null;
+      req.body.salaryType = null;
+    }
+
+    /* ---------- EXPERIENCED (STRICT) ---------- */
+    if (nextIsExperienced === true) {
+      if (!hasSalary && !profile?.CurrentSalary) {
+        return res.status(400).json({
+          status: false,
+          message: "CurrentSalary is required for experienced candidates."
+        });
       }
 
-      if (hasCity) {
-        const cityStr = String(req.body.city).trim();
-        const ok = stateDoc.cities.some(
-          (c) => String(c).toLowerCase() === cityStr.toLowerCase()
-        );
-        if (!ok) {
+      if (!hasSalaryType && !profile?.salaryType) {
+        return res.status(400).json({
+          status: false,
+          message: "salaryType is required for experienced candidates."
+        });
+      }
+
+      if (hasSalary) {
+        const n = Number(req.body.CurrentSalary);
+        if (!Number.isFinite(n) || n < 0) {
           return res.status(400).json({
             status: false,
-            message: "Invalid city for the selected state."
+            message: "CurrentSalary must be a non-negative number."
           });
         }
-        // use canonical city from DB
-        req.body.city = pickCanonicalCity(stateDoc, cityStr);
-      } else {
-        // state-only update: drop existing city if it doesn't belong anymore
-        const existingCity = profile?.city;
-        const stillValid =
-          existingCity &&
-          stateDoc.cities.some((c) => String(c).toLowerCase() === String(existingCity).toLowerCase());
-        if (!stillValid) {
-          req.body.city = null;
-        }
+        req.body.CurrentSalary = n;
       }
-
-      // Store state as ObjectId
-      req.body.state = stateDoc._id;
     }
 
+    /* ---------------- SALARY TYPE LOOKUP ---------------- */
+    if (
+      Object.prototype.hasOwnProperty.call(req.body, "salaryType") &&
+      req.body.salaryType !== null
+    ) {
+      const raw = String(req.body.salaryType).trim();
+      let salaryDoc = null;
 
-        // ---------- normalize optional empties (address, panCardNumber) ----------
-    ["panCardNumber", "address"].forEach((k) => {
-      if (Object.prototype.hasOwnProperty.call(req.body, k)) {
-        if (req.body[k] === "" || req.body[k] == null) req.body[k] = null;
+      if (mongoose.Types.ObjectId.isValid(raw)) {
+        salaryDoc = await SalaryType.findById(raw);
       }
-    });
 
+      if (!salaryDoc) {
+        salaryDoc = await SalaryType.findOne({
+          name: new RegExp(`^${raw}$`, "i")
+        });
+      }
 
+      if (!salaryDoc) {
+        return res.status(400).json({
+          status: false,
+          message: "Invalid salary type."
+        });
+      }
 
-
-
-    // ---------- experience/salary rules ----------
-const hasIsExperienced = Object.prototype.hasOwnProperty.call(req.body, "isExperienced");
-const hasSalary       = Object.prototype.hasOwnProperty.call(req.body, "CurrentSalary");
-
-// Normalize incoming values if present
-if (hasIsExperienced) {
-  const v = String(req.body.isExperienced).toLowerCase();
-  req.body.isExperienced = (v === "true" || v === "1" || v === "yes");
-}
-if (hasSalary && req.body.CurrentSalary !== null && req.body.CurrentSalary !== "") {
-  const n = Number(req.body.CurrentSalary);
-  if (!Number.isFinite(n) || n < 0) {
-    return res.status(400).json({ status: false, message: "CurrentSalary must be a non-negative number." });
-  }
-  req.body.CurrentSalary = n;
-}
-
-// Determine the effective next value of isExperienced for this request
-const nextIsExperienced =
-  hasIsExperienced ? req.body.isExperienced : (profile?.isExperienced ?? false);
-
-// 1) Fresher must NOT send salary
-if (nextIsExperienced === false && hasSalary && req.body.CurrentSalary != null) {
-  return res.status(400).json({
-    status: false,
-    message: "Fresher candidates must not provide CurrentSalary."
-  });
-}
-
-// 2) Experienced must HAVE salary
-//    - On create and when switching from fresher->experienced in this request,
-//      salary must be provided in body.
-//    - On update where already experienced, we allow leaving salary unchanged.
-const wasExperienced = !!profile?.isExperienced;
-const isTurningExperiencedNow = (nextIsExperienced === true && wasExperienced === false);
-
-if (nextIsExperienced === true) {
-  const effectiveSalary =
-    hasSalary ? req.body.CurrentSalary : (profile ? profile.CurrentSalary : undefined);
-
-  if (isTurningExperiencedNow && (effectiveSalary == null)) {
-    return res.status(400).json({
-      status: false,
-      message: "CurrentSalary is required when marking profile as experienced."
-    });
-  }
-}
-
-// 3) If user explicitly sets fresher, clear salary
-if (nextIsExperienced === false) {
-  // ensure we don't persist a salary for freshers
-  delete req.body.CurrentSalary;
-  if (profile && profile.CurrentSalary != null) {
-    profile.CurrentSalary = undefined;
-  }
-}
-
-
-    // ---------- Create or Update (partial allowed) ----------
-    const restrictedFields = ["_id", "userId", "phoneNumber", "__v", "image", "isDeleted", "deletedAt", "isResumeAdded", "isEducationAdded", "isSkillsAdded", "isExperienceAdded"];
-    const isCreate = !profile;
-
-    // Enforce salaryType presence on CREATE (schema requires it)
-    if (isCreate && !Object.prototype.hasOwnProperty.call(req.body, "salaryType")) {
-      return res.status(400).json({ status: false, message: "salaryType is required." });
+      req.body.salaryType = salaryDoc._id;
     }
 
+    /* ---------------- CREATE / UPDATE ---------------- */
+    const restrictedFields = [
+      "_id", "userId", "phoneNumber", "__v", "image",
+      "isDeleted", "deletedAt"
+    ];
 
-
-    if (isCreate) {
+    if (!profile) {
       profile = new JobSeekerProfile({
         userId,
         phoneNumber,
-
-         isResumeAdded:     false,
-    isEducationAdded:  false,
-    isSkillsAdded:     false,
-    isExperienceAdded: false,
-
-
-        ...Object.keys(req.body).reduce((acc, k) => {
-          if (!restrictedFields.includes(k)) acc[k] = req.body[k];
-          return acc;
-        }, {})
+        ...req.body
       });
-      await profile.save();
     } else {
-      Object.keys(req.body).forEach((field) => {
-        if (!restrictedFields.includes(field)) {
-          profile[field] = req.body[field];
+      Object.keys(req.body).forEach(key => {
+        if (!restrictedFields.includes(key)) {
+          profile[key] = req.body[key];
         }
       });
-      await profile.save();
     }
 
-    // ---------- Populate & respond ----------
+    await profile.save();
+
+    /* ---------------- RESPONSE ---------------- */
     const populated = await JobSeekerProfile.findById(profile._id)
       .populate("industryType", "name")
-      .populate("state", "state")
-     
-       .populate("salaryType", "name");
+      .populate("salaryType", "name")
+      .populate("state", "state");
 
-
-
+    const isExperienced = !!populated.isExperienced;
 
     return res.status(200).json({
       status: true,
-      message: `Job seeker profile ${isCreate ? "created" : "updated"} successfully.`,
+      message: "Job seeker profile saved successfully.",
       data: {
         ...populated.toObject(),
         industryType: populated.industryType?.name || null,
         state: populated.state?.state || null,
-       
-         salaryType:   populated.salaryType?.name   || null,
-          jobProfile: populated.jobProfile || null,
-        city: populated.city ?? null,
-        dateOfBirth: populated.dateOfBirth
-          ? populated.dateOfBirth.toISOString().split("T")[0]
-          : null,
-
-             panCardNumber: populated.panCardNumber || null,
-    address: populated.address || null,
-
-           isResumeAdded:     !!populated.isResumeAdded,
-        isEducationAdded:  !!populated.isEducationAdded,
-        isSkillsAdded:     !!populated.isSkillsAdded,
-        isExperienceAdded: !!populated.isExperienceAdded
+        CurrentSalary: isExperienced ? populated.CurrentSalary ?? null : null,
+        salaryType: isExperienced ? populated.salaryType?.name || null : null
       }
     });
+
   } catch (error) {
-    console.error("Error creating/updating job seeker profile:", error);
+    console.error("saveProfile error:", error);
     return res.status(500).json({
       status: false,
       message: "Server error.",
@@ -390,6 +292,8 @@ if (nextIsExperienced === false) {
     });
   }
 };
+
+
 
 
 exports.getProfile = async (req, res) => {
@@ -486,6 +390,14 @@ exports.getProfile = async (req, res) => {
         gender: p.gender,
         email: p.email,
         industryType: p.industryType?.name || null,
+
+      
+otherIndustryName:
+  p.industryType?.name?.toLowerCase() === "other"
+    ? p.otherIndustryName
+    : null,
+
+
          jobProfile: jobProfileName,  
          salaryType:   p.salaryType?.name   || null,  
         address: p.address,

@@ -72,10 +72,13 @@ exports.applyJobs = async (req, res) => {
       arr.length <= 1 ? arr.join("") :
       arr.length === 2 ? `${arr[0]} and ${arr[1]}` :
       `${arr.slice(0,-1).join(", ")}, and ${arr[arr.length-1]}`;
+
+
+      
     if (missing.length) {
       return res.status(400).json({
         status: false,
-        message: `Please complete ${humanJoin(missing)} section${missing.length > 1 ? "s" : ""} before applying.`,
+        message: `Your profile is incomplete. Please complete the following section${missing.length > 1 ? "s" : ""} to proceed: ${humanJoin(missing)}.`,
       });
     }
 

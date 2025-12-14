@@ -45,6 +45,13 @@ const profileSchema = new mongoose.Schema(
   ref: "IndustryType",
   },
 
+
+   otherIndustryName: {
+  type: String,
+  trim: true,
+  default: null
+},
+
      panCardNumber: { type: String, trim: true },
 
       alternatePhoneNumber: { type: String },
@@ -72,24 +79,31 @@ const profileSchema = new mongoose.Schema(
         ref: "StateCity",
        
       },
-    
-      city: {
-        type: String,
-        validate: {
-          validator: function (value) {
-            if (!value) return true; 
-            const state = this.state;
-            if (!state) return false;
-            
-            return StateCity.findById(state).then((stateDoc) => {
-              return stateDoc && stateDoc.cities.includes(value);
-            });
-          },
-          message: 'City must be one of the cities defined in the selected state'
-        }
-      },
 
-    pincode: {
+
+      city: {
+  type: String,
+  validate: {
+    validator: async function (value) {
+      // allow empty city
+      if (!value) return true;
+
+      // allow city temporarily without state
+      if (!this.state) return true;
+
+      const stateDoc = await StateCity.findById(this.state);
+      if (!stateDoc) return false;
+
+      return stateDoc.cities.some(
+        c => c.toLowerCase() === value.toLowerCase()
+      );
+    },
+    message: "City must be one of the cities defined in the selected state"
+  }
+},
+
+    
+      pincode: {
       type: String,
      },
 

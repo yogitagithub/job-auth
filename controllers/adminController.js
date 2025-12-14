@@ -4487,7 +4487,6 @@ exports.jobList = async (req, res) => {
       .populate({ path: "salaryType",   select: "name" })
       .populate({ path: "jobType",      select: "name" })
       .populate({ path: "experience",   select: "name" })
-      .populate({ path: "otherField",   select: "name" })
       .populate({ path: "workingShift", select: "name" })
       .populate({ path: "jobProfile",   select: "name" })
       .populate({ path: "state",        select: "state" })
@@ -4512,7 +4511,6 @@ exports.jobList = async (req, res) => {
         salaryType:   p.salaryType?.name ?? null,
         jobType:      p.jobType?.name ?? null,
         experience:   p.experience?.name ?? null,
-        otherField:   p.otherField?.name ?? null,
         workingShift: p.workingShift?.name ?? null,
         jobProfile:   p.jobProfile?.name ?? null,
 

@@ -91,7 +91,7 @@ router.get("/publicJobtypes", getAllJobTypesPublic);
 
 
 //newsletter
-router.post("/saveEmail", verifyToken, saveEmail);
+router.post("/saveEmail", saveEmail);
 
 
 

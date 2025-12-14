@@ -2,17 +2,7 @@ const mongoose = require("mongoose");
 
 const savedEmailSchema = new mongoose.Schema(
   {
-    userId: {
-      type: mongoose.Schema.Types.ObjectId,
-      required: true,
-      index: true
-    },
-
-    role: {
-      type: String,
-      enum: ["employer", "jobseeker"],
-      required: true
-    },
+    
 
     email: {
       type: String,

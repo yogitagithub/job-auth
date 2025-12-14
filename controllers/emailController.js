@@ -8,16 +8,7 @@ const { sendBulkEmail } = require("../config/emailService");
 
 exports.saveEmail = async (req, res) => {
   try {
-    const { userId, role } = req.user;
     const { email } = req.body;
-
-    // -------- ROLE CHECK --------
-    if (!["employer", "job_seeker"].includes(role)) {
-      return res.status(403).json({
-        status: false,
-        message: "Unauthorized role."
-      });
-    }
 
     // -------- EMAIL VALIDATION --------
     if (!email || !email.trim()) {
@@ -37,14 +28,10 @@ exports.saveEmail = async (req, res) => {
       });
     }
 
-    // -------- SAVE EMAIL --------
+    // -------- SAVE EMAIL (no user, no role) --------
     const saved = await SavedEmail.findOneAndUpdate(
-      { userId, email: normalizedEmail },
-      {
-        userId,
-        role,
-        email: normalizedEmail
-      },
+      { email: normalizedEmail },
+      { email: normalizedEmail },
       { upsert: true, new: true }
     );
 
@@ -54,7 +41,6 @@ exports.saveEmail = async (req, res) => {
       data: {
         id: saved._id,
         email: saved.email,
-        role: saved.role,
         createdAt: saved.createdAt
       }
     });
@@ -62,7 +48,7 @@ exports.saveEmail = async (req, res) => {
   } catch (error) {
     console.error("saveEmail error:", error);
 
-    // Duplicate index safety
+    // Duplicate email safety
     if (error.code === 11000) {
       return res.status(200).json({
         status: true,
@@ -78,8 +64,6 @@ exports.saveEmail = async (req, res) => {
   }
 };
 
-
-//admin can access only to get the list of saved emails
 
 exports.getAllSavedEmails = async (req, res) => {
   try {
