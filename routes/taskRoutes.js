@@ -3,7 +3,7 @@ const router = express.Router();
 
 const { uploadTask, updateTask, updatedTaskDetails, 
     updateTaskPayment, getMyTasks, getApprovedTasks, getPaymentsList, getPaymentDetails, 
-    getApprovedCandidatePayment, getSeekerPaymentHistory } = require('../controllers/taskController');
+    getApprovedCandidatePayment, getSeekerPaymentHistory, getTasks } = require('../controllers/taskController');
 
 const { verifyToken } = require('../middleware/authMiddleware');
 const uploadCertificate = require("../middleware/uploadCertificate");
@@ -13,8 +13,13 @@ const uploadCertificate = require("../middleware/uploadCertificate");
 router.post("/upload-task", verifyToken, uploadCertificate.single("file"), uploadTask);
 
 
-//get all the task 
+//get all the task with applicationId
 router.get("/my-tasks/:applicationId", verifyToken, getMyTasks);
+
+
+//get all the task without applicationId
+
+router.get("/my-tasks", verifyToken, getTasks);
 
 
 //get only approved task

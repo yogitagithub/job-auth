@@ -1414,8 +1414,6 @@ exports.getMyTasks = async (req, res) => {
 
 
 //get only approved task for both employer and job seeker
-
-
 exports.getApprovedTasks = async (req, res) => {
   try {
     const { role, userId } = req.user || {};
@@ -1579,6 +1577,118 @@ exports.getApprovedTasks = async (req, res) => {
     });
   }
 };
+
+//get all the task without applicationId
+exports.getTasks = async (req, res) => {
+  try {
+    const { role, userId } = req.user;
+
+    if (role !== "job_seeker") {
+      return res.status(403).json({
+        status: false,
+        message: "Only job seekers can view tasks.",
+      });
+    }
+
+    /* ---------------- Job Seeker ---------------- */
+    const jobSeeker = await JobSeekerProfile.findOne({
+      userId,
+      isDeleted: false,
+    }).select("_id");
+
+    if (!jobSeeker) {
+      return res.status(404).json({
+        status: false,
+        message: "Job seeker profile not found.",
+      });
+    }
+
+    /* ---------------- Pagination ---------------- */
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.max(parseInt(req.query.limit) || 10, 1);
+    const skip = (page - 1) * limit;
+
+    /* ---------------- Approved Job Applications ---------------- */
+    const approvedApplications = await JobApplication.find({
+      jobSeekerId: jobSeeker._id,
+      employerApprovalStatus: "Approved",
+    }).select("_id");
+
+    if (!approvedApplications.length) {
+      return res.status(200).json({
+        status: true,
+        message: "No tasks found.",
+        data: {
+          totalRecord: 0,
+          totalPage: 0,
+          currentPage: page,
+          taskList: [],
+        },
+      });
+    }
+
+    const jobApplicationIds = approvedApplications.map(app => app._id);
+
+    /* ---------------- Tasks Query ---------------- */
+    const [totalRecord, tasks] = await Promise.all([
+      Task.countDocuments({
+        jobApplicationId: { $in: jobApplicationIds },
+        employerApprovedTask: "Approved",
+      }),
+
+      Task.find({
+        jobApplicationId: { $in: jobApplicationIds },
+        employerApprovedTask: "Approved",
+      })
+        .populate({
+          path: "jobApplicationId",
+          select: "jobPostId hourlyRate",
+          populate: {
+            path: "jobPostId",
+            select: "jobTitle",
+          },
+        })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+    ]);
+
+    /* ---------------- Response ---------------- */
+    return res.status(200).json({
+      status: true,
+      message: "Tasks fetched successfully.",
+      data: {
+        totalRecord,
+        totalPage: Math.ceil(totalRecord / limit),
+        currentPage: page,
+        taskList: tasks.map(task => ({
+          _id: task._id,
+          title: task.title,
+          description: task.description,
+          fileUrl: task.fileUrl || null,
+          hoursWorked: task.hoursWorked,
+          progressPercent: task.progressPercent,
+          status: task.status,
+          employerApprovedTask: task.employerApprovedTask,
+          remarks: task.remarks,
+          submittedAt: task.submittedAt,
+          createdAt: task.createdAt,
+          jobTitle: task.jobApplicationId?.jobPostId?.jobTitle || null,
+          hourlyRate: task.jobApplicationId?.hourlyRate || null,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error("getTasks error:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
+
 
 
 
