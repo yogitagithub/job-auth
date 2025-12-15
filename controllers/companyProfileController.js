@@ -686,24 +686,26 @@ exports.getEmployerProfileProgress = async (req, res) => {
     }
 
     // 4) Fields to count toward progress (adjust as you like)
-    const FIELDS = [
-      "phoneNumber",
-      "companyName",
-      "industryType",
-      "contactPersonName",
-      
-      "gstNumber",
-      // nested gstCertificate: count if fileUrl present
-      "gstCertificate.fileUrl",
-    
-      "email",
-      "companyAddress",
-      "state",
-      "city",
-      "pincode",
-      "image",
-     
-    ];
+    let FIELDS = [
+  "phoneNumber",
+  "companyName",
+  "industryType",
+  "contactPersonName",
+  "email",
+  "companyAddress",
+  "state",
+  "city",
+  "pincode",
+  "image",
+  "aboutCompany"
+];
+
+// GST required only for company
+if (profile.employerType === "company") {
+  FIELDS.push("gstNumber");
+  FIELDS.push("gstCertificate.fileUrl");
+}
+
 
     // Helper: get nested value by path
     const getVal = (obj, path) =>

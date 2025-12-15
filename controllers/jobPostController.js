@@ -133,17 +133,24 @@ if (company.employerType === "company") {
   }
 }
 
+
+
+
 // 4️⃣ If anything missing → reject
 if (missingFields.length > 0) {
+  const gstRelatedMissing = missingFields.some(
+    f => f === "gstNumber" || f === "gstCertificate"
+  );
+
   return res.status(400).json({
     status: false,
-    message:
-      company.employerType === "individual"
-        ? "Please complete your profile before creating a job post."
-        : "Please complete company GST details before creating a job post.",
+    message: gstRelatedMissing
+      ? "Please complete your company GST details before creating a job post."
+      : "Please complete your company profile before creating a job post.",
     missingFields,
   });
 }
+
 
 
     
