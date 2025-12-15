@@ -986,44 +986,70 @@ exports.getSeekerPaymentHistory = async (req, res) => {
       });
     }
 
-    const pageParam = parseInt(req.query.page, 10);
-    const limitParam = parseInt(req.query.limit, 10);
-
-    const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
-    const limit = Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 10;
+    /* -------------------- Pagination -------------------- */
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.max(parseInt(req.query.limit) || 10, 1);
     const skip = (page - 1) * limit;
+
+    /* -------------------- Filters -------------------- */
+    const { employerName, paymentDate } = req.query;
 
     const filter = {
       jobSeekerId: jobSeeker._id,
       isDeleted: false,
     };
 
-    const [totalRecord, payments] = await Promise.all([
-      Payment.countDocuments(filter),
-      Payment.find(filter)
-        .populate({
-          path: "employerId",
-          // 👇 add phoneNumber & email here
-          select: "companyName phoneNumber email",
-        })
-        .populate({
-          path: "jobApplicationId",
-          select: "jobPostId",
+    // 🔹 Filter by paymentDate (single day)
+    if (paymentDate) {
+      const startDate = new Date(paymentDate);
+      startDate.setUTCHours(0, 0, 0, 0);
+
+      const endDate = new Date(paymentDate);
+      endDate.setUTCHours(23, 59, 59, 999);
+
+      filter.createdAt = {
+        $gte: startDate,
+        $lte: endDate,
+      };
+    }
+
+    /* -------------------- Fetch Payments -------------------- */
+    const paymentsQuery = Payment.find(filter)
+      .populate({
+        path: "employerId",
+        select: "companyName phoneNumber email",
+        match: employerName
+          ? { companyName: new RegExp(`^${employerName}$`, "i") }
+          : {},
+      })
+      .populate({
+        path: "jobApplicationId",
+        select: "jobPostId",
+        populate: {
+          path: "jobPostId",
+          select: "jobTitle companyId",
           populate: {
-            path: "jobPostId",
-            select: "jobTitle companyId",
-            populate: {
-              path: "companyId",
-              select: "companyName",
-            },
+            path: "companyId",
+            select: "companyName",
           },
-        })
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
+        },
+      })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const [totalRecord, paymentsRaw] = await Promise.all([
+      Payment.countDocuments(filter),
+      paymentsQuery,
     ]);
 
+    // 🔹 Remove records where employer filter didn’t match
+    const payments = employerName
+      ? paymentsRaw.filter((p) => p.employerId)
+      : paymentsRaw;
+
+    /* -------------------- Calculations -------------------- */
     const totalPayableHours = payments.reduce(
       (sum, p) => sum + (p.totalHours || 0),
       0
@@ -1043,12 +1069,6 @@ exports.getSeekerPaymentHistory = async (req, res) => {
     const paymentHistoryList = await Promise.all(
       payments.map(async (p) => {
         const jobApp = p.jobApplicationId;
-        const jobPost = jobApp?.jobPostId;
-
-        const employerName =
-          p.employerId?.companyName ||
-          jobPost?.companyId?.companyName ||
-          "Unknown";
 
         const tasks = await Task.find({
           jobApplicationId: jobApp?._id,
@@ -1064,12 +1084,9 @@ exports.getSeekerPaymentHistory = async (req, res) => {
         return {
           _id: p._id.toString(),
           jobApplicationId: jobApp?._id?.toString() || null,
-          employerName,
-          
-          // 👇 NEW FIELDS
+          employerName: p.employerId?.companyName || "Unknown",
           employerPhoneNumber: p.employerId?.phoneNumber || null,
           employerEmail: p.employerId?.email || null,
-
           jobSeekerName,
           phoneNumber: jobSeeker.phoneNumber || null,
           email: jobSeeker.email || null,
@@ -1077,15 +1094,13 @@ exports.getSeekerPaymentHistory = async (req, res) => {
           approvedTasks,
           paymentDate: p.createdAt,
           isPaid: true,
-
           totalHours: p.totalHours || 0,
-           amountReceived: totalPayableAmount,
-         };
+          amountReceived: p.totalAmount || 0,
+        };
       })
     );
 
-    const totalPage = limit ? Math.ceil(totalRecord / limit) : 1;
-    const currentPage = limit ? Math.min(page, totalPage || 1) : 1;
+    const totalPage = Math.ceil(totalRecord / limit);
 
     return res.status(200).json({
       status: true,
@@ -1093,14 +1108,11 @@ exports.getSeekerPaymentHistory = async (req, res) => {
       data: {
         totalRecord,
         totalPage,
-        currentPage,
+        currentPage: page,
         paymentHistoryList,
-
-         totalHours: totalPayableHours,
+        totalHours: totalPayableHours,
         totalAmount: totalPayableAmount,
-
-
-        },
+      },
     });
   } catch (err) {
     console.error("getSeekerPaymentHistory error:", err);
@@ -1111,8 +1123,6 @@ exports.getSeekerPaymentHistory = async (req, res) => {
     });
   }
 };
-
-
 
 
 
