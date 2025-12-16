@@ -139,15 +139,21 @@ exports.getMySkills = async (req, res) => {
   }
 };
 
-// checking needed
+
+
 exports.updateSkill = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
+
   try {
     const { userId, role } = req.user || {};
+
     if (role !== "job_seeker") {
       await session.abortTransaction(); session.endSession();
-      return res.status(403).json({ status: false, message: "Only job seekers can update skills." });
+      return res.status(403).json({
+        status: false,
+        message: "Only job seekers can update skills."
+      });
     }
 
     let { oldSkill, newSkill } = req.body || {};
@@ -156,54 +162,61 @@ exports.updateSkill = async (req, res) => {
 
     if (!oldSkill || !newSkill) {
       await session.abortTransaction(); session.endSession();
-      return res.status(400).json({ status: false, message: "oldSkill and newSkill are required." });
+      return res.status(400).json({
+        status: false,
+        message: "oldSkill and newSkill are required."
+      });
     }
+
     if (oldSkill.toLowerCase() === newSkill.toLowerCase()) {
       await session.abortTransaction(); session.endSession();
-      return res.status(200).json({ status: true, message: "No changes detected.", data: [] });
+      return res.status(200).json({
+        status: true,
+        message: "No changes detected.",
+        data: []
+      });
     }
 
-    // Ensure job seeker profile exists (optional guard)
-    const jsProfile = await JobSeekerProfile.findOne({ userId }).select("_id").session(session);
-    if (!jsProfile) {
-      await session.abortTransaction(); session.endSession();
-      return res.status(400).json({ status: false, message: "Please complete your profile before updating skills." });
-    }
-
-    // Load the user's skill list
-    let jss = await JobSeekerSkill.findOne({ userId }).session(session);
-    if (!jss) {
-      await session.abortTransaction(); session.endSession();
-      return res.status(404).json({ status: false, message: "No skill list found for this user." });
-    }
-    if (jss.isDeleted) {
-      await session.abortTransaction(); session.endSession();
-      return res.status(409).json({ status: false, message: "Your skill list is currently disabled." });
-    }
-
-    // Resolve both skills against Admin skills (must be active)
-    const found = await Skill.find({
-      isDeleted: false,
-      skill: { $in: [oldSkill, newSkill] }
-    })
-      .collation({ locale: "en", strength: 2 }) // case-insensitive
+    // Ensure job seeker profile exists
+    const jsProfile = await JobSeekerProfile
+      .findOne({ userId })
+      .select("_id")
       .session(session);
 
-    const byNorm = new Map(found.map(s => [tidy(s.skill).toLowerCase(), s]));
-    const docOld = byNorm.get(oldSkill.toLowerCase());
-    const docNew = byNorm.get(newSkill.toLowerCase());
-
-    if (!docOld) {
+    if (!jsProfile) {
       await session.abortTransaction(); session.endSession();
-      return res.status(422).json({ status: false, message: "oldSkill is not in admin skill list." });
-    }
-    if (!docNew) {
-      await session.abortTransaction(); session.endSession();
-      return res.status(422).json({ status: false, message: "newSkill is not in admin skill list." });
+      return res.status(400).json({
+        status: false,
+        message: "Please complete your profile before updating skills."
+      });
     }
 
-    // Ensure oldSkill is in the user's list
-    const hasOld = (jss.skillIds || []).some(id => String(id) === String(docOld._id));
+    // Load skill document
+    const jss = await JobSeekerSkill.findOne({ userId }).session(session);
+
+    if (!jss) {
+      await session.abortTransaction(); session.endSession();
+      return res.status(404).json({
+        status: false,
+        message: "No skill list found for this user."
+      });
+    }
+
+    if (jss.isDeleted) {
+      await session.abortTransaction(); session.endSession();
+      return res.status(409).json({
+        status: false,
+        message: "Your skill list is currently disabled."
+      });
+    }
+
+    const skills = jss.skills || [];
+
+    // Case-insensitive checks
+    const hasOld = skills.some(
+      s => s.toLowerCase() === oldSkill.toLowerCase()
+    );
+
     if (!hasOld) {
       await session.abortTransaction(); session.endSession();
       return res.status(404).json({
@@ -212,52 +225,43 @@ exports.updateSkill = async (req, res) => {
       });
     }
 
-    // Prevent duplicates: newSkill must not already be in user's list
-    const hasNew = (jss.skillIds || []).some(id => String(id) === String(docNew._id));
+    const hasNew = skills.some(
+      s => s.toLowerCase() === newSkill.toLowerCase()
+    );
+
     if (hasNew) {
       await session.abortTransaction(); session.endSession();
-      return res.status(409).json({ status: false, message: "The new skill already exists in your list." });
+      return res.status(409).json({
+        status: false,
+        message: "The new skill already exists in your list."
+      });
     }
 
-    // Swap: pull old, push new
-    await JobSeekerSkill.updateOne(
-      { _id: jss._id },
-      { $pull: { skillIds: docOld._id } },
-      { session }
-    );
-    await JobSeekerSkill.updateOne(
-      { _id: jss._id },
-      { $addToSet: { skillIds: docNew._id } },
-      { session }
+    // Replace oldSkill with newSkill
+    jss.skills = skills.map(s =>
+      s.toLowerCase() === oldSkill.toLowerCase() ? newSkill : s
     );
 
-    // Adjust counts (+1 for new, -1 for old; guard against negative)
-    await Skill.bulkWrite(
-      [
-        { updateOne: { filter: { _id: docOld._id, count: { $gt: 0 } }, update: { $inc: { count: -1 } } } },
-        { updateOne: { filter: { _id: docNew._id },                       update: { $inc: { count: 1 } } } }
-      ],
-      { session }
-    );
-
-    // Return the updated list as plain array
-    const refreshed = await JobSeekerSkill.findById(jss._id)
-      .populate({ path: "skillIds", match: { isDeleted: false }, select: "skill" })
-      .session(session);
+    await jss.save({ session });
 
     await session.commitTransaction(); session.endSession();
 
     return res.status(200).json({
       status: true,
       message: "Skill updated successfully.",
-      data: (refreshed?.skillIds || []).map(s => s.skill)
+      data: jss.skills
     });
 
   } catch (err) {
     await session.abortTransaction(); session.endSession();
-    return res.status(500).json({ status: false, message: "Error updating skill", error: err.message });
+    return res.status(500).json({
+      status: false,
+      message: "Error updating skill",
+      error: err.message
+    });
   }
 };
+
 
 
 
