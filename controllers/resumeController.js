@@ -39,7 +39,7 @@ exports.createResume = async (req, res) => {
     const rawBaseUrl = process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
     const baseUrl = rawBaseUrl.replace(/\/+$/, "");
 
-    const fileUrl = `${baseUrl}/uploads/resumes/${req.file.filename}`;
+    const fileUrl = `${baseUrl}/api/uploads/resumes/${req.file.filename}`;
     // const fileUrl = `${process.env.BASE_URL}/uploads/resumes/${req.file.filename}`;
 
     if (activeResume) {

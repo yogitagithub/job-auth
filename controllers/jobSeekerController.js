@@ -495,7 +495,7 @@ exports.updateProfileImage = async (req, res) => {
 
     
     const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
-    const newImagePath = `${baseUrl}/uploads/images/${req.file.filename}`;
+    const newImagePath = `${baseUrl}/api/uploads/images/${req.file.filename}`;
     console.log("New image URL to save in DB:", newImagePath);
 
  
