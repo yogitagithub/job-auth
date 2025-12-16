@@ -250,7 +250,7 @@ exports.saveProfile = async (req, res) => {
     let newCertificate = null;
     if (hasFile) {
       newCertificate = {
-        fileUrl: `${baseUrl}/uploads/certificates/${req.file.filename}`,
+        fileUrl: `${baseUrl}/api/uploads/certificates/${req.file.filename}`,
         fileName: req.file.originalname,
         fileType: req.file.mimetype,
         fileSize: req.file.size
@@ -531,7 +531,7 @@ if (profile.image) {
    
    
     const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
-    const newImagePath = `${baseUrl}/uploads/images/${req.file.filename}`;
+    const newImagePath = `${baseUrl}/api/uploads/images/${req.file.filename}`;
     console.log("New image URL to save in DB:", newImagePath);
 
     profile.image = newImagePath;
@@ -556,6 +556,9 @@ if (profile.image) {
     });
   }
 };
+
+
+
 exports.getProfileImage = async (req, res) => {
   try {
     const { userId, role } = req.user;

@@ -45,7 +45,7 @@ app.use(express.urlencoded({
 }));
 
 
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/api/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use('/api/auth', userRoutes);
 app.use('/api/auth', companyProfileRoutes);
