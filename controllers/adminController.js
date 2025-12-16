@@ -173,7 +173,7 @@ exports.createCategory = async (req, res) => {
 
     // Build absolute URL for the uploaded image
     const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
-    const imageUrl = `${baseUrl}/uploads/images/${req.file.filename}`;
+    const imageUrl = `${baseUrl}/api/uploads/images/${req.file.filename}`;
 
     const category = new Category({
       name: name.trim(),
