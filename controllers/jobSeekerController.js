@@ -1484,8 +1484,7 @@ exports.getMyApprovedApplications = async (req, res) => {
           { path: "salaryType",    model: SalaryType,      select: "name" },
           { path: "experience",    model: ExperienceRange, select: "name" },
           { path: "workingShift",  model: WorkingShift,    select: "name" },
-          { path: "jobProfile",    model: JobProfile,      select: "name jobProfile" },
-        ],
+           ],
       })
       .lean();
 
@@ -1540,8 +1539,9 @@ exports.getMyApprovedApplications = async (req, res) => {
       const salaryType = jp.salaryType?.name || null;
       const experience = jp.experience?.name || null;
       const workingShift = jp.workingShift?.name || null;
-      const jobProfile =
-        jp.jobProfile?.jobProfile || jp.jobProfile?.name || null;
+
+    const jobProfile =
+  typeof jp.jobProfile === "string" ? jp.jobProfile : null;
 
 
           const k = String(a._id);
