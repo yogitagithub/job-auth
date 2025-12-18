@@ -142,29 +142,77 @@ exports.saveProfile = async (req, res) => {
       req.body.dateOfBirth = parsed;
     }
 
-    /* ---------------- STATE & CITY ---------------- */
-    if (req.body.state === "" || req.body.state == null) delete req.body.state;
-    if (req.body.city === "" || req.body.city == null) delete req.body.city;
+  /* ---------------- STATE & CITY (STRING → ObjectId) ---------------- */
+if (req.body.state || req.body.city) {
+  let stateDoc = null;
 
-    if (!req.body.state && req.body.city) {
-      const cityInput = String(req.body.city).trim();
+  // CASE 1: state is string (e.g. "Tamil Nadu")
+  if (typeof req.body.state === "string" && !mongoose.Types.ObjectId.isValid(req.body.state)) {
+    stateDoc = await StateCity.findOne({
+      state: new RegExp(`^${req.body.state.trim()}$`, "i")
+    });
 
-      const stateDoc = await StateCity.findOne({
-        cities: { $regex: new RegExp(`^${cityInput}$`, "i") }
+    if (!stateDoc) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid state name."
       });
-
-      if (!stateDoc) {
-        return res.status(400).json({
-          status: false,
-          message: "Invalid city. No matching state found."
-        });
-      }
-
-      req.body.state = stateDoc._id;
-      req.body.city = stateDoc.cities.find(
-        c => c.toLowerCase() === cityInput.toLowerCase()
-      );
     }
+
+    req.body.state = stateDoc._id;
+  }
+
+  // CASE 2: state already ObjectId
+  if (req.body.state && mongoose.Types.ObjectId.isValid(req.body.state)) {
+    stateDoc = await StateCity.findById(req.body.state);
+
+    if (!stateDoc) {
+      return res.status(400).json({
+        status: false,
+        message: "State not found."
+      });
+    }
+  }
+
+  // CASE 3: validate city belongs to state
+  if (req.body.city && stateDoc) {
+    const cityInput = String(req.body.city).trim();
+
+    const validCity = stateDoc.cities.find(
+      c => c.toLowerCase() === cityInput.toLowerCase()
+    );
+
+    if (!validCity) {
+      return res.status(400).json({
+        status: false,
+        message: "City does not belong to the selected state."
+      });
+    }
+
+    req.body.city = validCity; // normalize case
+  }
+
+  // CASE 4: city provided but state missing → auto-detect
+  if (!req.body.state && req.body.city) {
+    const cityInput = String(req.body.city).trim();
+
+    const autoState = await StateCity.findOne({
+      cities: { $regex: new RegExp(`^${cityInput}$`, "i") }
+    });
+
+    if (!autoState) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid city. No matching state found."
+      });
+    }
+
+    req.body.state = autoState._id;
+    req.body.city = autoState.cities.find(
+      c => c.toLowerCase() === cityInput.toLowerCase()
+    );
+  }
+}
 
     /* ---------------- EXPERIENCE & SALARY RULES ---------------- */
     const hasIsExperienced = Object.prototype.hasOwnProperty.call(req.body, "isExperienced");
