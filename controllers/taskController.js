@@ -131,7 +131,7 @@ if (jobApp.employerApprovalStatus !== "Approved") {
 
     // build public file URL
     const BASE = process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
-    const fileUrl = `${BASE}/uploads/certificates/${req.file.filename}`;
+    const fileUrl = `${BASE}/api/uploads/certificates/${req.file.filename}`;
 
     // use YOUR parseTimeToToday helper (accepts "07:00", "7 PM", "07:00:00", etc.)
     let startTime, endTime;

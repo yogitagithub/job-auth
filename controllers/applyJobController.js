@@ -585,14 +585,28 @@ exports.getApplicantsForEmployer = async (req, res) => {
       }
     }
 
-    // ---------------- final application filter ----------------
-    const filter = {
-      jobPostId: { $in: jobPostIds },
-      ...statusFilter,
-      employerApprovalStatus: "Pending", // 🚫 exclude disconnected
-      ...(seekerIds ? { jobSeekerId: { $in: seekerIds } } : {})
-    };
 
+    // ---------------- employer approval status filter ----------------
+const approvalStatusQuery = (req.query.employerApprovalStatus || "Pending").trim();
+
+// allowed statuses (safety)
+const allowedApprovalStatuses = ["Pending", "Approved", "Rejected", "Disconnected"];
+
+const employerApprovalFilter = allowedApprovalStatuses.includes(approvalStatusQuery)
+  ? approvalStatusQuery
+  : "Pending";
+
+
+    // ---------------- final application filter ----------------
+
+    const filter = {
+  jobPostId: { $in: jobPostIds },
+  ...statusFilter,
+  employerApprovalStatus: employerApprovalFilter,
+  ...(seekerIds ? { jobSeekerId: { $in: seekerIds } } : {})
+};
+
+  
     // ---------------- query + populate ----------------
     const [totalRecord, applications] = await Promise.all([
       JobApplication.countDocuments(filter),
