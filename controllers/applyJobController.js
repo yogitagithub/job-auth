@@ -361,6 +361,7 @@ exports.getApplicantsForJob = async (req, res) => {
           path: "jobSeekerId",
           match: { isDeleted: false },
           select: [
+            "userId",
             "name",
             "phoneNumber",
             "email",
@@ -378,7 +379,6 @@ exports.getApplicantsForJob = async (req, res) => {
           ].join(" "),
           populate: [
             { path: "state", select: "state" },
-            { path: "jobProfile", select: "jobProfile name" },
             { path: "industryType", select: "industryType name" },
           ],
         })
@@ -419,9 +419,10 @@ exports.getApplicantsForJob = async (req, res) => {
           state: p.state?.state ?? null,
           city: p.city ?? null,
           image: p.image ?? null,
-          jobProfile: p.jobProfile
-            ? p.jobProfile.jobProfile || p.jobProfile.name || null
-            : null,
+          
+ jobProfile: p.jobProfile ?? null,
+         
+
           industryType: p.industryType
             ? p.industryType.industryType || p.industryType.name || null
             : null,
@@ -603,6 +604,7 @@ exports.getApplicantsForEmployer = async (req, res) => {
           path: "jobSeekerId",
           match: { isDeleted: false },
           select: [
+            "userId",
             "name",
             "phoneNumber",
             "email",
@@ -620,7 +622,6 @@ exports.getApplicantsForEmployer = async (req, res) => {
           ].join(" "),
           populate: [
             { path: "state", select: "state" },
-            { path: "jobProfile", select: "name jobProfile" },
             { path: "industryType", select: "name" }
           ]
         })
@@ -629,6 +630,10 @@ exports.getApplicantsForEmployer = async (req, res) => {
         .limit(limit)
         .lean()
     ]);
+
+
+
+
 
     // ---------------- formatting (dd-mm-yyyy) ----------------
     const pad2 = (n) => String(n).padStart(2, "0");
@@ -645,10 +650,12 @@ exports.getApplicantsForEmployer = async (req, res) => {
       .filter(a => !!a.jobSeekerId)
       .map(a => {
         const p = a.jobSeekerId;
+       
         return {
           jobPostId: a.jobPostId?.toString() || null,
           applicationId: a._id.toString(),
           status: a.status,
+
           employerApprovalStatus: a.employerApprovalStatus, // ✅ still visible
 
           jobSeekerName: p.name ?? null,
@@ -664,14 +671,12 @@ exports.getApplicantsForEmployer = async (req, res) => {
           city: p.city ?? null,
           image: p.image ?? null,
 
-          jobProfile: p.jobProfile
-            ? p.jobProfile.jobProfile || p.jobProfile.name || null
-            : null,
-
+          jobProfile: p.jobProfile ?? null,
           industryType: p.industryType
             ? p.industryType.name || null
-            : null
-        };
+            : null,
+
+              };
       });
 
     const totalPage = limit && totalRecord > 0 ? Math.ceil(totalRecord / limit) : 1;
@@ -694,6 +699,11 @@ exports.getApplicantsForEmployer = async (req, res) => {
     });
   }
 };
+
+
+
+
+
 
 
 
@@ -773,10 +783,9 @@ exports.getApplicantsDetails = async (req, res) => {
           path: "jobSeekerId",
           match: { isDeleted: false },
           select:
-            "name phoneNumber email state city image jobProfile dateOfBirth gender panCardNumber address alternatePhoneNumber pincode industryType",
+            "userId name phoneNumber email state city image jobProfile dateOfBirth gender panCardNumber address alternatePhoneNumber pincode industryType",
           populate: [
             { path: "state", select: "state" },
-            { path: "jobProfile", select: "jobProfile name" },
             { path: "industryType", select: "industryType name" },
           ],
         })
@@ -786,10 +795,23 @@ exports.getApplicantsDetails = async (req, res) => {
         .lean(),
     ]);
 
-    const seekerIds = apps
-      .filter((a) => a.jobSeekerId)
-      .map((a) => a.jobSeekerId._id?.toString?.() || a.jobSeekerId.toString());
-    const uniqueSeekerIds = [...new Set(seekerIds)];
+   
+
+    const seekerProfileIds = [];
+const seekerUserIds = [];
+
+apps.forEach((a) => {
+  if (a.jobSeekerId) {
+    seekerProfileIds.push(a.jobSeekerId._id.toString());
+    if (a.jobSeekerId.userId) {
+      seekerUserIds.push(a.jobSeekerId.userId.toString());
+    }
+  }
+});
+
+const uniqueProfileIds = [...new Set(seekerProfileIds)];
+const uniqueUserIds = [...new Set(seekerUserIds)];
+
 
     // ---------- helpers ----------
     const formatDate = (date) => {
@@ -807,7 +829,8 @@ exports.getApplicantsDetails = async (req, res) => {
         return m;
       }, {});
 
-    if (uniqueSeekerIds.length === 0) {
+    if (uniqueProfileIds.length === 0) {
+
       return res.status(200).json({
         status: true,
         message: "Applicants details fetched successfully.",
@@ -820,7 +843,7 @@ exports.getApplicantsDetails = async (req, res) => {
 
     // ---------- batched related fetches ----------
     const [educations, experiences, jsSkills, resumes] = await Promise.all([
-      JobSeekerEducation.find({ jobSeekerId: { $in: uniqueSeekerIds } })
+      JobSeekerEducation.find({ jobSeekerId: { $in: uniqueProfileIds } })
         .select({
           jobSeekerId: 1,
           _id: 0,
@@ -837,38 +860,45 @@ exports.getApplicantsDetails = async (req, res) => {
         })
         .lean(),
 
-      WorkExperience.find({ jobSeekerId: { $in: uniqueSeekerIds } })
+      WorkExperience.find({ jobSeekerId: { $in: uniqueProfileIds } })
         .select(
           "jobSeekerId companyName jobTitle sessionFrom sessionTo roleDescription -_id"
         )
         .lean(),
 
-      JobSeekerSkill.find({
-        jobSeekerId: { $in: uniqueSeekerIds },
-        isDeleted: false,
-      })
-        .select("jobSeekerId skillIds -_id")
-        .populate({ path: "skillIds", select: "skill" })
-        .lean(),
 
-      Resume.find({ jobSeekerId: { $in: uniqueSeekerIds } })
+
+        JobSeekerSkill.find({
+  userId: { $in: uniqueUserIds },   // ✅ CORRECT
+  isDeleted: false,
+})
+.select("userId skills")
+.lean(),
+
+      
+
+     
+      Resume.find({ jobSeekerId: { $in: uniqueProfileIds } })
         .select("jobSeekerId fileName -_id")
         .lean(),
     ]);
 
+      
+
+
     const eduBySeeker = bucketBySeeker(educations);
     const expBySeeker = bucketBySeeker(experiences);
 
-    const skillsBySeeker = jsSkills.reduce((acc, doc) => {
-      const sid = doc.jobSeekerId.toString();
-      const names = (doc.skillIds || [])
-        .map((s) =>
-          s && typeof s === "object" && "skill" in s ? s.skill : s
-        )
-        .filter(Boolean);
-      acc[sid] = Array.from(new Set([...(acc[sid] || []), ...names]));
-      return acc;
-    }, {});
+    
+
+const skillsByUserId = jsSkills.reduce((acc, doc) => {
+  const uid = doc.userId.toString();
+  acc[uid] = Array.from(
+    new Set([...(acc[uid] || []), ...(doc.skills || [])])
+  );
+  return acc;
+}, {});
+
 
     const resBySeeker = bucketBySeeker(resumes);
 
@@ -897,7 +927,10 @@ exports.getApplicantsDetails = async (req, res) => {
       .filter((a) => a.jobSeekerId)
       .map((a) => {
         const p = a.jobSeekerId;
-        const sid = p._id.toString();
+      
+        const profileId = p._id.toString();
+const userId = p.userId?.toString();
+
 
         return {
           applicationId: a._id.toString(),
@@ -906,16 +939,23 @@ exports.getApplicantsDetails = async (req, res) => {
           jobSeekerName: p.name ?? null,
           email: p.email ?? null,
           dateOfBirth: formatDate(p.dateOfBirth),
-          jobProfile: p.jobProfile
-            ? p.jobProfile.jobProfile || p.jobProfile.name || null
-            : null,
+
+          jobProfile: p.jobProfile ?? null,
+
           industryType: p.industryType
             ? p.industryType.industryType || p.industryType.name || null
             : null,
-          educations: (eduBySeeker[sid] || []).map(normalizeEdu),
-          experiences: (expBySeeker[sid] || []).map(normalizeExp),
-          skills: skillsBySeeker[sid] || [],
-          resumes: (resBySeeker[sid] || []).map(normalizeResume),
+          
+
+            educations: (eduBySeeker[profileId] || []).map(normalizeEdu),
+experiences: (expBySeeker[profileId] || []).map(normalizeExp),
+
+        
+          skills: skillsByUserId[userId] || [], 
+
+          resumes: (resBySeeker[profileId] || []).map(normalizeResume),
+
+
         };
       });
 
@@ -940,6 +980,8 @@ exports.getApplicantsDetails = async (req, res) => {
     });
   }
 };
+
+
 
 exports.getSeekerApplicantDetails = async (req, res) => {
   try {
@@ -988,7 +1030,6 @@ exports.getSeekerApplicantDetails = async (req, res) => {
       .select("userId name phoneNumber email state city image jobProfile dateOfBirth gender panCardNumber address alternatePhoneNumber pincode industryType isDeleted")
       .populate([
         { path: "state", select: "state" },
-        { path: "jobProfile", select: "jobProfile name" },
         { path: "industryType", select: "industryType name" }
       ])
       .lean();
@@ -1052,11 +1093,19 @@ if (role === "employer" && employerProfile) {
         gradeOrPercentage: 1, gradeorPercentage: 1
       }).lean(),
       WorkExperience.find({ jobSeekerId }).select("jobSeekerId companyName jobTitle sessionFrom sessionTo roleDescription -_id").lean(),
-      JobSeekerSkill.find({ jobSeekerId, isDeleted: false })
-        .select("jobSeekerId skillIds -_id")
-        .populate({ path: "skillIds", select: "skill" })
-        .lean(),
-      Resume.find({ jobSeekerId }).select("jobSeekerId fileName -_id").lean()
+     
+     
+
+      JobSeekerSkill.find({
+  userId: seeker.userId,
+  isDeleted: false,
+})
+.select("skills -_id")
+.lean(),
+
+     
+     
+        Resume.find({ jobSeekerId }).select("jobSeekerId fileName -_id").lean()
     ]);
 
     // ---- helpers ----
@@ -1083,12 +1132,16 @@ if (role === "employer" && employerProfile) {
       sessionTo: formatDate(x.sessionTo),
       roleDescription: x.roleDescription ?? null
     });
+
+
+
+
     const skills = jsSkills.reduce((acc, doc) => {
-      const names = (doc.skillIds || [])
-        .map(s => (s && typeof s === "object" && "skill" in s) ? s.skill : s)
-        .filter(Boolean);
-      return Array.from(new Set([...(acc || []), ...names]));
-    }, []);
+  return Array.from(new Set([...(acc || []), ...(doc.skills || [])]));
+}, []);
+
+
+
     const normalizeResume = (r) => ({ fileName: r.fileName ?? null });
 
 
@@ -1109,7 +1162,9 @@ if (role === "employer" && employerProfile) {
       pincode: seeker.pincode ?? null,
       state: seeker.state?.state ?? null,
       city: seeker.city ?? null,
-      jobProfile: seeker.jobProfile ? (seeker.jobProfile.jobProfile || seeker.jobProfile.name || null) : null,
+
+       jobProfile: seeker.jobProfile ?? null,
+
       industryType: seeker.industryType ? (seeker.industryType.industryType || seeker.industryType.name || null) : null,
       educations: educations.map(normalizeEdu),
       experiences: experiences.map(normalizeExp),
@@ -1453,142 +1508,6 @@ exports.updateEmployerApprovalStatus = async (req, res) => {
 
 
 
-// exports.updateEmployerApprovalStatus = async (req, res) => {
-//   try {
-//     const { role, userId } = req.user;
-//     const { applicationId, employerApprovalStatus, hourlyRate } = req.body;
-
-//     // 1) auth: only employer or admin
-//     if (role !== "employer" && role !== "admin") {
-//       return res.status(403).json({
-//         status: false,
-//         message: "Only employers or admins can update approval status.",
-//       });
-//     }
-
-//     // 2) validate inputs
-//     if (!applicationId || !mongoose.isValidObjectId(applicationId)) {
-//       return res.status(400).json({
-//         status: false,
-//         message: "Valid Job Application ID is required.",
-//       });
-//     }
-
-//     const allowed = ["Pending", "Approved", "Rejected", "Disconnected"];
-//     if (!employerApprovalStatus || !allowed.includes(employerApprovalStatus)) {
-//       return res.status(400).json({
-//         status: false,
-//         message: `Invalid approval status. Allowed values: ${allowed.join(", ")}`,
-//       });
-//     }
-
-//     // ✅ Extra validation based on status
-//     let numericHourlyRate = null;
-
-//     if (employerApprovalStatus === "Approved") {
-//       // hourlyRate is REQUIRED and must be a positive number
-//       if (
-//         hourlyRate === undefined ||
-//         hourlyRate === null ||
-//         String(hourlyRate).trim() === ""
-//       ) {
-//         return res.status(400).json({
-//           status: false,
-//           message: "hourlyRate is required when approval status is Approved.",
-//         });
-//       }
-
-//       numericHourlyRate = Number(hourlyRate);
-//       if (!Number.isFinite(numericHourlyRate) || numericHourlyRate <= 0) {
-//         return res.status(400).json({
-//           status: false,
-//           message: "hourlyRate must be a positive number.",
-//         });
-//       }
-//     } else {
-//       // For Rejected / Disconnected / Pending — employer must NOT send hourlyRate
-//       if (hourlyRate !== undefined) {
-//         return res.status(400).json({
-//           status: false,
-//           message:
-//             "hourlyRate should not be sent unless approval status is Approved.",
-//         });
-//       }
-//     }
-
-//     // 3) load application
-//     const application = await JobApplication.findById(applicationId).select(
-//       "_id jobPostId employerApprovalStatus hourlyRate"
-//     );
-//     if (!application) {
-//       return res.status(404).json({
-//         status: false,
-//         message: "Job application not found.",
-//       });
-//     }
-
-//     const prev = application.employerApprovalStatus;
-
-//     // ✅ Rule: can disconnect only if currently Approved
-//     if (employerApprovalStatus === "Disconnected" && prev !== "Approved") {
-//       return res.status(400).json({
-//         status: false,
-//         message:
-//           "You can disconnect only those applications whose status is currently Approved.",
-//       });
-//     }
-
-//     // 4) if employer, verify ownership
-//     if (role === "employer") {
-//       const post = await JobPost.findById(application.jobPostId).select("userId");
-//       if (!post) {
-//         return res.status(404).json({
-//           status: false,
-//           message: "Job post not found.",
-//         });
-//       }
-//       if (!post.userId.equals(userId)) {
-//         return res.status(403).json({
-//           status: false,
-//           message:
-//             "You are not allowed to update approval status for this application.",
-//         });
-//       }
-//     }
-
-//     // 5) perform update
-//     application.employerApprovalStatus = employerApprovalStatus;
-
-//     // set hourlyRate only when Approved
-//     if (employerApprovalStatus === "Approved") {
-//       application.hourlyRate = numericHourlyRate;
-//     } else {
-//       // optional: clear any previous rate when it becomes Rejected/Disconnected/Pending
-//       application.hourlyRate = null;
-//     }
-
-//     await application.save();
-
-//     return res.status(200).json({
-//       status: true,
-//       message: "Employer approval status updated successfully.",
-//       data: {
-//         applicationId: application._id,
-//         previousStatus: prev,
-//         currentStatus: application.employerApprovalStatus,
-//         hourlyRate: application.hourlyRate,
-//       },
-//     });
-//   } catch (err) {
-//     console.error("updateEmployerApprovalStatus error:", err);
-//     return res.status(500).json({
-//       status: false,
-//       message: "Server error.",
-//       error: err.message,
-//     });
-//   }
-// };
-
 exports.getApprovedApplicants = async (req, res) => {
   try {
     const { role, userId } = req.user;
@@ -1670,6 +1589,7 @@ exports.getApprovedApplicants = async (req, res) => {
           path: "jobSeekerId",
           match: { isDeleted: false },
           select: [
+            "userId",
             "name",
             "phoneNumber",
             "email",
@@ -1687,7 +1607,6 @@ exports.getApprovedApplicants = async (req, res) => {
           ].join(" "),
           populate: [
             { path: "state", select: "state" },
-            { path: "jobProfile", select: "jobProfile name" },
             { path: "industryType", select: "industryType name" }
           ]
         })
@@ -1736,7 +1655,8 @@ exports.getApprovedApplicants = async (req, res) => {
           state: p.state?.state ?? null,
           city: p.city ?? null,
           image: p.image ?? null,
-          jobProfile: p.jobProfile ? (p.jobProfile.jobProfile || p.jobProfile.name || null) : null,
+           jobProfile: p.jobProfile ?? null,
+         
           industryType: p.industryType ? (p.industryType.industryType || p.industryType.name || null) : null
         };
       });
