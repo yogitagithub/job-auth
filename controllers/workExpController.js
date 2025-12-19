@@ -59,62 +59,7 @@ exports.createWorkExp = async (req, res) => {
 };
 
 
-// exports.createWorkExp = async (req, res) => {
-//   try {
-//     const { userId, role } = req.user;
 
-//     if (role !== "job_seeker") {
-//       return res.status(403).json({
-//         status: false,
-//         message: "Only job seekers can add their work experience.",
-//       });
-//     }
-
-//     const jobSeekerProfile = await JobSeekerProfile.findOne({ userId });
-
-//     if (!jobSeekerProfile) {
-//       return res.status(400).json({
-//         status: false,
-//         message: "Please complete your job seeker profile first.",
-//       });
-//     }
-
-//     const body = req.body;
-
-//     if (!body || (Array.isArray(body) && body.length === 0)) {
-//       return res.status(400).json({
-//         status: false,
-//         message: "No experience data provided.",
-//       });
-//     }
-
-//     const experiencesToAdd = Array.isArray(body) ? body : [body];
-
-//     const sanitizedExperiences = experiencesToAdd.map((exp) => ({
-//       userId,
-//       jobSeekerId: jobSeekerProfile._id,
-//       companyName: exp.companyName?.trim() === "" ? null : exp.companyName ?? null,
-//       jobTitle: exp.jobTitle?.trim() === "" ? null : exp.jobTitle ?? null,
-//       sessionFrom: exp.sessionFrom?.trim?.() === "" ? null : exp.sessionFrom ?? null,
-//       sessionTo: exp.sessionTo?.trim?.() === "" ? null : exp.sessionTo ?? null,
-//       roleDescription: exp.roleDescription?.trim() === "" ? null : exp.roleDescription ?? null,
-//     }));
-
-//     await WorkExperience.insertMany(sanitizedExperiences);
-
-//     return res.status(201).json({
-//       status: true,
-//       message: "Work experience records saved successfully.",
-//     });
-//   } catch (error) {
-//     console.error("Error saving work experience:", error);
-//     res.status(500).json({
-//       status: false,
-//       message: "Server error.",
-//       error: error.message,
-//     });
-//   }
-// };
 
 exports.getMyWorkExp = async (req, res) => {
   try {
