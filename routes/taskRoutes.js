@@ -47,7 +47,7 @@ router.get('/updated-task-details/:jobApplicationId', verifyToken, updatedTaskDe
  router.get("/paymentHistory", verifyToken, getSeekerPaymentHistory);
 
  //payment details
-router.get("/paymentDetails/:paymentId", verifyToken, getPaymentDetails);
+router.get("/paymentDetails/:jobApplicationId", verifyToken, getPaymentDetails);
 
 
 

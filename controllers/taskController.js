@@ -1126,65 +1126,116 @@ exports.getSeekerPaymentHistory = async (req, res) => {
 
 
 
+
 exports.getPaymentDetails = async (req, res) => {
   try {
-    const { paymentId } = req.params;
+    const { jobApplicationId } = req.params;
     const { role, userId } = req.user;
 
-    if (!mongoose.isValidObjectId(paymentId)) {
-      return res.status(400).json({ status: false, message: "Invalid paymentId." });
+    if (!mongoose.isValidObjectId(jobApplicationId)) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid jobApplicationId.",
+      });
     }
 
-    // --- Fetch payment ---
-    const payment = await Payment.findById(paymentId)
-      .populate({ path: "employerId", model: "CompanyProfile", select: "companyName name" })
-      .populate({ path: "jobSeekerId", model: "JobSeekerProfile", select: "fullName firstName lastName name" })
-      .populate({ path: "jobApplicationId", model: "JobApplication", select: "jobPostId userId" })
+    // --- Fetch job application ---
+    const jobApplication = await JobApplication.findById(jobApplicationId)
+      .populate({
+        path: "jobSeekerId",
+        select: "fullName firstName lastName name",
+      })
+      .populate({
+        path: "jobPostId",
+        populate: {
+          path: "companyId",
+          model: "CompanyProfile",
+          select: "companyName name",
+        },
+      })
       .lean();
 
-    if (!payment) {
-      return res.status(404).json({ status: false, message: "Payment not found." });
+    if (!jobApplication) {
+      return res.status(404).json({
+        status: false,
+        message: "Job application not found.",
+      });
     }
 
     // --- Employer authorization ---
     if (role !== "admin") {
       const employerCompany = await CompanyProfile.findOne({ userId }).select("_id");
-      if (!employerCompany || String(employerCompany._id) !== String(payment.employerId._id)) {
-        return res.status(403).json({ status: false, message: "Not authorized to view this payment." });
+
+      if (
+        !employerCompany ||
+        String(employerCompany._id) !==
+          String(jobApplication.jobPostId.companyId._id)
+      ) {
+        return res.status(403).json({
+          status: false,
+          message: "Not authorized to view payment details.",
+        });
       }
     }
 
-    // --- Fetch tasks under this jobApplicationId that are paid ---
+    // --- Fetch ONLY UNPAID approved tasks ---
     const tasks = await Task.find({
-      jobApplicationId: payment.jobApplicationId._id,
-      isPaid: true
+      jobApplicationId,
+      employerApprovedTask: "Approved",
+      isPaid: false,
     })
-      .select("title description hoursWorked progressPercent status employerApprovedTask submittedAt")
+      .select(
+        "title description hoursWorked progressPercent status employerApprovedTask submittedAt"
+      )
       .sort({ createdAt: -1 })
       .lean();
 
+    // --- If no unpaid tasks ---
+    if (!tasks.length) {
+      return res.status(200).json({
+        status: true,
+        message: "No unpaid tasks available. Payment already completed.",
+        data: {
+          paymentInfo: [],
+          taskList: [],
+        },
+      });
+    }
+
+    // --- Calculate totals ---
+    const totalHours = tasks.reduce((sum, t) => sum + (t.hoursWorked || 0), 0);
+    const hourlyRate = jobApplication.hourlyRate || 0;
+    const totalAmount = totalHours * hourlyRate;
+
     // --- Format names ---
-    const employerName = payment.employerId.companyName || payment.employerId.name || "Employer";
+    const employerName =
+      jobApplication.jobPostId.companyId.companyName ||
+      jobApplication.jobPostId.companyId.name ||
+      "Employer";
+
     const jobSeekerName =
-      payment.jobSeekerId.fullName ||
-      [payment.jobSeekerId.firstName, payment.jobSeekerId.lastName].filter(Boolean).join(" ") ||
-      payment.jobSeekerId.name ||
+      jobApplication.jobSeekerId.fullName ||
+      [jobApplication.jobSeekerId.firstName, jobApplication.jobSeekerId.lastName]
+        .filter(Boolean)
+        .join(" ") ||
+      jobApplication.jobSeekerId.name ||
       "Job Seeker";
 
-    // --- Response ---
+    // ✅ KEY–VALUE RESPONSE FORMAT
+    const paymentInfo = [
+      { key: "Employer Name", value: employerName },
+      { key: "Job Seeker Name", value: jobSeekerName },
+      { key: "Total Hours", value: String(totalHours) },
+      { key: "Total Amount", value: `₹${totalAmount}` },
+    ];
+
+    // --- Final Response ---
     return res.json({
       status: true,
-      message: "Payment details fetched successfully.",
+      message: "Unpaid task payment details fetched successfully.",
       data: {
-        paymentInfo: {
-          _id: String(payment._id),
-          jobApplicationId: String(payment.jobApplicationId._id),
-          employerName,
-          jobSeekerName,
-          totalHours: payment.totalHours,
-          totalAmount: payment.totalAmount,
-        },
-        taskList: tasks.map(t => ({
+        paymentInfo,
+        taskList: tasks.map((t) => ({
           _id: String(t._id),
           title: t.title,
           description: t.description,
@@ -1192,15 +1243,19 @@ exports.getPaymentDetails = async (req, res) => {
           progressPercent: t.progressPercent,
           status: t.status,
           employerApprovedTask: t.employerApprovedTask,
-          submittedAt: t.submittedAt
-        }))
-      }
+          submittedAt: t.submittedAt,
+        })),
+      },
     });
-
   } catch (err) {
-    return res.status(500).json({ status: false, message: err?.message || "Server error." });
+    return res.status(500).json({
+      status: false,
+      message: err?.message || "Server error.",
+    });
   }
 };
+
+
 
 
 
