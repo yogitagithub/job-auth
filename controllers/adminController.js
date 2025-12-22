@@ -5095,7 +5095,7 @@ exports.deleteCity = async (req, res) => {
 
 exports.createSubscription = async (req, res) => {
   try {
-    const { amount, subscriptionMonth, numberOfJobPost } = req.body;
+    const { amount, subscriptionMonth, numberOfJobPost, features } = req.body;
 
     // 🔒 Basic validations
     if (
@@ -5121,6 +5121,7 @@ exports.createSubscription = async (req, res) => {
       amount,
       subscriptionMonth,
       numberOfJobPost,
+       features: features || [],
     });
 
     return res.status(201).json({
@@ -5131,6 +5132,7 @@ exports.createSubscription = async (req, res) => {
         amount: subscription.amount,
         subscriptionMonth: subscription.subscriptionMonth,
         numberOfJobPost: subscription.numberOfJobPost,
+        features: subscription. features,
         createdAt: subscription.createdAt,
       },
     });
@@ -5144,43 +5146,50 @@ exports.createSubscription = async (req, res) => {
 };
 
 
+
 exports.getSubscription = async (req, res) => {
   try {
-    let { page = 1, limit = 10 } = req.query;
+    const subscriptions = await Subscription.find({ isDeleted: false })
+      .sort({ amount: 1 })
+      .select("-__v -isDeleted");
 
-    page = parseInt(page);
-    limit = parseInt(limit);
+    const maxAmount = Math.max(...subscriptions.map(s => s.amount));
 
-    if (page < 1 || limit < 1) {
-      return res.status(400).json({
-        status: false,
-        message: "page and limit must be greater than 0.",
-      });
-    }
-
-    const skip = (page - 1) * limit;
-
-    const filter = { isDeleted: false };
-
-    const [subscriptions, totalRecord] = await Promise.all([
-      Subscription.find(filter)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .select("-__v -isDeleted"),
-
-      Subscription.countDocuments(filter),
-    ]);
-
-    const totalPages = Math.ceil(totalRecord / limit);
+    const plans = subscriptions.map((plan, index) => ({
+      id: plan._id,
+      planName:
+        index === 0 ? "Basic" :
+        index === 1 ? "Premium" :
+        `Plan ${index + 1}`,
+      price: plan.amount,
+      duration:
+        plan.subscriptionMonth === 1
+          ? "Month"
+          : `${plan.subscriptionMonth} Months`,
+      isPopular: plan.amount === maxAmount,
+      features: [
+        {
+          icon: "https://cdn.hourlee.in/icons/check.png",
+          title: `${plan.numberOfJobPost} Job Postings`,
+        },
+        {
+          icon: "https://cdn.hourlee.in/icons/check.png",
+          title: "Priority listing",
+        },
+        {
+          icon: "https://cdn.hourlee.in/icons/check.png",
+          title: "Dedicated support",
+        },
+      ],
+    }));
 
     return res.status(200).json({
       status: true,
-      message: "Subscriptions fetched successfully.",
-      totalRecord,
-      currentPage: page,
-      totalPages,
-      data: subscriptions,
+      message: "Plans fetched successfully.",
+      data: {
+        currency: "INR",
+        plans,
+      },
     });
   } catch (error) {
     console.error("getSubscription error:", error);
@@ -5190,6 +5199,7 @@ exports.getSubscription = async (req, res) => {
     });
   }
 };
+
 
 
 

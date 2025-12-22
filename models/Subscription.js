@@ -20,6 +20,19 @@ const subscriptionSchema = new mongoose.Schema(
       min: 0,
     },
 
+     features: [
+      {
+        icon: {
+          type: String,
+          required: true,
+        },
+        title: {
+          type: String,
+          required: true,
+        },
+      },
+    ],
+
     isDeleted: {
       type: Boolean,
       default: false,
