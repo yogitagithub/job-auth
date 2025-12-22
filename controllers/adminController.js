@@ -5206,7 +5206,7 @@ exports.getSubscription = async (req, res) => {
 exports.updateSubscription = async (req, res) => {
   try {
     const { id } = req.params;
-    const { amount, subscriptionMonth, numberOfJobPost } = req.body;
+    const { amount, subscriptionMonth, numberOfJobPost, features } = req.body;
 
     // 1️⃣ Validate ID
     if (!mongoose.isValidObjectId(id)) {
@@ -5253,6 +5253,18 @@ exports.updateSubscription = async (req, res) => {
         });
       }
       updateData.numberOfJobPost = numberOfJobPost;
+    }
+
+
+    // ✅ Features (same structure as create)
+    if (features !== undefined) {
+      if (!Array.isArray(features)) {
+        return res.status(400).json({
+          status: false,
+          message: "features must be an array.",
+        });
+      }
+      updateData.features = features;
     }
 
     // 3️⃣ Prevent empty update

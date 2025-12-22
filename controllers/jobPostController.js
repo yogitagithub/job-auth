@@ -3682,6 +3682,38 @@ exports.getKeywords = async (req, res) => {
 };
 
 
+//employer can see how many jobs he has posted
+
+exports.getJobPostLimit = async (req, res) => {
+  try {
+    const userId = req.user.userId; // from auth middleware
+
+    const JOB_POST_LIMIT = 10;
+
+    const jobsPosted = await JobPost.countDocuments({
+      userId,
+      isDeleted: false,
+    });
+
+    return res.status(200).json({
+      status: true,
+      message: "Job posting limit fetched successfully.",
+      data: {
+        jobLimit: JOB_POST_LIMIT,
+        jobsPosted,
+      },
+    });
+  } catch (error) {
+    console.error("getJobPostLimit error:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Server error.",
+    });
+  }
+};
+
+
+
 
 
 
