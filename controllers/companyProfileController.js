@@ -9,6 +9,7 @@ const createNotification = require("../config/createNotification");
 
 const JobPost = require("../models/JobPost");
 const JobApplication = require("../models/JobApplication");
+const Subscription = require("../models/Subscription");
 
 const fs = require("fs");
 const fsp = fs.promises;
@@ -353,6 +354,26 @@ exports.getProfile = async (req, res) => {
           : `${baseUrl}${p.gstCertificate.fileUrl}`)
       : null;
 
+
+      // ---------- APPROVED APPLICANTS COUNT ----------
+const employerJobPosts = await JobPost.find({
+  userId,
+  isDeleted: false
+}).select("_id");
+
+const postIds = employerJobPosts.map(p => p._id);
+
+let approvedApplicantsCount = 0;
+
+if (postIds.length > 0) {
+  approvedApplicantsCount = await JobApplication.countDocuments({
+    jobPostId: { $in: postIds },
+    employerApprovalStatus: "Approved",
+    status: "Applied"
+  });
+}
+
+
     // ---------- RESPONSE (ALL SAVED FIELDS) ----------
     const responseData = {
       id: p._id,
@@ -382,6 +403,8 @@ exports.getProfile = async (req, res) => {
 
       image: p.image ?? null,
       aboutCompany: p.aboutCompany ?? null,
+
+      connectedCandidates: approvedApplicantsCount,
 
       totalViews: p.totalViews ?? 0,
       profileViews: p.profileViews ?? [],
@@ -556,6 +579,10 @@ if (profile.image) {
     });
   }
 };
+
+
+
+
 
 
 
@@ -1184,6 +1211,84 @@ exports.getCompanyAnalytics = async (req, res) => {
     });
   }
 };
+
+
+//get subscription
+exports.getSubscription = async (req, res) => {
+  try {
+    const { userId, role } = req.user || {};
+
+    // 🔐 Allow only employer
+    if (role !== "employer") {
+      return res.status(403).json({
+        status: false,
+        message: "Access denied. Only employers can view subscription plans.",
+      });
+    }
+
+    const subscriptions = await Subscription.find({ isDeleted: false })
+      .sort({ amount: 1 })
+      .select("-__v -isDeleted")
+      .lean();
+
+    if (!subscriptions.length) {
+      return res.status(200).json({
+        status: true,
+        message: "Plans fetched successfully.",
+        data: {
+          currency: "INR",
+          email: "dummy@gmail.com",
+          phoneNo: "1234569878",
+          plans: [],
+        },
+      });
+    }
+
+    const maxAmount = Math.max(...subscriptions.map((s) => s.amount));
+
+    const plans = subscriptions.map((plan, index) => ({
+      id: plan._id,
+      planName:
+        index === 0
+          ? "Basic"
+          : index === 1
+          ? "Premium"
+          : `Plan ${index + 1}`,
+      price: plan.amount,
+      duration:
+        plan.subscriptionMonth === 1
+          ? "Month"
+          : `${plan.subscriptionMonth} Months`,
+      isPopular: plan.amount === maxAmount,
+
+      // ✅ Features from DB
+      features: plan.features.map((feature) => ({
+        icon: feature.icon,
+        title: feature.title,
+      })),
+    }));
+
+    return res.status(200).json({
+      status: true,
+      message: "Plans fetched successfully.",
+      data: {
+        currency: "INR",
+        email: "dummy@gmail.com",
+        phoneNo: "1234569878",
+        plans,
+      },
+    });
+  } catch (error) {
+    console.error("getSubscription error:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Server error.",
+    });
+  }
+};
+
+
+
 
 
 

@@ -121,6 +121,14 @@ const companyProfileSchema = new mongoose.Schema({
     ],
 
      totalViews: { type: Number, default: 0 },
+
+     coverImage: {
+  type: String,
+  default: "",
+   trim: true
+
+}
+
   
 }, {
   timestamps: true

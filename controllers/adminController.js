@@ -5228,20 +5228,12 @@ exports.getSubscription = async (req, res) => {
           ? "Month"
           : `${plan.subscriptionMonth} Months`,
       isPopular: plan.amount === maxAmount,
-      features: [
-        {
-          icon: "https://cdn.hourlee.in/icons/check.png",
-          title: `${plan.numberOfJobPost} Job Postings`,
-        },
-        {
-          icon: "https://cdn.hourlee.in/icons/check.png",
-          title: "Priority listing",
-        },
-        {
-          icon: "https://cdn.hourlee.in/icons/check.png",
-          title: "Dedicated support",
-        },
-      ],
+
+        // ✅ USE FEATURES FROM DB
+      features: plan.features.map(feature => ({
+        icon: feature.icon,
+        title: feature.title
+      }))
     }));
 
     return res.status(200).json({
@@ -5249,6 +5241,8 @@ exports.getSubscription = async (req, res) => {
       message: "Plans fetched successfully.",
       data: {
         currency: "INR",
+        email: "dummy@gmail.com",
+        phoneNo: "1234569878",
         plans,
       },
     });

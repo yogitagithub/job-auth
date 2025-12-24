@@ -151,11 +151,13 @@ router.put('/job-seeker-top', verifyToken, verifyAdmin, adminTopJobSeeker);
 router.put('/approvalGiven', verifyToken, verifyAdmin, adminApprovalGiven);
 
 
+
 //subscription routes
 router.post('/createSubscription', verifyToken, verifyAdmin, createSubscription);
 router.get('/getSubscription', verifyToken, verifyAdmin, getSubscription);
 router.put('/updateSubscription/:id', verifyToken, verifyAdmin, updateSubscription);
 router.delete('/deleteSubscription/:id', verifyToken, verifyAdmin, deleteSubscription);
+
 
 
 //newsletter

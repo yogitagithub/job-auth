@@ -11,7 +11,7 @@ getWorkingShiftBasedOnRole, getAccountTypeBasedOnRole, getJobPostsByCategoryId, 
     
 const { saveEmail } = require("../controllers/emailController");
 
-const { verifyToken, verifyJobSeekerOnly, verifyEmployerOnly } = require('../middleware/authMiddleware');
+const { verifyToken, verifyAdmin, verifyJobSeekerOnly, verifyEmployerOnly } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
@@ -92,6 +92,8 @@ router.get("/publicJobtypes", getAllJobTypesPublic);
 
 //newsletter
 router.post("/saveEmail", saveEmail);
+
+
 
 
 

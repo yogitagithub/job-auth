@@ -1,9 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const uploadImage = require('../middleware/uploadImage');
+const uploadCover = require('../middleware/uploadCover');
 const { saveProfile, getProfile, deleteCompanyProfile, updateProfileImage, getProfileImage, getAllCompanies, 
     getEmployerProfileProgress, getCompanyProfileViews, recordCompanyProfileView, getCompanyDashboardWeb, 
-    getCompanyDashboard, getCompanyAnalytics } = require('../controllers/companyProfileController');
+    getCompanyDashboard, getCompanyAnalytics, getSubscription } = require('../controllers/companyProfileController');
 const { verifyToken } = require('../middleware/authMiddleware');
 const uploadCertificate = require("../middleware/uploadCertificate");
 
@@ -46,6 +47,11 @@ router.get('/dashboard', verifyToken, getCompanyDashboard);
 
 //company analytics
 router.get("/companyAnalytics", verifyToken, getCompanyAnalytics);
+
+
+//get subscription
+router.get("/getSubscription", verifyToken, getSubscription);
+
 
 
 
