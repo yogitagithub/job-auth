@@ -24,6 +24,12 @@ const FeaturedCompany = require("../models/FeaturedCompany");
 const createNotification = require("../config/createNotification");
 
 
+const JobSeekerEducation = require("../models/Education");
+const WorkExperience = require("../models/WorkExperience");
+const JobSeekerSkill = require("../models/JobSeekerSkill");
+const Resume = require("../models/Resume");
+
+
 const User = require('../models/User');
 const JobPost = require("../models/JobPost");
 
@@ -296,7 +302,7 @@ exports.updateCategory = async (req, res) => {
       }
 
       // assign a NEW url based on the newly uploaded file
-      category.image = `${baseUrl}/uploads/images/${req.file.filename}`;
+      category.image = `${baseUrl}/api/uploads/images/${req.file.filename}`;
     }
 
     // 5) Save
@@ -2690,8 +2696,7 @@ exports.getJobSeekerProfiles = async (req, res) => {
     const totalRecord = await JobSeekerProfile.countDocuments(filter);
 
     // Fetch only non-deleted + applied filters
-    const seeker = await JobSeekerProfile.find(filter)
-      .populate("jobProfile", "name")
+    const seekers = await JobSeekerProfile.find(filter)
       .populate("industryType", "name")
       .populate("state", "state")
       .sort({ createdAt: -1 }) // newest first
@@ -2699,20 +2704,70 @@ exports.getJobSeekerProfiles = async (req, res) => {
       .limit(limit)
       .lean();
 
-    if (!seeker || seeker.length === 0) {
+    if (!seekers || seekers.length === 0) {
       return res.status(404).json({
         status: false,
-        message: "No job seeker profiles found."
+        message: "No job seekers profiles found."
       });
     }
 
-    const data = seeker.map(s => ({
+    // 🔹 Collect IDs
+    const userIds = seekers.map(s => s.userId);
+    const seekerIds = seekers.map(s => s._id);
+
+
+     // 🔹 Fetch related data in parallel
+    const [
+      skills,
+      resumes,
+      educations,
+      experiences
+    ] = await Promise.all([
+      JobSeekerSkill.find({ userId: { $in: userIds }, isDeleted: false }).lean(),
+      Resume.find({ jobSeekerId: { $in: seekerIds }, isDeleted: false }).lean(),
+      JobSeekerEducation.find({ jobSeekerId: { $in: seekerIds }, isDeleted: false }).lean(),
+      WorkExperience.find({ jobSeekerId: { $in: seekerIds }, isDeleted: false }).lean()
+    ]);
+
+    // 🔹 Create lookup maps
+    const skillMap = {};
+    skills.forEach(s => {
+      skillMap[s.userId.toString()] = s.skills || [];
+    });
+
+      const resumeMap = {};
+    resumes.forEach(r => {
+      resumeMap[r.jobSeekerId.toString()] = {
+        fileUrl: r.fileUrl,
+        fileName: r.fileName,
+        fileType: r.fileType,
+        fileSize: r.fileSize
+      };
+    });
+
+    const educationMap = {};
+    educations.forEach(e => {
+      const key = e.jobSeekerId.toString();
+      if (!educationMap[key]) educationMap[key] = [];
+      educationMap[key].push(e);
+    });
+
+    const experienceMap = {};
+    experiences.forEach(w => {
+      const key = w.jobSeekerId.toString();
+      if (!experienceMap[key]) experienceMap[key] = [];
+      experienceMap[key].push(w);
+    });
+
+    const data = seekers.map(s => ({
       id: s._id,
       userId: s.userId,
       phoneNumber: s.phoneNumber,
       jobSeekerName: s.name,
       industryType: s.industryType?.name || null,
-      jobprofile: s.jobProfile?.name || null,
+
+       jobProfile: s.jobProfile || null,
+
       dateOfBirth: s.dateOfBirth,
       panCardNumber: s.panCardNumber,
       gender: s.gender,
@@ -2728,7 +2783,13 @@ exports.getJobSeekerProfiles = async (req, res) => {
           isSkillsAdded: s.isSkillsAdded,
            isEducationAdded: s.isEducationAdded, 
            isResumeAdded: s.isResumeAdded,
-            isExperienced: s.isExperienced
+            isExperienced: s.isExperienced,
+
+             // ✅ NEW DATA
+      skills: skillMap[s.userId.toString()] || [],
+      resume: resumeMap[s._id.toString()] || null,
+      education: educationMap[s._id.toString()] || [],
+      workExperience: experienceMap[s._id.toString()] || []
     }));
 
     return res.status(200).json({
