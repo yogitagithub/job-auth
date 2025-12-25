@@ -14,6 +14,7 @@ const OtherField = require("../models/AdminOtherField");
 const CurrentSalary = require("../models/AdminCurrentSalary");
 const WorkingShift = require("../models/AdminWorkingShift");
 const Subscription = require("../models/Subscription");
+const Banner = require("../models/Banner");
 
 const Skill = require("../models/Skills");
 
@@ -5411,6 +5412,204 @@ exports.deleteSubscription = async (req, res) => {
     });
   }
 };
+
+
+//banner
+exports.createBanner = async (req, res) => {
+  try {
+    const { title, subtitle } = req.body;
+
+    // Required fields check
+    if (!title) {
+      return res.status(400).json({
+        status: false,
+        message: "title is required"
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        status: false,
+        message: "Image file is required"
+      });
+    }
+
+    // Build absolute URL for the uploaded image
+    const baseUrl =
+      process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
+
+    const imageUrl = `${baseUrl}/api/uploads/images/${req.file.filename}`;
+
+    const banner = await Banner.create({
+      title,
+      subtitle,
+      imageUrl
+      // isRedirectable -> default false
+      // Url -> default null
+    });
+
+    return res.status(201).json({
+      status: true,
+      message: "Banner created successfully",
+      data: {
+        id: banner._id,
+        title: banner.title,
+        subtitle: banner.subtitle,
+        imageUrl: banner.imageUrl
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: false,
+      message: error.message
+    });
+  }
+};
+
+
+
+exports.getBanner = async (req, res) => {
+  try {
+    // Pagination params
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Query condition
+    const condition = { isDeleted: false };
+
+    // Total records
+    const totalRecord = await Banner.countDocuments(condition);
+
+    // Total pages
+    const totalPage = Math.ceil(totalRecord / limit);
+
+    // Fetch banners
+    const banners = await Banner.find(condition)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    // Format data (optional but clean)
+    const formattedData = banners.map(banner => ({
+      id: banner._id,
+      title: banner.title,
+      subtitle: banner.subtitle,
+      imageUrl: banner.imageUrl,
+      isRedirectable: banner.isRedirectable,
+      Url: banner.Url,
+      createdAt: banner.createdAt
+    }));
+
+    return res.status(200).json({
+      status: true,
+      message: "Banners fetched successfully.",
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data: formattedData
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: false,
+      message: error.message
+    });
+  }
+};
+
+
+exports.deleteBanner = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const banner = await Banner.findOneAndUpdate(
+      { _id: id, isDeleted: false },
+      { isDeleted: true },
+      { new: true }
+    );
+
+    if (!banner) {
+      return res.status(404).json({
+        status: false,
+        message: "Banner not found or already deleted"
+      });
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "Banner deleted successfully"
+    });
+  } catch (error) {
+    return res.status(500).json({
+
+      status: false,
+      message: error.message
+    });
+  }
+};
+
+
+exports.updateBanner = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, subtitle, isRedirectable, Url } = req.body;
+
+    const banner = await Banner.findOne({ _id: id, isDeleted: false });
+
+    if (!banner) {
+      return res.status(404).json({
+        status: false,
+        message: "Banner not found"
+      });
+    }
+
+    // Update text fields if provided
+    if (title !== undefined) banner.title = title;
+    if (subtitle !== undefined) banner.subtitle = subtitle;
+
+    // If image file is provided → update imageUrl
+    if (req.file) {
+      const baseUrl =
+        process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
+
+      banner.imageUrl = `${baseUrl}/api/uploads/images/${req.file.filename}`;
+    }
+
+    // Handle redirect logic
+    if (isRedirectable !== undefined) {
+      if (isRedirectable === true && !Url) {
+        return res.status(400).json({
+          status: false,
+          message: "Url is required when isRedirectable is true"
+        });
+      }
+
+      banner.isRedirectable = isRedirectable;
+      banner.Url = isRedirectable ? Url : "";
+        }
+
+    await banner.save();
+
+    return res.status(200).json({
+      status: true,
+      message: "Banner updated successfully"
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: false,
+      message: error.message
+    });
+  }
+};
+
+
+
+
+
+
+
+
+
 
 
 

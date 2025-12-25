@@ -18,7 +18,8 @@ updateWorkingShift, deleteWorkingShift, getWorkingShift, getJobSeekerProfilesbyI
 createSkill, getSkill, updateSkill, deleteSkill, getJobPostsByCategoryPublic,
 createAccountType, updateAccountType, deleteAccountType, getAccountTypes
 , adminApprovalGiven, jobList, createCity, getCities, updateCity, deleteCity,
-createSubscription, getSubscription, updateSubscription, deleteSubscription } = require('../controllers/adminController');
+createSubscription, getSubscription, updateSubscription, deleteSubscription, createBanner, 
+ getBanner, deleteBanner, updateBanner } = require('../controllers/adminController');
 
 const { verifyToken, verifyAdmin, verifyEmployerOnly, verifyJobSeekerOnly } = require('../middleware/authMiddleware');
 const { adminApproveJobPost, getJobList, updateJobListById, adminRecommendJobPost } = require('../controllers/jobPostController');
@@ -163,6 +164,12 @@ router.delete('/deleteSubscription/:id', verifyToken, verifyAdmin, deleteSubscri
 //newsletter
 router.get("/savedEmails", verifyToken, verifyAdmin, getAllSavedEmails);
 router.post("/sendEmail", verifyToken, verifyAdmin, sendEmailToAllSavedUsers);
+
+//banner
+router.post("/banner", verifyToken, verifyAdmin, uploadImage.single("imageUrl"), createBanner)
+router.get('/banner', verifyToken, verifyAdmin, getBanner);
+router.put('/banner/:id', verifyToken, verifyAdmin, uploadImage.single("imageUrl"), updateBanner);
+router.delete('/banner/:id', verifyToken, verifyAdmin, deleteBanner);
 
 
 

@@ -1086,6 +1086,7 @@ adminAprrovalJobs: p.adminAprrovalJobs ?? null,
           ? seekerAppliedSet.has(idStr)               // per-user
           : employerHasActiveAppSet.has(idStr),       // any active app on that post
 
+          rating: "0.0",   //NEW STATIC FIELD
         createdAt:  p.createdAt,
         jobPosted:  daysAgo(p.createdAt)
       };
