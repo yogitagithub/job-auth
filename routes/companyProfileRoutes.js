@@ -1,11 +1,15 @@
 const express = require("express");
 const router = express.Router();
 const uploadImage = require('../middleware/uploadImage');
+
 const uploadCover = require('../middleware/uploadCover');
+
+
 const { saveProfile, getProfile, deleteCompanyProfile, updateProfileImage, getProfileImage, getAllCompanies, 
     getEmployerProfileProgress, getCompanyProfileViews, recordCompanyProfileView, getCompanyDashboardWeb, 
-    getCompanyDashboard, getCompanyAnalytics, getSubscription } = require('../controllers/companyProfileController');
-const { verifyToken } = require('../middleware/authMiddleware');
+    getCompanyDashboard, getCompanyAnalytics, getSubscription, updateCoverPic, getCoverImage } = require('../controllers/companyProfileController');
+
+    const { verifyToken } = require('../middleware/authMiddleware');
 const uploadCertificate = require("../middleware/uploadCertificate");
 
 
@@ -24,6 +28,19 @@ router.post('/company-profile-image',
 router.get('/company-profile-image', 
     verifyToken,  
     getProfileImage);
+
+
+//upload cover picture
+router.post('/companyCoverPic', 
+    verifyToken,  
+    uploadCover.single('image'), 
+    updateCoverPic);
+
+
+router.get('/companyCoverPic', 
+    verifyToken,  
+    getCoverImage);
+
 
 router.get("/public-companies", getAllCompanies);
 

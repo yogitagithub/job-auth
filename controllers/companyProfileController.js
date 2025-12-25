@@ -581,6 +581,93 @@ if (profile.image) {
 };
 
 
+//upload cover picture
+exports.updateCoverPic = async (req, res) => {
+  try {
+    const { userId, role } = req.user;
+
+    console.log("Incoming Request User:", req.user);
+    console.log("Uploaded File Details:", req.file);
+
+    if (role !== "employer") {
+      return res.status(403).json({
+        status: false,
+        message: "Only employers can update the company image."
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        status: false,
+        message: "Image file is required."
+      });
+    }
+
+    const profile = await CompanyProfile.findOne({ userId });
+    console.log("Fetched Profile from DB:", profile);
+
+    if (!profile) {
+      return res.status(404).json({
+        status: false,
+        message: "Company profile not found."
+      });
+    }
+
+  
+if (profile.coverImage) {
+  console.log("Existing image URL in DB:", profile.coverImage);
+
+  const oldImageFile = path.basename(profile.coverImage);
+  console.log("Extracted old image filename:", oldImageFile);
+
+  if (oldImageFile && oldImageFile !== req.file.filename) {
+    const oldImagePath = path.join(__dirname, "..", "uploads", "images", oldImageFile);
+    console.log("Full old image path to delete:", oldImagePath);
+
+    try {
+      await fsp.unlink(oldImagePath); 
+      console.log("Old image deleted successfully:", oldImageFile);
+    } catch (err) {
+      if (err.code !== "ENOENT") {
+        console.error("Error deleting old image:", err);
+      }
+    }
+  } else {
+    console.log("No old image to delete or same filename uploaded");
+  }
+}
+
+   
+   
+    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
+    const newImagePath = `${baseUrl}/api/uploads/images/${req.file.filename}`;
+    console.log("New image URL to save in DB:", newImagePath);
+
+    profile.coverImage = newImagePath;
+    await profile.save();
+
+    console.log("Profile updated successfully with new image");
+
+    return res.status(200).json({
+      status: true,
+      message: "Company profile image updated successfully. Old image deleted if it existed.",
+      data: {
+        image: newImagePath,
+      },
+    });
+
+  } catch (error) {
+    console.error("Error updating company profile image:", error);
+    res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: error.message,
+    });
+  }
+};
+
+
+
 
 
 
@@ -622,6 +709,47 @@ exports.getProfileImage = async (req, res) => {
     });
   }
 };
+
+
+//get cover picture
+exports.getCoverImage = async (req, res) => {
+  try {
+    const { userId, role } = req.user;
+
+    if (role !== "employer") {
+      return res.status(403).json({
+        status: false,
+        message: "Only employers can fetch the cover picture."
+      });
+    }
+
+    const profile = await CompanyProfile.findOne({ userId });
+
+    if (!profile) {
+      return res.status(404).json({
+        status: false,
+        message: "Company profile not found."
+      });
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "Company cover picture fetched successfully.",
+      data: {
+        image: profile.coverImage || null
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching company cover picture:", error);
+    res.status(500).json({
+      status: false,
+      message: "Server error.",
+      error: error.message
+    });
+  }
+};
+
+
 
 //without token
 exports.getAllCompanies = async (req, res) => {
