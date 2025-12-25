@@ -5603,6 +5603,53 @@ exports.updateBanner = async (req, res) => {
 };
 
 
+//banner for employer and job seeker
+exports.getBannerList = async (req, res) => {
+  try {
+    let { page = 1, limit = 10 } = req.query;
+
+    page = parseInt(page);
+    limit = parseInt(limit);
+
+    const skip = (page - 1) * limit;
+
+    const filter = { isDeleted: false };
+
+    const totalRecord = await Banner.countDocuments(filter);
+
+    const banners = await Banner.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .select("title subtitle imageUrl isRedirectable Url");
+
+    const totalPage = Math.ceil(totalRecord / limit);
+
+    return res.status(200).json({
+      status: true,
+      message: "Banners fetched successfully",
+      totalRecord,
+      totalPage,
+      currentPage: page,
+      data: banners.map(banner => ({
+        id: banner._id,
+        title: banner.title,
+        subtitle: banner.subtitle,
+        imageUrl: banner.imageUrl,
+        isRedirectable: banner.isRedirectable,
+        Url: banner.isRedirectable ? banner.Url : ""
+      }))
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: false,
+      message: error.message
+    });
+  }
+};
+
+
+
 
 
 

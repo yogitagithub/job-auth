@@ -7,7 +7,7 @@ const { getIndustryBasedOnRole, getCategoryBasedOnRole,
     getOtherFieldBasedOnRole, 
     getJobPostsByCategoryPublic, getAllCategoriesPublic, getAllExperiencesPublic,
 getAllIndustriesPublic, getFeaturedCompaniesPublic, getJobPostsByCompanyPublic, 
-getWorkingShiftBasedOnRole, getAccountTypeBasedOnRole, getJobPostsByCategoryId, getAllJobTypesPublic } = require('../controllers/adminController');
+getWorkingShiftBasedOnRole, getAccountTypeBasedOnRole, getJobPostsByCategoryId, getAllJobTypesPublic, getBannerList } = require('../controllers/adminController');
     
 const { saveEmail } = require("../controllers/emailController");
 
@@ -92,6 +92,9 @@ router.get("/publicJobtypes", getAllJobTypesPublic);
 
 //newsletter
 router.post("/saveEmail", saveEmail);
+
+//banner for employer and job seeker
+router.get("/banner", verifyToken, getBannerList);
 
 
 
