@@ -1146,7 +1146,7 @@ exports.getJobPostById = async (req, res) => {
 
     let jobPost = await JobPost.findById(id)
       .select("-updatedAt -__v")
-      .populate({ path: "companyId",    select: "companyName image" })
+      .populate({ path: "companyId",    select: "companyName image coverImage" })
       .populate({ path: "category",     select: "name" })
       .populate({ path: "industryType", select: "name" })
       .populate({ path: "salaryType",   select: "name" })
@@ -1191,6 +1191,7 @@ exports.getJobPostById = async (req, res) => {
       company:      jobPost.companyId?.companyName ?? null,
       companyImage: jobPost.companyId?.image ?? null,
       category:     jobPost.category?.name ?? null,
+      companyCoverImage: jobPost.companyId?.coverImage ?? "",
       industryType: jobPost.industryType?.name ?? null,
       salaryType:   jobPost.salaryType?.name ?? null,
       jobType:      jobPost.jobType?.name ?? null,

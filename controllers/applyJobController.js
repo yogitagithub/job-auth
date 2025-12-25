@@ -646,6 +646,22 @@ const employerApprovalFilter = allowedApprovalStatuses.includes(approvalStatusQu
     ]);
 
 
+     // ---------------- FETCH SKILLS ----------------
+    const userIds = applications
+      .filter(a => a.jobSeekerId?.userId)
+      .map(a => a.jobSeekerId.userId);
+
+    const skillsDocs = await JobSeekerSkill.find({
+      userId: { $in: userIds },
+      isDeleted: false
+    })
+     .select("userId skills")
+      .lean();
+
+    const skillsMap = {};
+    skillsDocs.forEach(s => {
+      skillsMap[s.userId.toString()] = s.skills || [];
+    });
 
 
 
@@ -670,6 +686,10 @@ const employerApprovalFilter = allowedApprovalStatuses.includes(approvalStatusQu
           applicationId: a._id.toString(),
           status: a.status,
 
+           // ✅ ADDED FIELD
+          jobSeekerId: p._id.toString(),
+          rating: "0.0",
+
           employerApprovalStatus: a.employerApprovalStatus, // ✅ still visible
 
           jobSeekerName: p.name ?? null,
@@ -690,7 +710,11 @@ const employerApprovalFilter = allowedApprovalStatuses.includes(approvalStatusQu
             ? p.industryType.name || null
             : null,
 
+             // ✅ ADDED FIELD
+          skills: skillsMap[p.userId.toString()] || []
               };
+
+       
       });
 
     const totalPage = limit && totalRecord > 0 ? Math.ceil(totalRecord / limit) : 1;

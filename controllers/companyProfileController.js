@@ -385,6 +385,7 @@ if (postIds.length > 0) {
       contactPersonName: p.contactPersonName ?? null,
       employerType: p.employerType ?? null,
 
+      coverImage: p.coverImage ?? "", 
       industryType: p.industryType?.name || null,
       otherIndustryName:
         p.industryType?.name === "Other"
@@ -890,6 +891,7 @@ if (profile.employerType === "company") {
       status: true,
       message: "Company profile progress fetched successfully.",
       progress, // e.g., 60
+      
     });
   } catch (err) {
     console.error(err);

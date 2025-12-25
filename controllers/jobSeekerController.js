@@ -1179,9 +1179,26 @@ exports.getRecommendedProfiles = async (req, res) => {
         adminRecommendedSeeker alternatePhoneNumber panCardNumber address pincode adminTopProfiles
       `)
       .populate("industryType", "name")
-      .populate("jobProfile", "name title label")
       .populate("state", "state name") // supports either field in your StateCity model
       .lean();
+
+
+       /* =======================
+       FETCH SKILLS IN BULK
+    ======================== */
+    const userIds = profiles.map(p => p.userId);
+
+    const skillsDocs = await JobSeekerSkill.find({
+      userId: { $in: userIds },
+      isDeleted: false
+    })
+      .select("userId skills")
+      .lean();
+
+       const skillsMap = {};
+    skillsDocs.forEach(doc => {
+      skillsMap[doc.userId.toString()] = doc.skills || [];
+    });
 
     // shape payload
     const jobSeekers = profiles.map(p => ({
@@ -1197,6 +1214,8 @@ exports.getRecommendedProfiles = async (req, res) => {
         alternatePhoneNumber: p.alternatePhoneNumber ?? null,
       panCardNumber: p.panCardNumber ?? null,
 
+       rating: "0.0",   //NEW STATIC FIELD
+
       // location
        address: p.address ?? null,
         pincode: p.pincode ?? null,
@@ -1205,7 +1224,11 @@ exports.getRecommendedProfiles = async (req, res) => {
 
       // meta / taxonomy
       industryType: pickName(p.industryType),
-      jobProfile: pickName(p.jobProfile),
+      jobProfile: p.jobProfile ?? null,
+
+      //SKILLS ADDED HERE
+      skills: skillsMap[p.userId.toString()] || [],
+
 
       // completion flags (useful for UI)
       isResumeAdded: !!p.isResumeAdded,

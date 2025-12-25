@@ -444,13 +444,11 @@ exports.updatedTaskDetails = async (req, res) => {
 
      // ✅ Fetch JobSeekerProfile with jobProfile populated
     const seeker = await JobSeekerProfile.findOne({ userId: jobApp.userId })
-      .populate("jobProfile", "name") // assumes JobProfile has "name" field
       .select("jobProfile")
       .lean();
 
 
-       const jobProfileName = seeker?.jobProfile?.name || null;
-
+       const jobProfileName = seeker?.jobProfile || null;
     // Aggregate approved tasks for this application
     const agg = await Task.aggregate([
       {
@@ -464,12 +462,14 @@ exports.updatedTaskDetails = async (req, res) => {
           _id: null,
           totalHours: { $sum: "$workedHours" },
           approvedCount: { $sum: 1 },
-        },
+              },
       },
     ]);
 
     const totalHours = agg.length ? Math.round(agg[0].totalHours * 100) / 100 : 0;
     const approvedCount = agg.length ? agg[0].approvedCount : 0;
+
+     
     const totalSalary = Math.round((totalHours * hourlyRate) * 100) / 100;
 
    
@@ -482,8 +482,10 @@ exports.updatedTaskDetails = async (req, res) => {
     jobApplicationId,
     jobTitle: jobPost?.jobTitle || null,
        companyName, 
-        jobProfile: jobProfileName,
-    approvedTasks: approvedCount,
+      jobProfile: jobProfileName,
+         approvedTasks: approvedCount,
+            
+
     totalWorkedHours: formatHours(totalHours), // e.g., "5 hours"
     hourlyRate: formatINR(hourlyRate),        // e.g., "₹ 200.00"
     totalSalary: formatINR(totalSalary)       // e.g., "₹ 1000.00"
