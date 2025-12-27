@@ -232,7 +232,8 @@ exports.getCategory = async (req, res) => {
 
     // 2) Fetch page
     const categories = await Category.find(filter)
-      .sort({ name: 1 })
+    .sort({ updatedAt: -1 })
+
       .skip(skip)
       .limit(limit)
       .lean();
@@ -1059,7 +1060,8 @@ exports.getIndustry = async (req, res) => {
 
     // Fetch with pagination
     const industries = await IndustryType.find(filter)
-      .sort({ name: 1 })
+      .sort({ updatedAt: -1 })
+
       .skip(skip)
       .limit(limit)
       .lean();
@@ -2824,7 +2826,6 @@ exports.getJobSeekerProfilesbyId = async (req, res) => {
 
     // Fetch (not deleted)
     const s = await JobSeekerProfile.findOne({ _id: id, isDeleted: false })
-      .populate("jobProfile", "name")
       .populate("industryType", "name")
       .populate("state", "state")
       .lean();
@@ -2833,6 +2834,36 @@ exports.getJobSeekerProfilesbyId = async (req, res) => {
       return res.status(404).json({ status: false, message: "Job seeker profile not found." });
     }
 
+    // ---------------- parallel fetch related data ----------------
+    const [
+      skills,
+      resume,
+      education,
+      experience
+    ] = await Promise.all([
+      JobSeekerSkill.findOne({
+        userId: s.userId,
+        isDeleted: false
+      }).lean(),
+
+       Resume.findOne({
+        jobSeekerId: s._id,
+        isDeleted: false
+      }).lean(),
+
+      JobSeekerEducation.find({
+        jobSeekerId: s._id,
+        isDeleted: false
+      }).sort({ sessionFrom: -1 }).lean(),
+
+
+       WorkExperience.find({
+        jobSeekerId: s._id,
+        isDeleted: false
+      }).sort({ sessionFrom: -1 }).lean()
+    ]);
+
+
     // Shape response (match your list API keys)
     const data = {
       id: s._id,
@@ -2840,7 +2871,9 @@ exports.getJobSeekerProfilesbyId = async (req, res) => {
       phoneNumber: s.phoneNumber,
       jobSeekerName: s.name,
       industryType: s.industryType?.name || null,
-      jobprofile: s.jobProfile?.name || null, // keep same key as your list API
+
+      jobProfile: s.jobProfile || null,
+
       dateOfBirth: s.dateOfBirth ? new Date(s.dateOfBirth).toISOString().split("T")[0] : null,
       panCardNumber: s.panCardNumber,
       gender: s.gender,
@@ -2858,7 +2891,39 @@ exports.getJobSeekerProfilesbyId = async (req, res) => {
            isResumeAdded: s.isResumeAdded,
             isExperienced: s.isExperienced,
 
-      image: s.image
+      image: s.image,
+
+      // ---------- new added sections ----------
+      skills: skills?.skills || [],
+
+       resume: resume
+        ? {
+            id: resume._id,
+            fileUrl: resume.fileUrl,
+            fileName: resume.fileName,
+            fileType: resume.fileType,
+            fileSize: resume.fileSize
+          }
+        : null,
+
+         education: education.map(e => ({
+        id: e._id,
+        degree: e.degree,
+        boardOfUniversity: e.boardOfUniversity,
+        sessionFrom: e.sessionFrom,
+        sessionTo: e.sessionTo,
+        marks: e.marks,
+        gradeOrPercentage: e.gradeOrPercentage
+      })),
+
+       experience: experience.map(exp => ({
+        id: exp._id,
+        companyName: exp.companyName,
+        jobTitle: exp.jobTitle,
+        sessionFrom: exp.sessionFrom,
+        sessionTo: exp.sessionTo,
+        roleDescription: exp.roleDescription
+      }))
     };
 
     return res.status(200).json({
