@@ -686,6 +686,8 @@ exports.getAllJobSeekers = async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
+     const { city, jobProfile } = req.query;
+
     // The relaxed query criteria
     const query = {
         phoneNumber: { $exists: true, $ne: "" },
@@ -702,6 +704,17 @@ exports.getAllJobSeekers = async (req, res) => {
         isDeleted: false,
         isExperienced: { $exists: true },
     };
+
+
+     // ---------------- CITY FILTER (FIX) ----------------
+    if (city) {
+      query.city = { $regex: `^${city}$`, $options: "i" }; // case-insensitive
+    }
+
+    // ---------------- JOB PROFILE FILTER (OPTIONAL) ----------------
+    if (jobProfile) {
+      query.jobProfile = { $regex: jobProfile, $options: "i" };
+    }
     
     // Count full profiles
     const totalRecord = await JobSeekerProfile.countDocuments(query);
