@@ -731,6 +731,21 @@ exports.getAllJobSeekers = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean(); 
 
+
+       // ---------------- FETCH SKILLS ----------------
+    const userIds = seekers.map(seeker => seeker.userId);
+
+    const skillsData = await JobSeekerSkill.find({
+      userId: { $in: userIds },
+      isDeleted: false
+    }).lean();
+
+     // Map userId -> skills[]
+    const skillsMap = {};
+    skillsData.forEach(item => {
+      skillsMap[item.userId.toString()] = item.skills || [];
+    });
+
     // --- Data Transformation: State Name and Conditional Industry Name ---
 
     const transformedSeekers = seekers.map(seeker => {
@@ -763,6 +778,9 @@ exports.getAllJobSeekers = async (req, res) => {
         industryType: industryName,
        salaryType: salaryTypeName,
        CurrentSalary: seeker.CurrentSalary ? seeker.CurrentSalary : 0,
+
+        // ✅ Skills attached here
+        skills: skillsMap[seeker.userId.toString()] || []
            };
     });
 
