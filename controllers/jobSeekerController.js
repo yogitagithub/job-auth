@@ -975,6 +975,83 @@ exports.getSeekerDetails = async (req, res) => {
   }
 };
 
+//latest job post
+
+exports.getLatestJobPosts = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const threeDaysAgo = new Date();
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+
+    const filter = {
+      createdAt: { $gte: threeDaysAgo },
+      isDeleted: false,
+      status: 'active',
+      adminAprrovalJobs: 'Approved'
+    };
+
+    const totalRecord = await JobPost.countDocuments(filter);
+
+    const jobs = await JobPost.find(filter)
+      .populate('companyId', 'companyName')
+      .populate('category', 'name')
+      .populate('industryType', 'name')
+      .populate('salaryType', 'name')
+      .populate('jobType', 'name')
+      .populate('experience', 'name')
+      .populate('state', 'state')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    // FLAT RESPONSE
+    const data = jobs.map(job => ({
+      _id: job._id,
+      jobTitle: job.jobTitle,
+      jobProfile: job.jobProfile,
+
+      companyId: job.companyId?._id || null,
+      companyName: job.companyId?.companyName || null,
+
+      category: job.category?.name || null,
+      industryType: job.industryType?.name || null,
+      salaryType: job.salaryType?.name || null,
+      jobType: job.jobType?.name || null,
+
+      experience: job.experience?.name || null,
+      state: job.state?.state || null,
+      city: job.city || null,
+
+      minSalary: job.minSalary,
+      maxSalary: job.maxSalary,
+      createdAt: job.createdAt
+    }));
+
+    return res.status(200).json({
+      status: true,
+      message: 'Latest job posts fetched successfully.',
+      totalRecord,
+      totalPage: Math.ceil(totalRecord / limit),
+      currentPage: page,
+      data
+    });
+
+  } catch (error) {
+    console.error('Get Latest Job Posts Error:', error);
+    return res.status(500).json({
+      status: false,
+      message: 'Something went wrong while fetching job posts'
+    });
+  }
+};
+
+
+
+
+
 
 
 

@@ -3,7 +3,7 @@ const router = express.Router();
 
 const { saveProfile, getProfile, updateProfileImage, getProfileImage, 
   deleteProfile, getAllJobSeekers, getRecommendedProfiles, getTopProfiles, getProfileProgress, 
-  getSeekerDetails, getJobSeekerDashboard, getSeekerDashboardWeb, getTopIndustryTypes, getMyApprovedApplications, getJobSeekersByIndustry, getAnalytics } = require('../controllers/jobSeekerController');
+  getSeekerDetails, getJobSeekerDashboard, getSeekerDashboardWeb, getTopIndustryTypes, getMyApprovedApplications, getJobSeekersByIndustry, getAnalytics, getLatestJobPosts } = require('../controllers/jobSeekerController');
 const { verifyToken } = require('../middleware/authMiddleware');
 const uploadImage = require('../middleware/uploadImage');
 
@@ -22,6 +22,10 @@ router.get('/jobSeeker-profile-image',
           getProfileImage);
 
 router.get("/public-jobSeekers", getAllJobSeekers);
+
+//latest job post
+router.get('/getLatestJobPost', verifyToken, getLatestJobPosts);
+
 
 //job-seeker analytics
 router.get("/analytics", verifyToken, getAnalytics);
